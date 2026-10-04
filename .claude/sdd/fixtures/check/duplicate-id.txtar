@@ -1,0 +1,61 @@
+# Requirement ids are unique: tests and reviews refer to them. The same id in
+# two capabilities, and a change ADDING an id the living spec already has (that
+# is a MODIFIED), are both refused.
+expect-errors: SDD010
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/one/spec.md --
+## Requirements
+
+### Requirement: SHARED-ID
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/specs/two/spec.md --
+## Requirements
+
+### Requirement: SHARED-ID
+The system SHALL do one thing, again.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/add-y/specs/one/spec.md --
+## ADDED Requirements
+
+### Requirement: SHARED-ID
+The system SHALL do it a third time.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass

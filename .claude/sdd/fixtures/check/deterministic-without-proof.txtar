@@ -1,0 +1,42 @@
+# A deterministic requirement names the test that proves it. Prose that gestures
+# at being tested ("the template construction itself") is not a reference --
+# that loophole let two rules read as proved in the project this came from.
+expect-errors: SDD002
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-SILENT
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+
+### Requirement: CAP-PROSE-PROOF
+The system SHALL do another thing.
+
+- **Kind:** deterministic
+- **Proved by:** the template construction itself
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/archive/.gitkeep --
+-- tests/.gitkeep --

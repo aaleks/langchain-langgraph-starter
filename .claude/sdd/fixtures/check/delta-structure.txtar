@@ -1,0 +1,61 @@
+# A change can only MODIFY or REMOVE what the living spec holds, and every
+# requirement in a change sits under a delta section -- archive drops anything
+# else. Caught here, before archive is attempted.
+expect-errors: SDD013
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-REAL
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/amend/specs/cap/spec.md --
+## MODIFIED Requirements
+
+### Requirement: CAP-IMAGINED
+The system SHALL do a thing that never existed.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+
+## Notes
+
+### Requirement: CAP-STRAY
+The system SHALL be lost at archive.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass

@@ -1,0 +1,11 @@
+# The method checked against its own specs -- a second adapter, and so the
+# proof that the checker reads its layout from configuration rather than
+# assuming one. `bash .claude/sdd/sdd.sh check --config .claude/sdd/self.toml`
+
+[specs]
+living = ".claude/sdd/specs"
+
+[tests]
+roots = [".claude/sdd/tests"]
+patterns = ["test_*.py"]
+symbols = "python"

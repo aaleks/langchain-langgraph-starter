@@ -1,0 +1,21 @@
+# Mutation testing -- measures test STRENGTH, not coverage.
+#
+# Coverage says a line ran. Mutation testing changes the line and asks whether
+# any assertion notices. Run on demand through sdd.toml [commands].strength, and
+# read the result with the mutation-analyst agent: 0 survivors means "no survivor
+# among the mutants the tool generates", never "the tests are perfect".
+#
+# Not a dependency: `uv run --with cosmic-ray` fetches it on demand, so it stays
+# out of the lockfile for a tool run occasionally by hand.
+
+[cosmic-ray]
+# The pure decision layer ONLY. Mutation runs the suite once per mutant, which is
+# affordable only where tests are fast and need no I/O. A survivor in an adapter
+# would need a service per mutant -- slow, costly, and not even a reliable signal.
+module-path = "src/starter/domain"
+timeout = 30.0
+excluded-modules = []
+test-command = "python -m pytest tests/unit -x -q"
+
+[cosmic-ray.distributor]
+name = "local"

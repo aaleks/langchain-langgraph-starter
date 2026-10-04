@@ -1,0 +1,46 @@
+# An exception -- NOT MET, or anything OPEN -- needs an owner and a review date,
+# or it becomes furniture. A malformed date is not a date.
+expect-errors: SDD008
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-UNMET
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Status:** NOT MET
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+
+### Requirement: CAP-OPEN-THRESHOLD
+The system SHALL summarise faithfully.
+
+- **Kind:** evaluated
+- **Threshold:** OPEN
+- **N:** OPEN
+- **Agreed by:** OPEN
+- **Owner:** ada
+- **Review by:** next spring
+
+#### Scenario: Normal
+- **THEN** the judge agrees
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/archive/.gitkeep --
+-- tests/.gitkeep --

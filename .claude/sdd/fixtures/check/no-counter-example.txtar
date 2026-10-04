@@ -1,0 +1,37 @@
+# Every requirement carries at least one counter-example scenario: the case
+# where it deliberately does not apply. A rule with only positive examples is
+# usually a truism or two rules; on a threshold rule it is the off-by-one test.
+expect-errors: SDD007
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-ONLY-HAPPY
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Another normal case
+- **THEN** it happens again
+
+### Requirement: CAP-NO-SCENARIOS
+The system SHALL do another thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+-- tests/test_cap.py --
+def test_cap():
+    pass
+-- openspec/changes/archive/.gitkeep --

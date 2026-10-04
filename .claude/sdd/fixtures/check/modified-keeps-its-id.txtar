@@ -1,0 +1,45 @@
+# Counter-example to the duplicate-id rule: a MODIFIED delta repeats the living
+# requirement's id on purpose -- that is how archive knows what to replace.
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-AMENDED
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/amend-cap/specs/cap/spec.md --
+## MODIFIED Requirements
+
+### Requirement: CAP-AMENDED
+The system SHALL do one thing, and refuse an unknown input.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — an unknown input is refused
+- **GIVEN** an unknown input
+- **THEN** it is refused
+-- openspec/changes/archive/.gitkeep --
+-- tests/test_cap.py --
+def test_cap():
+    pass

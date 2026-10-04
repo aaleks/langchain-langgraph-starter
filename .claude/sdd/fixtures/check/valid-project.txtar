@@ -1,0 +1,102 @@
+# A project the checker must pass: every rule satisfied, in both directions.
+# Also proves what is NOT checked: a fenced example inside a spec, an archived
+# change (history), and test files under an exempt root.
+expect-errors:
+expect-warnings:
+expect-infos:
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+exempt = ["tests/architecture/*"]
+symbols = "python"
+-- openspec/specs/greeting/spec.md --
+# greeting Specification
+
+## Purpose
+Decides how a run greets its user, so every entry point says the same thing.
+
+## Requirements
+
+### Requirement: GREETING-NAME-PRECEDENCE
+The system SHALL greet by the explicit name, then the environment's name, then "world".
+
+- **Kind:** deterministic
+- **Proved by:** `tests/unit/test_greeting.py::TestNamePrecedence`,
+  `tests/unit/test_greeting.py::TestNamePrecedence::test_blank_name_is_refused`
+
+#### Scenario: Explicit name beats the environment
+| Given | Then |
+|---|---|
+| env `GREET_NAME=ada`, explicit `grace` | `Hello, grace` |
+| nothing set | `Hello, world` |
+
+#### Scenario: Counter-example — a blank name is refused, not defaulted
+- **GIVEN** the explicit name is `"  "`
+- **THEN** the call is rejected, naming the reason
+
+An example of the format inside a fence, which must not be parsed:
+
+```markdown
+### Requirement: NOT-A-REAL-REQUIREMENT
+```
+
+### Requirement: GREETING-TONE
+The system SHALL greet warmly enough that the judge scores it at or above the agreed threshold.
+
+- **Kind:** evaluated
+- **Threshold:** OPEN
+- **N:** 20
+- **Agreed by:** OPEN
+- **Owner:** ada
+- **Review by:** 2026-12-31
+
+#### Scenario: A warm greeting
+- **WHEN** a greeting is generated
+- **THEN** the judge scores it warm
+
+#### Scenario: Counter-example — a greeting with no name is judged by the same rubric
+- **WHEN** no name is known
+- **THEN** the generic greeting is scored exactly like a named one
+-- openspec/changes/add-farewell/specs/farewell/spec.md --
+## Purpose
+Decides how a run says goodbye, the counterpart to the greeting.
+
+## ADDED Requirements
+
+### Requirement: FAREWELL-NAME
+The system SHALL say goodbye using the same name the greeting chose.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/unit/test_farewell.py::TestFarewellName`
+
+#### Scenario: Same name as the greeting
+- **GIVEN** the greeting chose `grace`
+- **THEN** the farewell is `Goodbye, grace`
+
+#### Scenario: Counter-example — no greeting was made
+- **GIVEN** no greeting happened
+- **THEN** the farewell uses `world`
+-- openspec/changes/archive/2026-01-01-old/specs/greeting/spec.md --
+## ADDED Requirements
+
+### Requirement: broken history, never checked
+No Kind, no proof, no scenario: an archived change is history, not truth.
+-- tests/unit/test_greeting.py --
+class TestNamePrecedence:
+    def test_explicit_name_wins(self):
+        pass
+
+    def test_blank_name_is_refused(self):
+        pass
+-- tests/unit/test_farewell.py --
+class TestFarewellName:
+    def test_same_name_as_greeting(self):
+        pass
+-- tests/architecture/test_layers.py --
+def test_checks_the_checkers_and_is_claimed_by_nothing():
+    pass

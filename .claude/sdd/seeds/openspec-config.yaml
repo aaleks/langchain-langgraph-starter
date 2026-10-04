@@ -1,0 +1,13 @@
+# OpenSpec configuration for this project -- project-owned.
+#
+# The SDD method's invariants live in the schema (openspec/schemas/sdd-proof/),
+# which the method ships and updates. This file holds only what is true of THIS
+# project: OpenSpec injects `context` into every artifact it instructs.
+# Run OpenSpec through the pinned wrapper:  bash .claude/sdd/sdd.sh openspec <args>
+
+schema: sdd-proof
+
+context: |
+  Replace with the facts an agent cannot infer by reading the code: the stack,
+  the layers and what each may import, where tests live, and any constraint
+  every change must respect. Keep it short -- it is read on every artifact.

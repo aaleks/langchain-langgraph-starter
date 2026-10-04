@@ -1,0 +1,61 @@
+# Proposed CI -- moved into .github/workflows/ by a person, never by an agent.
+# See docs/ci/README.md.
+#
+# Every job runs scripts/check.sh: the list a terminal and /land run too. One
+# list of checks, read in three places, so they cannot drift.
+
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    # The default build: no services, no keys, no quota.
+    name: format, lint, architecture, specs, method, suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # OpenSpec needs Node 20.19+; sdd.sh runs the pinned release through npx.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install the project
+        # --frozen: fail on a lockfile that does not match pyproject.toml rather
+        # than quietly resolving something else and testing that.
+        run: uv sync --frozen
+
+      - name: Run every check
+        run: bash scripts/check.sh
+
+  live:
+    # On demand only. Tests that need services, real models or quota never run
+    # on a pull request: a PR must not spend money, or depend on someone's
+    # service, to be reviewed.
+    name: live services and models
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: uv sync --frozen
+      - run: bash scripts/check.sh live

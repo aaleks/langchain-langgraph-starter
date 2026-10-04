@@ -1,0 +1,31 @@
+# Counter-example to the overdue warning: a review date of today is due, not
+# overdue. The boundary is the off-by-one this fixture exists for.
+today: 2026-10-04
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-DUE
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Status:** NOT MET
+- **Owner:** ada
+- **Review by:** 2026-10-04
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/archive/.gitkeep --
+-- tests/.gitkeep --

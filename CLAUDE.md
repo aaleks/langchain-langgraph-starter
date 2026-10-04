@@ -1,0 +1,132 @@
+# CLAUDE.md
+
+A LangChain / LangGraph starter, developed spec-first with proof.
+
+**Nothing product-shaped is built yet, on purpose.** What exists is the method
+and a walking skeleton that already enforces it: five empty layers, their
+contracts, and the checks. The first product change is the LangGraph foundation
+slice in `docs/roadmap.md` -- and it goes through the loop like everything else.
+
+## The method
+
+Every change starts with `/intake`. The laws, the non-negotiables and the loop
+are in `.claude/rules/sdd/laws.md`, loaded in every session; read it as part of
+this file. The reference is `.claude/sdd/METHOD.md`; a walkthrough of one
+change is `.claude/sdd/GUIDE.md`.
+
+## Stack
+
+- **Python 3.13 with uv.** The package is `starter`, installed editable by `uv sync`.
+- **pytest, ruff, import-linter** (with grimp) -- the dev group in `pyproject.toml`.
+- **OpenSpec 1.14** for the spec lifecycle, pinned and run through
+  `bash .claude/sdd/sdd.sh openspec <args>`. Needs Node 20.19+.
+- **LangChain and LangGraph** arrive with the first change whose requirements
+  need them. None is installed yet.
+
+## Commands
+
+```bash
+uv sync                                   # install, dev group included
+bash scripts/check.sh                     # everything CI runs -- the one list
+bash scripts/check.sh live                # also tests needing services, models, quota
+uv run pytest                             # the suite; no services, no keys
+uv run pytest tests/architecture          # the layer contracts
+bash .claude/sdd/sdd.sh check             # requirement <-> test traceability
+bash .claude/sdd/sdd.sh status            # where each in-flight change stands
+bash .claude/sdd/sdd.sh openspec list     # changes in flight (--specs for capabilities)
+```
+
+`uv run pytest` excludes `live` tests, so it passes on a machine with nothing
+started. Keep it that way: the default suite never depends on a service.
+
+## Architecture
+
+```
+cli  ->  infrastructure  ->  (application | config)  ->  domain
+```
+
+| Layer | Holds | May import |
+|---|---|---|
+| `domain/` | pure decisions: precedence, validation, routing, budgets, policies | the standard library only |
+| `config/` | finding and loading configuration; the only reader of `os.environ` | `domain` |
+| `application/` | use cases, prompts, output contracts | `domain`, `langchain_core`, `pydantic` -- never a runtime |
+| `infrastructure/` | adapters: model builders, stores, tracing; every graph, in `agents/` | `domain`, `config`, `application` |
+| `cli/` | arguments, output, exit codes; the only `sys.exit` | everything |
+
+`application | config` are independent: a use case takes its settings as
+arguments. All of it is enforced by `tests/architecture/`, each rule proved to
+fail on a fixture package. Detail: `docs/architecture/overview.md`.
+
+Two conventions carry the weight:
+
+- **Decisions take their inputs as arguments.** `resolve_model(env, override)`,
+  never `os.getenv` inside. A test hands it a dict.
+- **Everything below the CLI raises; only the CLI exits.** A library that kills
+  the interpreter cannot be used from a test, a notebook or an Agent Server.
+
+## LangGraph -- the adoption boundary
+
+- **Take the lowest rung that expresses the control flow a requirement needs**:
+  one call in a use case; a `create_agent` tool loop; a hand-written
+  `StateGraph`. Climb when a requirement needs the control flow, never before.
+  The ladder: `.claude/skills/discover/references/orchestration-ladder.md`.
+- **Graphs are adapters.** `langgraph` and `deepagents` are imported only under
+  `infrastructure/agents/` -- `create_agent` included, because it compiles a
+  graph. Routing, approval, budget and retry *policy* are domain functions.
+- **`langgraph.json` registers only compiled graphs exported by
+  `infrastructure/agents/registry.py`.** Graph ids are deliberate interfaces.
+- **No default test calls a model**: fake models, fake tools, every route proved
+  by the route it takes. In-memory checkpointing is never evidence of durability.
+- **Studio rendering a graph is not evidence it is production-ready.**
+
+The full plan, in slices: `docs/roadmap.md`. The decision: `docs/decisions/0003-langgraph-is-an-adapter.md`.
+
+## Where things are
+
+```
+src/starter/            the package -- five layers, empty, each with its contract
+tests/                  unit, integration, acceptance; architecture checks the checkers
+tests/evals/golden/     evaluation ground truth -- written by a human only
+openspec/               specs/ (living truth), changes/ (in flight), the sdd-proof schema
+.claude/                the SDD method: skills, agents, rules, hooks, sdd/ (tooling and docs)
+sdd.toml                the method's adapter: where specs and tests live, the commands
+docs/decisions/         ADRs -- one per decision that is expensive to reverse
+docs/roadmap.md         the first changes, in order
+docs/ci/                the CI workflow, proposed; a person moves it into .github/
+docs/learnings.md       what went wrong, and what it left behind
+```
+
+## Rules for this project
+
+1. **No product code without an approved change.** `/intake` first, even for
+   something small -- the class decides how small the process is.
+2. **Do not over-engineer the starter.** No abstraction, framework or pattern
+   without a requirement that needs it. Adopting a maintained library that
+   already solves the problem is the opposite of over-engineering -- that is
+   what the frame's build-or-adopt slot is for.
+3. **CI is proposed, never written, by an agent.** `.github/workflows/` is
+   refused by the edit guard and denied in settings; write it under `docs/ci/`.
+4. **This repository is the method's canonical source.** A change to a shipped
+   method file needs a version bump, a `.claude/sdd/CHANGELOG.md` entry and a
+   regenerated manifest (`bash .claude/sdd/sdd.sh manifest`) -- `check.sh`
+   fails otherwise. Method changes go through the loop too.
+5. **When the code and a requirement disagree, the disagreement is the finding.**
+   Say which one you think is wrong, with the evidence; the user decides.
+
+## Inherited lessons
+
+Learned in the project this method came from, each because it cost a debugging
+session. The project's own lessons go in `.claude/rules/project/lessons.md`.
+
+- **Load `.env` before any setting is read.** A module-level constant evaluated
+  at import misses it, and the symptom looks like a server problem.
+- **`create_agent` and every LangGraph runtime are infrastructure.** An unbounded
+  structured-output retry runs to LangGraph's step ceiling; bound the run, and
+  treat a contract failure as an outcome rather than retrying it.
+- **`ModelRetryMiddleware` defaults to `on_failure="continue"`**, which turns a
+  failure into a message that reads like an answer. Use `"error"`.
+- **`localhost` inside a container is the container.** Reach a service on the
+  host through its documented host address (`host.docker.internal`).
+- **A check that cannot fail is worse than none, because it is believed.**
+  import-linter exits 0 when it cannot find the package; an allowlist over an
+  empty import set passes. Every check here is proved to fail on a fixture.

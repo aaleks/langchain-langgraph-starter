@@ -1,0 +1,31 @@
+# A requirement heading is a stable id, not a sentence. A sentence changes when
+# someone rewords it, and every reference to it breaks silently.
+expect-errors: SDD011
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: User can export data
+The system SHALL export data.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass
+-- openspec/changes/archive/.gitkeep --

@@ -1,0 +1,46 @@
+# An evaluated requirement carries a threshold, an N and who agreed them. OPEN
+# is legal; silence is not. A threshold with no digit in it is not a number.
+expect-errors: SDD005
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-SILENT-JUDGE
+The system SHALL summarise faithfully.
+
+- **Kind:** evaluated
+
+#### Scenario: Normal
+- **THEN** the judge agrees
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+
+### Requirement: CAP-VAGUE-JUDGE
+The system SHALL summarise well.
+
+- **Kind:** evaluated
+- **Threshold:** good enough
+- **N:** some
+- **Agreed by:** the team
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** the judge agrees
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass
+-- openspec/changes/archive/.gitkeep --

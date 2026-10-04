@@ -1,0 +1,45 @@
+# A named test file that does not exist. The living spec's reference is a real
+# defect; the in-flight change's is the forcing function mid-loop (/discover
+# named it, /accept has not written it). Both are errors -- a PR cannot land
+# with either -- and the message says which case it is.
+expect-errors: SDD003
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-MOVED
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_moved.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/add-x/specs/cap2/spec.md --
+## ADDED Requirements
+
+### Requirement: CAP2-NOT-WRITTEN-YET
+The system SHALL do a new thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_new.py::TestNew`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/.gitkeep --

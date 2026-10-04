@@ -1,0 +1,31 @@
+# An evaluated requirement whose threshold was agreed must name the check that
+# measures it -- an agreed number nothing measures is written, never built.
+expect-errors: SDD002
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-AGREED-UNMEASURED
+The system SHALL ground every answer in the retrieved passages.
+
+- **Kind:** evaluated
+- **Threshold:** 0.9
+- **N:** 24
+- **Agreed by:** ada
+
+#### Scenario: Normal
+- **THEN** the judge marks it grounded
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/archive/.gitkeep --
+-- tests/.gitkeep --

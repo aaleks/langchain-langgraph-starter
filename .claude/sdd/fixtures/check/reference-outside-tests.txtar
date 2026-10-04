@@ -1,0 +1,32 @@
+# Proof is a test. Naming the implementation as its own proof is refused, even
+# though the file exists.
+expect-errors: SDD003
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-SELF-PROVED
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `src/app/cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- src/app/cap.py --
+def cap():
+    return 1
+-- openspec/changes/archive/.gitkeep --
+-- tests/.gitkeep --

@@ -1,0 +1,17 @@
+# The honest state of a new project: nothing specified, nothing tested. Not an
+# error and not a silent pass -- the checker says so in an info line.
+expect-infos: SDD100
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+exempt = ["tests/architecture/*"]
+-- openspec/specs/.gitkeep --
+-- openspec/changes/archive/.gitkeep --
+-- tests/architecture/test_layers.py --
+def test_checks_the_checkers():
+    pass

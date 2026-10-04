@@ -1,0 +1,24 @@
+# OpenSpec configuration for this project -- project-owned.
+#
+# The method's invariants live in the schema (openspec/schemas/sdd-proof/),
+# which the SDD method ships and updates. This file holds only what is true of
+# THIS project: OpenSpec injects `context` into every artifact it instructs.
+# Run OpenSpec through the pinned wrapper:  bash .claude/sdd/sdd.sh openspec <args>
+
+schema: sdd-proof
+
+context: |
+  A LangChain / LangGraph starter in Python 3.13, managed with uv.
+  Package `starter` under src/, five layers pointing inward:
+    cli -> infrastructure -> (application | config) -> domain.
+  domain: pure decisions, standard library only, environment passed as an argument.
+  config: the only reader of os.environ.
+  application: use cases, prompts and output contracts; may import langchain_core
+    and pydantic, never a runtime (langchain, langgraph, deepagents) or vendor SDK.
+  infrastructure: adapters; every LangGraph graph lives in infrastructure/agents/.
+  cli: argument parsing and exit codes; the only layer that calls sys.exit.
+  Tests: pytest under tests/{unit,integration,acceptance}; tests/architecture checks
+  the checkers. No test calls a real model -- live tests are marked `live`.
+  Orchestration ladder: one call -> create_agent tool loop -> hand-written StateGraph;
+  climb only when a requirement needs the control flow (docs/decisions/0003).
+  Commands are in sdd.toml [commands]; the full check is `bash scripts/check.sh`.

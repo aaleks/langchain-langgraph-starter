@@ -1,0 +1,14 @@
+# An unrecognised setting is refused, not ignored: a setting that silently does
+# nothing is worse than one that is rejected, because its author believes it
+# took effect.
+expect-errors: SDD000
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+livng_typo = "openspec/specs"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+-- openspec/specs/.gitkeep --
+-- tests/.gitkeep --

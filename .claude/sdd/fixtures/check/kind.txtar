@@ -1,0 +1,43 @@
+# Every requirement says whether it is deterministic or evaluated. One has no
+# Kind at all; one misspells it -- a typo must not read as a third kind.
+expect-errors: SDD001
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-NO-KIND
+The system SHALL do one thing.
+
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+
+### Requirement: CAP-TYPO-KIND
+The system SHALL do another thing.
+
+- **Kind:** determinstic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass
+-- openspec/changes/archive/.gitkeep --

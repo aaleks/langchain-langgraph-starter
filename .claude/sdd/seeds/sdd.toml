@@ -1,0 +1,36 @@
+# sdd.toml -- the one project-specific file the SDD method reads.
+#
+# Everything else under .claude/ is the same in every project that uses the
+# method. This file says where THIS project keeps its specs and tests, and how
+# its commands run. Unknown keys are refused, not ignored -- see
+# .claude/sdd/README.md, "The adapter".
+
+[specs]
+living = "openspec/specs"      # the current truth, written by `openspec archive`
+changes = "openspec/changes"   # in flight; changes/archive/ is history, never checked
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+# Checks of the checkers, and fixtures built to break rules on purpose: claimed
+# by no requirement. Exemptions are deliberate and few -- every one is a place
+# where behaviour can exist without a spec.
+exempt = ["tests/architecture/*"]
+symbols = "python"             # `file::Name` resolves against class and def names
+
+# Read by the skills and agents so none of them hard-codes a test runner.
+# The checker never executes these.
+[commands]
+check = "bash scripts/check.sh"
+suite = "uv run pytest -q"
+test = "uv run pytest {target} -q"
+architecture = "uv run pytest tests/architecture -q"
+lint = "uv run ruff check ."
+format = "uv run ruff format --check ."
+live = "uv run pytest -m live -q"
+# strength = "<mutation testing on the pure decision layer -- see the mutation-analyst agent>"
+
+# Read by .claude/hooks/guard-edits.sh, which refuses an agent's write here.
+# Keep each array on one line: the guard is bash and reads it line by line.
+[guards]
+ground_truth = ["tests/evals/golden/*"]

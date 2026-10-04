@@ -1,0 +1,32 @@
+# The file exists but the named class or function does not: a renamed test.
+# A ::Name that resolves to nothing reads as precise while proving nothing.
+expect-errors: SDD004
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-RENAMED
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py::TestOldName::test_it`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+class TestNewName:
+    def test_it(self):
+        pass
+-- openspec/changes/archive/.gitkeep --

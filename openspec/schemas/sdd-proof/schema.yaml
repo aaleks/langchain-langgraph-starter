@@ -1,0 +1,168 @@
+name: sdd-proof
+version: 1
+description: >-
+  Spec-driven development with proof. intake -> frame -> specs (+ design for
+  structural work) -> tasks -> apply -> verify -> archive. Every requirement is
+  deterministic or evaluated, names the test that proves it, and carries a
+  counter-example. Part of the SDD method: .claude/sdd/METHOD.md.
+
+artifacts:
+  - id: intake
+    generates: intake.md
+    description: The class of work, its intent, and who approved them
+    template: intake.md
+    instruction: |
+      Classify the change before anything else, say the class out loud, and
+      wait for approval of the class and intent as presented.
+
+      - spike: a question whose output is an answer, not code you keep. Set
+        `skip_specs: true` in this change's .openspec.yaml, fill the Spike
+        section, and end with a verdict: go | clarify | kill. A kill is a
+        successful spike; anything built is throwaway.
+      - defect: behaviour that contradicts a requirement, or that one should
+        have forbidden. Next is /debug: the root cause is named in frame.md
+        before any fix.
+      - bounded: a change to a flow that already exists in this repository --
+        a flag, a message, one requirement amended. Brief frame, delta specs,
+        no design.md.
+      - structural: a new capability, subsystem or interface, or anything
+        expensive to reverse (data model, store, provider, embedding, public
+        contract, graph id, state schema). Full DAG, and an ADR for the
+        irreversible decision.
+
+      When in doubt, take the heavier class. The ratchet is one-way: hidden
+      complexity found mid-task upgrades the class -- stop, say so, add a
+      Ratchet row -- and nothing ever downgrades. A reply approves the stage
+      actually presented; approval of an idea does not approve artifacts that
+      do not exist yet.
+    requires: []
+
+  - id: frame
+    generates: frame.md
+    description: Outcome, build-or-adopt, the coverage screen, and open questions
+    template: frame.md
+    instruction: |
+      Everything decided before a requirement is written. Fill every slot;
+      an empty slot is a visible omission, which is the point of it.
+
+      - Outcome: who benefits and the observable signal that says it worked,
+        kept apart from the requirements (which state behaviour).
+      - Existing options considered: when the request names a capability with
+        an established category of tooling (crawling, parsing, retries,
+        scheduling, auth, vector stores, evaluation harnesses, agent
+        runtimes), name two or three maintained options, say what you checked
+        to call each maintained, what each covers and the delta. Recommend
+        one; the human chooses. Otherwise one line saying why nothing applies.
+        Never decided silently: a requirement once written is a thing to build.
+      - Orchestration rung, for LLM work: one call, a tool loop, or a
+        hand-written graph -- the lowest rung that expresses the control flow
+        a requirement needs.
+      - Coverage screen: all nine rows marked Clear, Partial, Missing or N-A;
+        N-A needs a reason. A Missing on a dimension the change touches
+        becomes a question or a requirement.
+      - Defect section (defect class only): symptom, reproduction, root cause
+        with its evidence, and the requirement that should have caught it.
+      - Open questions: ask now anything a human can answer in a sentence;
+        record OPEN only what needs data that does not exist yet, and say what
+        would resolve it. Never invent a business rule or a threshold.
+    requires:
+      - intake
+
+  - id: specs
+    generates: "specs/**/*.md"
+    description: Delta requirements -- each a falsifiable invariant with its proof
+    template: spec.md
+    instruction: |
+      One delta file per capability at specs/<capability>/spec.md, under
+      ADDED / MODIFIED / REMOVED / RENAMED Requirements. A new capability opens
+      with `## Purpose` (one or two sentences, 50+ characters).
+
+      Every requirement:
+      - heading `### Requirement: <CAPABILITY>-<RULE>` -- a stable upper-kebab
+        id, never a sentence; the statement goes on the next line;
+      - one behaviour stated as an invariant with SHALL or MUST -- something
+        that can be false. "Handles missing keys" is not a requirement;
+      - `- **Kind:** deterministic` when `assert result == expected` could
+        prove it, `evaluated` when only a judgement about generated text could.
+        Before accepting `evaluated`, try once to split the decision from the
+        judgement -- most of what looks evaluated is a deterministic decision
+        wrapped around a smaller judgement;
+      - deterministic: `- **Proved by:** `tests/<tier>/test_<x>.py::<Class>``,
+        named now even though /accept writes the test next;
+      - evaluated: `- **Threshold:**`, `- **N:**`, `- **Agreed by:**` -- OPEN is
+        legal, silence is not, and a number is never invented; plus
+        `- **Proved by:**` the live check once the threshold is agreed;
+      - anything OPEN or `- **Status:** NOT MET` also carries `- **Owner:**` and
+        `- **Review by:** YYYY-MM-DD`;
+      - scenarios with real values, never placeholders, and at least one titled
+        `Counter-example -- ...`: the case where the rule deliberately does not
+        apply. On a threshold rule it is the off-by-one.
+
+      Never a requirement whose proof would assert generated prose. More than
+      about eight requirements means the change is too big: split it.
+      MODIFIED copies the whole existing block, then edits it. REMOVED gives
+      **Reason** and **Migration**, and says what happens to the test.
+    requires:
+      - frame
+
+  - id: design
+    generates: design.md
+    description: The how -- structural changes only
+    template: design.md
+    instruction: |
+      Create only when the intake class is structural, or when the frame's
+      coverage screen raised a design question. A bounded or defect change
+      has no design.md, and that skip is on the record through its class.
+
+      Decisions with the alternatives considered and why. A decision that is
+      expensive to reverse also gets an ADR in docs/decisions/. When the
+      frame's rung is a hand-written graph, fill the orchestration design:
+      the node/transition table is the contract -- finite routes, budgets
+      with a terminal outcome each, interrupts, tools and their capabilities,
+      what is persisted and what never is. A diagram is review evidence, not
+      the source of truth. No code here; no restating the specs.
+    requires:
+      - frame
+
+  - id: tasks
+    generates: tasks.md
+    description: The sequence -- an order of requirement cycles, never code
+    template: tasks.md
+    instruction: |
+      An order and a critical path, not an implementation. One numbered group
+      per requirement, in dependency order; each task is the smallest unit
+      that carries its own test cycle. Name the wiring point and, for more
+      than one requirement, the story test -- the acceptance test that stays
+      red until the last group lands. No code blocks: a plan that contains the
+      code is a second implementation that drifts. Every box is checked only
+      with fresh evidence -- the command, run, and what it printed.
+    requires:
+      - specs
+      - design
+
+  - id: verify
+    generates: verify.md
+    description: The review -- findings, evidence and a verdict, written by /verify
+    template: verify.md
+    instruction: |
+      Written by /verify after every task is checked and the suite is green.
+      Three lenses, each with fresh context: does each named test prove its
+      requirement, every scenario and counter-example included; is the code
+      wrong in a way no requirement mentions; is each decision in the right
+      layer. Findings capped at twenty, the rest summarised; severity
+      BLOCKER / MAJOR / MINOR, and a violated non-negotiable is BLOCKER by
+      construction. Report, fix nothing. Verdict SHIP or DO NOT SHIP, with the
+      evidence: the commands run fresh and what they printed.
+    requires:
+      - tasks
+
+apply:
+  requires: [tasks]
+  tracks: tasks.md
+  instruction: |
+    One requirement per cycle, in the order tasks.md gives. A deterministic
+    requirement: /accept writes its failing test, /tdd drives it green,
+    refactors, proposes the next edge case and stops. An evaluated
+    requirement: /eval builds its scored check. Check a box only with fresh
+    evidence. If the code and a requirement disagree, stop -- the disagreement
+    is the finding, and the human decides which one is wrong.

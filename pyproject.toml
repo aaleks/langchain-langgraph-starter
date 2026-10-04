@@ -1,0 +1,84 @@
+[project]
+name = "langchain-langgraph-starter"
+version = "0.1.0"
+description = "A LangChain / LangGraph starter developed spec-first: OpenSpec runs the spec lifecycle, and a proof layer links every requirement to the test that proves it."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Aleksandar Antonijevic", email = "aaleks@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+# Empty on purpose. Runtime dependencies arrive with the first change whose
+# requirements need them -- see docs/roadmap.md. Installing LangGraph before a
+# spec asks for a graph is carrying an unused rung (docs/decisions/0003).
+dependencies = []
+
+# uv's dev group: installed by `uv sync`, absent from the built package.
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "ruff>=0.13",
+    "import-linter>=2.5",   # architecture contracts run as a test; brings grimp
+]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
+
+# The package is `starter`, not the distribution name. To rename it: here,
+# [tool.importlinter] and [tool.ruff.lint.isort] below, mutation.toml, and the
+# src/starter/ directory -- README "Make it yours".
+[tool.uv.build-backend]
+module-name = "starter"
+
+# ──────────────────────────────────────────────────────────────────────
+# pytest
+# ──────────────────────────────────────────────────────────────────────
+# The package is installed (editable) by `uv sync`, so there is no pythonpath
+# hack: tests import `starter` exactly as an Agent Server will.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers -m 'not live'"
+markers = [
+    "live: needs a running service, a real model or paid quota (excluded by default)",
+]
+
+# ──────────────────────────────────────────────────────────────────────
+# import-linter -- the layer contract, enforced by tests/architecture
+# ──────────────────────────────────────────────────────────────────────
+# `application | config` are independent: neither may import the other. A use
+# case takes its settings as arguments; it never reads them.
+[tool.importlinter]
+root_package = "starter"
+
+[[tool.importlinter.contracts]]
+name = "Layers point inward: cli -> infrastructure -> (application | config) -> domain"
+type = "layers"
+layers = [
+    "starter.cli",
+    "starter.infrastructure",
+    "starter.application | starter.config",
+    "starter.domain",
+]
+
+# ──────────────────────────────────────────────────────────────────────
+# ruff
+# ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests", ".claude/sdd"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# Comments here explain reasoning in prose; reflowing them to a column limit
+# hurts them more than the limit helps. The formatter still wraps code.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["starter", "sddlib"]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures exist to break the rules on purpose -- an import nobody uses is
+# how a fixture domain module reaches for a forbidden package.
+"**/fixtures/**" = ["F401"]

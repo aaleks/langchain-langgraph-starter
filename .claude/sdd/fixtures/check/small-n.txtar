@@ -1,0 +1,34 @@
+# Below about 20 cases a threshold measures the sampler, not the system. Legal,
+# and worth saying every time.
+expect-warnings: SDD012
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-THIN-EVIDENCE
+The system SHALL summarise faithfully.
+
+- **Kind:** evaluated
+- **Threshold:** 0.8
+- **N:** 5
+- **Agreed by:** ada
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** the judge agrees
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass
+-- openspec/changes/archive/.gitkeep --

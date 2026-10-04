@@ -1,0 +1,411 @@
+{
+  "files": {
+    ".claude/agents/agent-capability-auditor.md": {
+      "pack": "langgraph",
+      "sha256": "ecdf3985d899e09d7682ff8d62977210d3815354aa2e51111b0762a06ff4ea83"
+    },
+    ".claude/agents/architecture-guardian.md": {
+      "pack": "core",
+      "sha256": "d9da1dd6041ebe714bd240df6c4f462a97625e0613b0ab943ec998fcce8ae5d3"
+    },
+    ".claude/agents/code-reviewer.md": {
+      "pack": "core",
+      "sha256": "6183e4885c7d8c1e57161e9ed0c952d13c059c0b47264b2200c991671a13d82f"
+    },
+    ".claude/agents/determinism-auditor.md": {
+      "pack": "core",
+      "sha256": "dd008e122db73e8d8875011213d6377a68509ebe3b8c6bfcf1589a0e9a12ef22"
+    },
+    ".claude/agents/durability-auditor.md": {
+      "pack": "langgraph",
+      "sha256": "26f55120515d3384abdbd69e7f46a615d58acacac3af92f1ce3e1edd04d0667c"
+    },
+    ".claude/agents/graph-architecture-guardian.md": {
+      "pack": "langgraph",
+      "sha256": "a7660effce9d15dfb6bb3ac26f07ca671f68fcf3f16e0aebc788bcfc6e648e3b"
+    },
+    ".claude/agents/graph-eval-auditor.md": {
+      "pack": "langgraph",
+      "sha256": "46669a2ef1860b18986bda33d561a805aec971b078fd4afe6b4016b7ddc285f3"
+    },
+    ".claude/agents/mutation-analyst.md": {
+      "pack": "core",
+      "sha256": "2ce1e9e9fe2d1d0bd78ce36d024f502e79a05376f1b707524d526379e5c5c120"
+    },
+    ".claude/agents/observability-auditor.md": {
+      "pack": "core",
+      "sha256": "e7dbb958f9cf1105688d52d1931955e32c8a4e1e0422c41dd1130efafc050e11"
+    },
+    ".claude/agents/spec-compliance.md": {
+      "pack": "core",
+      "sha256": "ce9cd459d26bfc4638df65d6e231d54125ee210c807ed7d31183718dfffdb06a"
+    },
+    ".claude/hooks/check-alignment.sh": {
+      "pack": "core",
+      "sha256": "23bb1954c591bce3c9950f3a34294c4817e74a43682e9051cf9a27daf9ca224b"
+    },
+    ".claude/hooks/guard-edits.sh": {
+      "pack": "core",
+      "sha256": "9af3ca2fc99072ae029b600752b79d6cc1e033183de6c83c70776b0b0ac231eb"
+    },
+    ".claude/hooks/lib.sh": {
+      "pack": "core",
+      "sha256": "8dfa8cedeeb7caa07e2495847db12aaaeee48d359d4c7e8d1b124a743221edbe"
+    },
+    ".claude/hooks/session-context.sh": {
+      "pack": "core",
+      "sha256": "6e0c9feb96330f1b0d7a99a21ccd60f5b0526c82fe0b351492c9a8ab162a6be6"
+    },
+    ".claude/rules/langgraph/graphs.md": {
+      "pack": "langgraph",
+      "sha256": "8d65479f40783462b25ad96573945f028a80b0c3039c605cd6708715fb544a87"
+    },
+    ".claude/rules/python/application.md": {
+      "pack": "python",
+      "sha256": "ab051a5cb990235a5c4aa919858a5bfec75f921ad8c291b849eb12d015b77f38"
+    },
+    ".claude/rules/python/domain.md": {
+      "pack": "python",
+      "sha256": "ddc672b794e8ccc245cd34ddd400e2ee81769d4bb7e8f736c3d2610c0fe0be6b"
+    },
+    ".claude/rules/python/infrastructure.md": {
+      "pack": "python",
+      "sha256": "36cecb0e319ad1db7d24abf479862eb6973033a0325c435e06fbd863a8d253a4"
+    },
+    ".claude/rules/sdd/laws.md": {
+      "pack": "core",
+      "sha256": "12b85e0b37ee4ce88bbec1e686736b9026d8af16d067118d5f8edfdcbd626348"
+    },
+    ".claude/rules/sdd/specs.md": {
+      "pack": "core",
+      "sha256": "4c1e3e4d3b48b0a74c7ac0609ea7bf68843f80bf22592e59832c29b06532638c"
+    },
+    ".claude/rules/sdd/tests.md": {
+      "pack": "core",
+      "sha256": "2ce2e1d9fc88823ec8024757a7a450ac9a06df9a058984ec1b1355840f6af846"
+    },
+    ".claude/sdd/CHANGELOG.md": {
+      "pack": "core",
+      "sha256": "f893f412ffd37bf27636ab645e091a2a19aba8963b0124ef28514c09b0c73380"
+    },
+    ".claude/sdd/CREDITS.md": {
+      "pack": "core",
+      "sha256": "dcf89395e13ee2f89c8d9f55458801f27cbe940705df436e1678a8f54ea4a949"
+    },
+    ".claude/sdd/GUIDE.md": {
+      "pack": "core",
+      "sha256": "9e6ffa2f31c3ce20150486bae72aa8c8ad26def5438321221c205f7b9df2313e"
+    },
+    ".claude/sdd/METHOD.md": {
+      "pack": "core",
+      "sha256": "7e4532d362b3ae441167eb6dbd36cb5ae913e931b9902c33f0bdb6f62b9ca998"
+    },
+    ".claude/sdd/README.md": {
+      "pack": "core",
+      "sha256": "0043ba4cb3907586e3192b437b96762a0a386345c4e5e0da01edd7c459c99789"
+    },
+    ".claude/sdd/deferred-register.md": {
+      "pack": "core",
+      "sha256": "786cafce3ecbf7b721ec86837902147a9096ff125ca29acdaf2f6464287c2390"
+    },
+    ".claude/sdd/fixtures/check/agreed-threshold-without-check.txtar": {
+      "pack": "core",
+      "sha256": "e5faff1ab3752d9d66d8151549c91a809433dcf89e48cb832400dc62cd1bf906"
+    },
+    ".claude/sdd/fixtures/check/dangling-reference.txtar": {
+      "pack": "core",
+      "sha256": "e0c0398fe23efc863f0cef93df70d50fddd5dccc464c50c1dac35e73d2d332b0"
+    },
+    ".claude/sdd/fixtures/check/delta-structure.txtar": {
+      "pack": "core",
+      "sha256": "61e8e40cd91862e93117259da3bfa3377e5fa695902155b5d76a1f645ce84f0c"
+    },
+    ".claude/sdd/fixtures/check/deterministic-without-proof.txtar": {
+      "pack": "core",
+      "sha256": "cdfc04d17dd0691734d19eeb9c6abcc255e19788a37e7706e7098d3837c420ce"
+    },
+    ".claude/sdd/fixtures/check/due-today-is-not-overdue.txtar": {
+      "pack": "core",
+      "sha256": "eee2718a4eebe86c18bffd11a6e3c655bdd02a07d851075b83d906c89136a1c3"
+    },
+    ".claude/sdd/fixtures/check/duplicate-id.txtar": {
+      "pack": "core",
+      "sha256": "ef266a289ddfe8a5cd2c68caeab456a5c8db6414725c6d9a9c789749a5e7db31"
+    },
+    ".claude/sdd/fixtures/check/empty-project.txtar": {
+      "pack": "core",
+      "sha256": "4bad4afbaaea3c4b1ad700ba95ef34bc76d5d1b883cf829e7290e273a32c2177"
+    },
+    ".claude/sdd/fixtures/check/evaluated-without-threshold.txtar": {
+      "pack": "core",
+      "sha256": "22a137ee500a005aa779a931980760bda73082f4e5263daf517a5b96342841e5"
+    },
+    ".claude/sdd/fixtures/check/exception-without-owner.txtar": {
+      "pack": "core",
+      "sha256": "ebdac96a7a8375d3ec5b06c78e27301912f6c54eddb7ba47af08e40f55fa1eee"
+    },
+    ".claude/sdd/fixtures/check/kind.txtar": {
+      "pack": "core",
+      "sha256": "19a094467fdb96b18c9cf2db423886d6330d1d2fc0efcb10411a00bd8f51533b"
+    },
+    ".claude/sdd/fixtures/check/missing-specs-dir.txtar": {
+      "pack": "core",
+      "sha256": "2ef8d2f616cedf17e9268f73b8948039b5dea76aba195c8d3e36eb2578a5d9f1"
+    },
+    ".claude/sdd/fixtures/check/modified-keeps-its-id.txtar": {
+      "pack": "core",
+      "sha256": "130a3ff2eac36e180cd94a292f5bedf47a746dfe4858d12b43b217f7b968bbae"
+    },
+    ".claude/sdd/fixtures/check/no-counter-example.txtar": {
+      "pack": "core",
+      "sha256": "ed37e77b11a265878d1a7b61f431d75685413aaa76bde4c3f191664f2a064f10"
+    },
+    ".claude/sdd/fixtures/check/overdue-exception.txtar": {
+      "pack": "core",
+      "sha256": "c6b3614215ce7e0b827387f9823a52ef04ceaa3566cf425df4c07f3aa0ea127c"
+    },
+    ".claude/sdd/fixtures/check/prose-id.txtar": {
+      "pack": "core",
+      "sha256": "a9e680aad4802530b4acdf180aad9b67dc894d1a7e3b1c2bf7a3c873221950b1"
+    },
+    ".claude/sdd/fixtures/check/reference-outside-tests.txtar": {
+      "pack": "core",
+      "sha256": "d7684da36206ce62a66a6b5a836edc62e78cbecc0a7def3772007b3c1026d7bb"
+    },
+    ".claude/sdd/fixtures/check/renamed-test.txtar": {
+      "pack": "core",
+      "sha256": "6af48a809185a94e9ea900324aafb592ced08b5e67bcf143cadadf81b7692a70"
+    },
+    ".claude/sdd/fixtures/check/small-n.txtar": {
+      "pack": "core",
+      "sha256": "6bff8feb370ed3b105c77f1a749ba7437a51fbce7b9e882a4949cf18e0de0f33"
+    },
+    ".claude/sdd/fixtures/check/unclaimed-test.txtar": {
+      "pack": "core",
+      "sha256": "11a174a900338cbef4b541479c2246f6204f4cca3b2b2740d0d107c1edb2c75a"
+    },
+    ".claude/sdd/fixtures/check/unknown-adapter-key.txtar": {
+      "pack": "core",
+      "sha256": "2e771d5f068ee9c2da44d0ffbd401df2b93bae18d3c85492b428189cbf9b9046"
+    },
+    ".claude/sdd/fixtures/check/valid-project.txtar": {
+      "pack": "core",
+      "sha256": "feaa5b451971ec9024ddbc0809525573dbf77eef1b483663ecb3ee92e56dc5c6"
+    },
+    ".claude/sdd/packs/langgraph.md": {
+      "pack": "langgraph",
+      "sha256": "de9f82a2c349df3e9c7265a81115f4830638ef39648aeb5683aefbedf1143a09"
+    },
+    ".claude/sdd/packs/python.md": {
+      "pack": "python",
+      "sha256": "e80ee85895ddb7621809a17682c6c7f85fe59b1231f59aa8b5c0e19f0ad6b074"
+    },
+    ".claude/sdd/pressure-tests.md": {
+      "pack": "core",
+      "sha256": "dde89c0289c526be7e1e3a5302314237136b189a3b4f9ce4b141a56f0ebfecaa"
+    },
+    ".claude/sdd/sdd.py": {
+      "pack": "core",
+      "sha256": "17a781c173014e5d54b8e7e0edbfa826b1090071b111e2bf6c17d5c3484cca10"
+    },
+    ".claude/sdd/sdd.sh": {
+      "pack": "core",
+      "sha256": "035bbb8d64fb8ea57c53b978649b86ea69f00be33a244aaa29f4c2a4781aa11c"
+    },
+    ".claude/sdd/sddlib/__init__.py": {
+      "pack": "core",
+      "sha256": "a1f426a5f577ee3bc774c604e7ee7048fa01dfaf7cfc60093f2197be64a0265e"
+    },
+    ".claude/sdd/sddlib/adapter.py": {
+      "pack": "core",
+      "sha256": "52cbe54fe1ba244a95ace747c84741d2f7e4d1fa1f8b06373a9561d6963b48bb"
+    },
+    ".claude/sdd/sddlib/check.py": {
+      "pack": "core",
+      "sha256": "e12963daa9b416382928ed0f860cb9f79c9c99ae5811c7014e2aefa756fd8317"
+    },
+    ".claude/sdd/sddlib/cli.py": {
+      "pack": "core",
+      "sha256": "7277873d535e686a4c6767235b4a97c80fe3f9bc1bf883cebe1c455ae152bf9e"
+    },
+    ".claude/sdd/sddlib/distribute.py": {
+      "pack": "core",
+      "sha256": "607362846525193f79a5b9035e19091fc8af0c21ba24b6e9f41b0e5f5817ec1c"
+    },
+    ".claude/sdd/sddlib/report.py": {
+      "pack": "core",
+      "sha256": "a4d61562e4a9d61147492605dff6b1e65cc6a4535e967e5d8ba734a839e0d1d1"
+    },
+    ".claude/sdd/sddlib/specs.py": {
+      "pack": "core",
+      "sha256": "f26881fb4f82f35764c86ddd1b1d84e7bff18c32a4869648233809ef9f2d9a03"
+    },
+    ".claude/sdd/sddlib/stats.py": {
+      "pack": "core",
+      "sha256": "4b8a5e89c2fd53a8010635cb15202d53ebd0386f0db587ce2d7e786b51eac23c"
+    },
+    ".claude/sdd/sddlib/status.py": {
+      "pack": "core",
+      "sha256": "04e89eddc6fa976404767705268e7f8bb3ddf09d277f7d5a689e10d614e6d0b9"
+    },
+    ".claude/sdd/sddlib/testfiles.py": {
+      "pack": "core",
+      "sha256": "10bc4470d259e128b1ef8e93701631860ace92ce42b39e6a776f98a968bb5c06"
+    },
+    ".claude/sdd/seeds/check.sh": {
+      "pack": "core",
+      "sha256": "eb8095446c8319c1040d66137d87572a763d3930f7e1cf1b2f9c24ecf8778ae0"
+    },
+    ".claude/sdd/seeds/learnings.md": {
+      "pack": "core",
+      "sha256": "1f68ec738fa5f72ed6a1fdb27c043d1ac948216b92fa651d9e9c17d3efdea2b1"
+    },
+    ".claude/sdd/seeds/lessons.md": {
+      "pack": "core",
+      "sha256": "87f306293b09c137ec4df19384f8e6ea260851d4194235e721b819d0c12af4ca"
+    },
+    ".claude/sdd/seeds/openspec-config.yaml": {
+      "pack": "core",
+      "sha256": "1a2149c9beacdbd66ecc1cf0f4431f24f1676943b8bc3982eb5c6524b11cd4f0"
+    },
+    ".claude/sdd/seeds/sdd.toml": {
+      "pack": "core",
+      "sha256": "fe068f6c63d8dec30e6e5710755dfff188276bd71c933ec3c9de23fe7a456ee8"
+    },
+    ".claude/sdd/seeds/settings.json": {
+      "pack": "core",
+      "sha256": "e6e0ab50e7de6574c4cbc3917d656cc6f0ad9e787c5bdb3834aee2eeb9ef4e7a"
+    },
+    ".claude/sdd/self.toml": {
+      "pack": "core",
+      "sha256": "4f2dffc32d10946b3b228c671cad2e533f0e6f5e6142bff75519d1ca2a74cab9"
+    },
+    ".claude/sdd/specs/checker/spec.md": {
+      "pack": "core",
+      "sha256": "1fc258008b9fb5c5af4446581c12e645fdb506e68f45e25335f57c44f15721bc"
+    },
+    ".claude/sdd/specs/distribution/spec.md": {
+      "pack": "core",
+      "sha256": "7d4c10383b8a10920f09dc3656fe014ce30e854e0ebef2e430ca4802239fa9d6"
+    },
+    ".claude/sdd/specs/edit-guards/spec.md": {
+      "pack": "core",
+      "sha256": "879e20a710c8a88336db17a806b2cc2e2589b3953211004f409a4a6e36deccab"
+    },
+    ".claude/sdd/specs/method-health/spec.md": {
+      "pack": "core",
+      "sha256": "bfba547ab18ac32f9c2547810d4f8d8391ce861a91500c4d41bf9b0c72b18fc2"
+    },
+    ".claude/sdd/specs/session-hooks/spec.md": {
+      "pack": "core",
+      "sha256": "e20f6f70a39bd6209e4a05e3f186dc42c6ca61145e239a9e32b811ee61c15798"
+    },
+    ".claude/sdd/specs/traceability/spec.md": {
+      "pack": "core",
+      "sha256": "795728af18943e60217d273c9b9c54a69f36fbc5ddc94927d4f984bf16905a7a"
+    },
+    ".claude/sdd/tests/sddsupport.py": {
+      "pack": "core",
+      "sha256": "7ded417ca411ccfd24d42ea2d1f8947a672a886ad6012361562ce40edec95638"
+    },
+    ".claude/sdd/tests/test_check.py": {
+      "pack": "core",
+      "sha256": "f42483e56d7c878a61c4c342666b6ca25e0d8703d8a2917d860f050d6c606924"
+    },
+    ".claude/sdd/tests/test_distribution.py": {
+      "pack": "core",
+      "sha256": "9bd3bd16b5e73c13cdc1e42b08e7292f5d3132fec01f14e757a4d22d6b2f6a75"
+    },
+    ".claude/sdd/tests/test_hooks.py": {
+      "pack": "core",
+      "sha256": "6bbcdb530442abbda49946426e4d0152b19a8c86c9e4c5bc46d91e35f24a29f2"
+    },
+    ".claude/sdd/tests/test_status.py": {
+      "pack": "core",
+      "sha256": "75f7a80d0571389dd3f1e920d1f537f687525e215b35966006f36c645606d24a"
+    },
+    ".claude/skills/accept/SKILL.md": {
+      "pack": "core",
+      "sha256": "c04b8d6683c95443b488a29801f36ab2c5e2b93b6eadf207390a536a709b293f"
+    },
+    ".claude/skills/debug/SKILL.md": {
+      "pack": "core",
+      "sha256": "a003d24146b293af183136150fc1aff97f0f84b7e52f581df3d9e9bc6fe633c9"
+    },
+    ".claude/skills/discover/SKILL.md": {
+      "pack": "core",
+      "sha256": "99bdfac1ca646fcd97da0fb4530d94835e7f42201b778367d30ace2693b93656"
+    },
+    ".claude/skills/discover/references/coverage-screen.md": {
+      "pack": "core",
+      "sha256": "3f7b971b5132d53751705fb3dd700c7623abe12f3fb228a4bc11aca60982f61e"
+    },
+    ".claude/skills/discover/references/orchestration-ladder.md": {
+      "pack": "langgraph",
+      "sha256": "da6e5caf935d41eb0d98268840fed411d2592614bfb77541beaf6be45874a08a"
+    },
+    ".claude/skills/discover/references/splitting-rules.md": {
+      "pack": "core",
+      "sha256": "408b0290eea9f9ed703e79448db6f4e06ec32efc82e05ea76d366cc414e0444f"
+    },
+    ".claude/skills/eval/SKILL.md": {
+      "pack": "core",
+      "sha256": "c671cd77c56a3b5449c36366ec6cd55cf6b1b7bc472edab55bd6fdbb4198b9a7"
+    },
+    ".claude/skills/intake/SKILL.md": {
+      "pack": "core",
+      "sha256": "856cd77231f799935a1472fa3e8252fb57cd93bd599af9e7d1cc16ff78f7bc4d"
+    },
+    ".claude/skills/land/SKILL.md": {
+      "pack": "core",
+      "sha256": "4b7ba158e48edef0efd827c1f5a32d2d4cc48c9c8cfae2dedd0881b923c0f8aa"
+    },
+    ".claude/skills/learn/SKILL.md": {
+      "pack": "core",
+      "sha256": "d483fdf7ffa8cfe7e89467a2666e9c718c4744bd98b510e9fe8d72be63ebe802"
+    },
+    ".claude/skills/quality/SKILL.md": {
+      "pack": "core",
+      "sha256": "a207143bda636cdf0017e752b5bed5d17e7df11975605e516c9ac79976f08ddd"
+    },
+    ".claude/skills/tdd/SKILL.md": {
+      "pack": "core",
+      "sha256": "ba7995b3ccbabec8300e487b0e6c82b2e20ba656cecb343397f91f5d72a66641"
+    },
+    ".claude/skills/verify/SKILL.md": {
+      "pack": "core",
+      "sha256": "09ffac91fc5da0bb0635ca8583155e1247dc5d3b98aaaaa6eece358effe16da6"
+    },
+    "openspec/schemas/sdd-proof/schema.yaml": {
+      "pack": "core",
+      "sha256": "cf5c605db008afc8d33b3592de26dec01585d6bb54ead16be4232fe99f3fb889"
+    },
+    "openspec/schemas/sdd-proof/templates/design.md": {
+      "pack": "core",
+      "sha256": "ab677ef694dc5890761b70d8a2a471ef6c3d145d43ad55eb6903b3b8d8f9546b"
+    },
+    "openspec/schemas/sdd-proof/templates/frame.md": {
+      "pack": "core",
+      "sha256": "baa0105a34ddb4faaa029fb52f9a70983147ed3e60596c43ea4808ffb13e3116"
+    },
+    "openspec/schemas/sdd-proof/templates/intake.md": {
+      "pack": "core",
+      "sha256": "95f3461bf54cb88cc23e52faa6fbc82179fe6bb075467898566192bb487b4e9d"
+    },
+    "openspec/schemas/sdd-proof/templates/spec.md": {
+      "pack": "core",
+      "sha256": "281534741ae135510ed964af2d23fb9c41d9bd02334551de10750f9f1f20e4d4"
+    },
+    "openspec/schemas/sdd-proof/templates/tasks.md": {
+      "pack": "core",
+      "sha256": "8195e9933665c7353a6ae6725041219aedb88926ceec2a4b9c4942d279348f87"
+    },
+    "openspec/schemas/sdd-proof/templates/verify.md": {
+      "pack": "core",
+      "sha256": "13b5b6a041decbd459876c00ced437ef2960b502ff62c011520f27f303e12325"
+    }
+  },
+  "method": "sdd",
+  "openspec": "1.14.0",
+  "version": "0.2.0"
+}

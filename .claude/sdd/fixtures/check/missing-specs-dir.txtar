@@ -1,0 +1,13 @@
+# A configured directory that does not exist is a misconfiguration, never an
+# empty project. Passing here would be a check that checks nothing, forever.
+expect-errors: SDD000
+-- sdd.toml --
+[specs]
+living = "docs/specs-moved-away"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+-- tests/test_cap.py --
+def test_cap():
+    pass

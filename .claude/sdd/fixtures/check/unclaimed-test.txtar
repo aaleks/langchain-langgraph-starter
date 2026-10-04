@@ -1,0 +1,35 @@
+# Code to spec: a test file no requirement claims is behaviour nobody agreed
+# to. Checked per file, not per function -- a rule per test function would push
+# toward writing rules to satisfy the checker.
+expect-errors: SDD006
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-ONE
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/test_cap.py`
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- tests/test_cap.py --
+def test_cap():
+    pass
+-- tests/test_orphan.py --
+def test_nobody_asked_for_this():
+    pass
+-- openspec/changes/archive/.gitkeep --

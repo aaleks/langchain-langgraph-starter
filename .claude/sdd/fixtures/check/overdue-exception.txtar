@@ -1,0 +1,32 @@
+# A review date in the past is a warning, not an error: the exception may still
+# be right, but somebody has to look. Today is fixed so the fixture is stable.
+today: 2026-10-04
+expect-warnings: SDD009
+-- sdd.toml --
+[specs]
+living = "openspec/specs"
+changes = "openspec/changes"
+
+[tests]
+roots = ["tests"]
+patterns = ["test_*.py"]
+symbols = "python"
+-- openspec/specs/cap/spec.md --
+## Requirements
+
+### Requirement: CAP-STALE
+The system SHALL do one thing.
+
+- **Kind:** deterministic
+- **Status:** NOT MET
+- **Owner:** ada
+- **Review by:** 2026-10-03
+
+#### Scenario: Normal
+- **THEN** it happens
+
+#### Scenario: Counter-example — the boundary
+- **GIVEN** the edge
+- **THEN** the rule deliberately does not apply
+-- openspec/changes/archive/.gitkeep --
+-- tests/.gitkeep --
