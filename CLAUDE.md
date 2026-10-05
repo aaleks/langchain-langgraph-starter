@@ -84,8 +84,10 @@ Two conventions carry the weight:
   LangSmith tracing, no `langgraph up` or `langgraph deploy`. The server starts
   only with `bash scripts/serve.sh`: 127.0.0.1, and an environment in which
   nothing reaches LangSmith. This session runs in that same environment, and
-  its settings deny the alternatives. Search with the Grep tool -- a Bash
-  command that merely mentions `langgraph dev` is denied too. Topology is
+  its settings deny the alternatives. The deny rules match text, so a Bash
+  command that merely mentions a denied phrase is refused too: search with the
+  Grep tool, and write a commit message or PR body that names one to a file
+  (`git commit -F`). Topology is
   `draw_mermaid()` text; runs are the local server's API
   (`.claude/rules/langgraph/runtime.md`).
 - **A graph seen running is not evidence it is production-ready**, in the local

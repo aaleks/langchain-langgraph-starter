@@ -34,6 +34,7 @@ config="langgraph.json"
 
 # The server loads langgraph.json's "env" over its own environment, which would
 # undo everything below. The graphs get their settings from config/ instead.
+# Textual on purpose: a graph id named "env" trips it too -- rename the graph.
 flat="$(tr -d '\r\n' < "$config")"
 if grep -Eq '"env"[[:space:]]*:' <<< "$flat"; then
   refuse "$config has an \"env\" key, which the server loads over the local-only environment. Remove it: config/ loads .env for the graphs."
@@ -46,7 +47,7 @@ tracing='LANGSMITH_TRACING|LANGSMITH_TRACING_V2|LANGCHAIN_TRACING_V2|LANGCHAIN_T
 if [ -f .env ]; then
   found="$(sed -nE \
     -e "s/^[[:space:]]*(export[[:space:]]+)?($credentials)[[:space:]]*=[[:space:]]*['\"]?[^'\"[:space:]#].*/\\2/p" \
-    -e "s/^[[:space:]]*(export[[:space:]]+)?($tracing)[[:space:]]*=[[:space:]]*['\"]?(true|True|TRUE|1)(['\"[:space:]#].*)?$/\\2/p" \
+    -e "s/^[[:space:]]*(export[[:space:]]+)?($tracing)[[:space:]]*=[[:space:]]*['\"]?([Tt][Rr][Uu][Ee]|1)(['\"[:space:]#].*)?$/\\2/p" \
     .env | sort -u | tr '\n' ' ')"
   if [ -n "$found" ]; then
     refuse ".env sets ${found% } -- LangSmith never reaches this server. Remove it (its value was not printed)."

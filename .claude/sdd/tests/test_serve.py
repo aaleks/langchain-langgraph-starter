@@ -17,6 +17,7 @@ from pathlib import Path
 
 from sddsupport import (
     BASH,
+    DEFAULT_CONFIG,
     LANGGRAPH_SETTINGS,
     LOCAL_ONLY,
     bash_rule_pattern,
@@ -39,7 +40,7 @@ def requires_bash(cls):
 class ServeCase(unittest.TestCase):
     """A throwaway project holding the seeded wrapper and a langgraph.json."""
 
-    config: str | None = '{"graphs": {"chat": "./src/app/infrastructure/agents/registry.py:chat"}}'
+    config: str | None = DEFAULT_CONFIG
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -138,6 +139,7 @@ class TestTheServerRefusesWhatWouldUndoIt(ServeCase):
         for text, named, secret in (
             ("LANGSMITH_API_KEY=lsv2_secret_value\n", "LANGSMITH_API_KEY", "lsv2_secret_value"),
             ('export LANGCHAIN_TRACING_V2="true"\n', "LANGCHAIN_TRACING_V2", None),
+            ("LANGSMITH_TRACING=tRuE\n", "LANGSMITH_TRACING", None),
             ("LANGGRAPH_CLOUD_LICENSE_KEY='lcl_abc'\n", "LANGGRAPH_CLOUD_LICENSE_KEY", "lcl_abc"),
         ):
             with self.subTest(named=named):

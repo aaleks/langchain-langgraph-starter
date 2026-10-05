@@ -77,6 +77,11 @@ anything else -- including an `env` key that conflicts with the core seed. A
 merge that silently dropped a key would make a pack look installed when it was
 not.
 
+The seed files themselves ship in **core**, though only the langgraph pack
+seeds them. The method's own `test_serve.py` reads them, and the selftest runs
+in every installed copy. A copy without the pack would otherwise fail its own
+tests -- or, used as a source, have nothing to seed from.
+
 Alternatives considered:
 
 - **Put the LangGraph rules in the core seed.** Refused: deny rules about a

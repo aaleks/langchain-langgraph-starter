@@ -99,9 +99,10 @@ case "$rel" in
 esac
 
 # 7. The enforcement itself. An agent weakening its own checks needs a human
-#    to agree, every time.
+#    to agree, every time -- and the local-only runtime (scripts/serve.sh and
+#    the seeds it and the agent's settings come from) is enforcement too.
 case "$rel" in
-  .claude/settings.json | .claude/hooks/* | .claude/sdd/sdd.sh | .claude/sdd/sdd.py | .claude/sdd/sddlib/* | .claude/sdd/tests/* | .claude/sdd/fixtures/* | openspec/schemas/* | scripts/check.sh)
+  .claude/settings.json | .claude/hooks/* | .claude/sdd/sdd.sh | .claude/sdd/sdd.py | .claude/sdd/sddlib/* | .claude/sdd/tests/* | .claude/sdd/fixtures/* | .claude/sdd/seeds/* | openspec/schemas/* | scripts/check.sh | scripts/serve.sh)
     ask "$rel is part of the method's enforcement. Changing it changes what gets checked -- approve only if you meant to." ;;
 esac
 

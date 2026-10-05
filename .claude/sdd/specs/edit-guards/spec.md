@@ -73,7 +73,7 @@ The edit guard SHALL refuse new text that imports a common SDK into `src/*/domai
 | `from langgraph.graph import StateGraph` in `infrastructure/agents/` | allowed |
 
 ### Requirement: GUARD-ASK
-The edit guard SHALL ask the user before a write to the living spec, `openspec/specs/`, or to the method's enforcement: settings, hooks, the checker, its tests and fixtures, the schema, and `scripts/check.sh`.
+The edit guard SHALL ask the user before a write to the living spec, `openspec/specs/`, or to the method's enforcement: settings, hooks, the checker, its tests and fixtures, the seeds, the schema, `scripts/check.sh` and `scripts/serve.sh`.
 
 - **Kind:** deterministic
 - **Proved by:** `.claude/sdd/tests/test_hooks.py::TestTheLivingSpecAndTheEnforcementAsk`
@@ -83,9 +83,10 @@ The edit guard SHALL ask the user before a write to the living spec, `openspec/s
 |---|---|
 | `openspec/specs/routing/spec.md` | `ask`, "archive writes it" |
 | `.claude/settings.json`, `.claude/hooks/guard-edits.sh`, `scripts/check.sh` | `ask` |
+| `scripts/serve.sh`, `.claude/sdd/seeds/serve.sh`, `.claude/sdd/seeds/settings.langgraph.json` | `ask` -- the local-only runtime |
 
-#### Scenario: Counter-example -- deltas and skills are written freely
-- **GIVEN** a write to `openspec/changes/add-x/specs/routing/spec.md` or `.claude/skills/intake/SKILL.md`
+#### Scenario: Counter-example -- deltas, skills and other scripts are written freely
+- **GIVEN** a write to `openspec/changes/add-x/specs/routing/spec.md`, `.claude/skills/intake/SKILL.md` or `scripts/release.sh`
 - **THEN** allowed, with no output
 
 ### Requirement: GUARD-PROMPT-NOTE

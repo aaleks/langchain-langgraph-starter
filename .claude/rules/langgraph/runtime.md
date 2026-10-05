@@ -38,7 +38,9 @@ Never, in any form: `langgraph dev` run directly (it opens Studio and inherits
 your shell's keys), `--tunnel`, `--studio-url`, `--host`, `langgraph up`,
 `langgraph deploy`, `draw_mermaid_png()` with its default (it posts the graph to
 mermaid.ink). The agent's settings deny these commands; a person is trusted to
-follow this file.
+follow this file. The rules match text: a command that merely mentions one --
+a `grep`, a commit message -- is refused too. Search with the Grep tool; put a
+message that names one in a file (`git commit -F`).
 
 Every other `langgraph` command -- `validate`, `new`, `build` -- posts usage
 analytics unless `LANGGRAPH_CLI_NO_ANALYTICS=1`. The agent's settings set it;

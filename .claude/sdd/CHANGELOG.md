@@ -63,6 +63,11 @@ tracing switches do not stop. The evidence is in the change
   - agent capabilities: no tool reaching a host the design did not name.
 - `/accept` points at the graph-route reference when it exists, as `/discover`
   does for the ladder, instead of carrying LangGraph detail in a core skill.
+- **The edit guard asks** before a write to `scripts/serve.sh` or to
+  `.claude/sdd/seeds/`, as it does for `scripts/check.sh` -- the local-only
+  runtime is enforcement too. Requirement `GUARD-ASK`, amended.
+- `lib.sh` declares its shell for shellcheck, which now runs clean on every
+  script when each is checked on its own.
 
 ### Fixed
 

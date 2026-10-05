@@ -391,16 +391,19 @@ def _unmerged(existing: Path, source: Path, packs: list[str]) -> list[str]:
         current = json.loads(existing.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         current = {}
+    # A malformed file holds none of the additions: report them, never crash.
+    current = current if isinstance(current, dict) else {}
+    env = current.get("env") if isinstance(current.get("env"), dict) else {}
+    permissions = current.get("permissions")
+    permissions = permissions if isinstance(permissions, dict) else {}
     lacking = []
     for pack in packs:
         rel = PACK_SETTINGS.get(pack)
         if rel is None:
             continue
         wanted = json.loads((source / rel).read_text(encoding="utf-8"))
-        env = current.get("env", {}) if isinstance(current, dict) else {}
-        permissions = current.get("permissions", {}) if isinstance(current, dict) else {}
         if any(env.get(k) != v for k, v in wanted.get("env", {}).items()) or any(
-            rule not in permissions.get(kind, [])
+            rule not in (permissions.get(kind) if isinstance(permissions.get(kind), list) else [])
             for kind, rules in wanted.get("permissions", {}).items()
             for rule in rules
         ):

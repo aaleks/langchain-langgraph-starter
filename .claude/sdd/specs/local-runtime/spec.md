@@ -64,6 +64,7 @@ Runs LangGraph on the developer's machine only. The development server, and ever
 | `langgraph.json` with `"env": {"OPENAI_API_KEY": "sk-1"}` | exit 2, `sk-1` never printed |
 | `.env` with `LANGSMITH_API_KEY=lsv2_secret_value` | exit 2, `LANGSMITH_API_KEY` named, `lsv2_secret_value` never printed |
 | `.env` with `export LANGCHAIN_TRACING_V2="true"` | exit 2, `LANGCHAIN_TRACING_V2` named |
+| `.env` with `LANGSMITH_TRACING=tRuE` -- the server reads it lower-cased | exit 2, `LANGSMITH_TRACING` named |
 | `.env` with `LANGGRAPH_CLOUD_LICENSE_KEY='lcl_abc'` | exit 2, `LANGGRAPH_CLOUD_LICENSE_KEY` named |
 
 #### Scenario: Counter-example -- what .env may hold

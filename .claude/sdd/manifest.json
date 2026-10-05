@@ -46,7 +46,7 @@
     },
     ".claude/hooks/guard-edits.sh": {
       "pack": "core",
-      "sha256": "9af3ca2fc99072ae029b600752b79d6cc1e033183de6c83c70776b0b0ac231eb"
+      "sha256": "75a9f24342346cb74902da5b79f6b03065a6a6dadd38460069f3f726f93eb7ef"
     },
     ".claude/hooks/lib.sh": {
       "pack": "core",
@@ -62,7 +62,7 @@
     },
     ".claude/rules/langgraph/runtime.md": {
       "pack": "langgraph",
-      "sha256": "b2e37f51a00bf37b350d8f13efeeb91a52f9bcee313c72954a135c95642d7762"
+      "sha256": "65f27dd321e2f53316de35ceb9723d905dab786293d358b248022c6e5b261c39"
     },
     ".claude/rules/python/application.md": {
       "pack": "python",
@@ -90,7 +90,7 @@
     },
     ".claude/sdd/CHANGELOG.md": {
       "pack": "core",
-      "sha256": "f19629201b9bbc0a2ef099cb7ae48a1a427c47dca82ab74a2fcf4eacd0c5ed5c"
+      "sha256": "4789fe01a14d3a0c6d08b2a7a113a95d980a5b8beb1c8deca6b976acf8d4c2da"
     },
     ".claude/sdd/CREDITS.md": {
       "pack": "core",
@@ -234,7 +234,7 @@
     },
     ".claude/sdd/sddlib/distribute.py": {
       "pack": "core",
-      "sha256": "93490fddfec674b2eb993e511d0a23b18d7705ef957c8175b850964fa6959d31"
+      "sha256": "50fa45ce9bc62b51da2e7283c884de9406da9aa4a8245e000b76a65fd9abc4a3"
     },
     ".claude/sdd/sddlib/report.py": {
       "pack": "core",
@@ -278,7 +278,7 @@
     },
     ".claude/sdd/seeds/serve.sh": {
       "pack": "core",
-      "sha256": "b011dbe76af6eca416a349be0c3e5ac9507927a3adc7e515b288f22e440e97d2"
+      "sha256": "03d91be4e11fa5b59704e0989b7db2e3dd2ad96eb686194b30e887eb42767893"
     },
     ".claude/sdd/seeds/settings.json": {
       "pack": "core",
@@ -298,15 +298,15 @@
     },
     ".claude/sdd/specs/distribution/spec.md": {
       "pack": "core",
-      "sha256": "4da8529a4226f4fbaccba51d0df204c3771cda9715d48b11d6603ee37971068c"
+      "sha256": "bc0352be383a230a0045e0d965cbe17e7be653357f1f92fc657122eb3a9a6f00"
     },
     ".claude/sdd/specs/edit-guards/spec.md": {
       "pack": "core",
-      "sha256": "879e20a710c8a88336db17a806b2cc2e2589b3953211004f409a4a6e36deccab"
+      "sha256": "043ef289997c743f3e00621a9653bf13db1c1c21883e7038b733eb16492cff05"
     },
     ".claude/sdd/specs/local-runtime/spec.md": {
       "pack": "core",
-      "sha256": "7a18288e675efc24c37b21470d35b0d3c98a3be14ecc96c95d8dde4f00f633aa"
+      "sha256": "d3a7f9221cb0b6f9d2beac731ff1fe886dd95462ed35ba64d6a507002e74dcc8"
     },
     ".claude/sdd/specs/method-health/spec.md": {
       "pack": "core",
@@ -330,15 +330,15 @@
     },
     ".claude/sdd/tests/test_distribution.py": {
       "pack": "core",
-      "sha256": "9ccfb6698471d27031fb910440c9423d93042e5bf2fea877edc64dc6578ccbb2"
+      "sha256": "c9f492076e2b0446c6a2b9ec6d0bce0e9d036a57661fa782b2ee7924ee140e5f"
     },
     ".claude/sdd/tests/test_hooks.py": {
       "pack": "core",
-      "sha256": "6bbcdb530442abbda49946426e4d0152b19a8c86c9e4c5bc46d91e35f24a29f2"
+      "sha256": "0eb7b607ef9ee1190cb2a6be83e0a4e62983420bfca94529f571956cc13858b4"
     },
     ".claude/sdd/tests/test_serve.py": {
       "pack": "core",
-      "sha256": "d8d5ee616fb9a7cff952e71b6c3a1e569d0ef558e5c3eedb247f83cffae569d3"
+      "sha256": "10db73b416bba503e0d084954cab8731e88e793e434f2f2faff279959fb56261"
     },
     ".claude/sdd/tests/test_status.py": {
       "pack": "core",

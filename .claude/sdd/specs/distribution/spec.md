@@ -59,6 +59,7 @@ Install SHALL seed a pack's own project-owned files only when that pack is insta
 | an empty project, packs `langgraph` | `scripts/serve.sh` seeded; `.claude/settings.json` holds the core seed's hooks, permissions and env, plus the pack's deny rules and env |
 | an empty project, packs `python` | no `scripts/serve.sh`; `.claude/settings.json` byte for byte the core seed |
 | a project with its own `.claude/settings.json`, packs `langgraph` | its settings untouched; `seeds/settings.langgraph.json` reported for a merge by hand |
+| the same, its settings malformed (`"env": []`) | the same: untouched and reported, never a crash |
 | update of a langgraph project without `scripts/serve.sh` | reported as not seeded; nothing written |
 
 #### Scenario: Counter-example -- a merge never drops or overrides a key silently

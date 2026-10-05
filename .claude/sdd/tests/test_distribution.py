@@ -210,6 +210,14 @@ class TestAPackSeedsItsOwnFiles(SourceAndTarget):
         self.assertIn(self.ADDITIONS, report.merge_by_hand)
         self.assertIn("by hand", report.describe())
 
+    def test_malformed_settings_are_left_alone_and_reported_not_crashed_on(self):
+        existing = self.target / self.SETTINGS
+        existing.parent.mkdir(parents=True)
+        existing.write_text('{"env": [], "permissions": []}\n', encoding="utf-8")
+        report = install(self.source, self.target, ["langgraph"])
+        self.assertEqual('{"env": [], "permissions": []}\n', existing.read_text(encoding="utf-8"))
+        self.assertIn(self.ADDITIONS, report.merge_by_hand)
+
     def test_update_reports_a_pack_seed_the_project_lacks_and_writes_nothing(self):
         install(self.source, self.target, ["langgraph"])
         (self.target / "scripts/serve.sh").unlink()
