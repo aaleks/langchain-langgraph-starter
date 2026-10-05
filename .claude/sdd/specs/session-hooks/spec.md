@@ -37,7 +37,7 @@ At session start, the hook SHALL print one line per in-flight change, with its c
 - **THEN** no output at all
 
 ### Requirement: HOOKS-NEXT-STAGE
-The next stage of a change SHALL be the earliest one its class requires that has not happened: design only for structural changes, apply until every task is checked, verify until the verdict is SHIP, and a spike is done once its verdict is recorded.
+The next stage of a change SHALL be the earliest one its class requires that has not happened: design only for structural changes, specs only when the change does not declare `skip_specs: true` in its `.openspec.yaml`, apply until every task is checked, verify until the verdict is SHIP, and a spike is done once its verdict is recorded.
 
 - **Kind:** deterministic
 - **Proved by:** `.claude/sdd/tests/test_status.py::TestResumeAtTheEarliestIncompleteStage`
@@ -47,6 +47,7 @@ The next stage of a change SHALL be the earliest one its class requires that has
 |---|---|
 | bounded, frame and specs, 1 of 2 tasks checked | `apply (1/2 tasks done)` |
 | structural, frame and specs, no design | `design` |
+| structural, frame, `skip_specs: true`, no specs, no design | `design`, and the line marks `specs~` |
 | all tasks checked, verdict SHIP | `land` |
 | all tasks checked, verdict DO NOT SHIP | `verify (verdict is not SHIP)` |
 | spike with verdict kill | done |
@@ -54,3 +55,9 @@ The next stage of a change SHALL be the earliest one its class requires that has
 #### Scenario: Counter-example -- an archived change is not in flight
 - **GIVEN** a directory under `changes/archive/`
 - **THEN** it is not reported
+
+#### Scenario: Counter-example -- without the declaration, a missing spec is a missing stage
+| Given | Then |
+|---|---|
+| bounded, frame, no specs, `.openspec.yaml` without `skip_specs` | `specs` |
+| bounded, frame, no specs, `skip_specs: false` | `specs` |

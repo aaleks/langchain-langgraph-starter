@@ -34,15 +34,30 @@ by the change that first needs each one, never on day one:
 src/starter/
   domain/agents/          routing, budgets, approvals, policies: pure, tested with ==
   application/            use cases a node calls; output contracts; prompts
-  infrastructure/agents/
-    registry.py           the only import surface langgraph.json may name
-    factory.py            dependency composition -- no process exit
-    checkpointers.py      in-memory for tests and dev; a durable store for anything real
-    tools/                each with typed schemas, a capability, an authorisation check
-    graphs/<name>/        state.py, graph.py, routes.py, nodes/ -- thin adapters
+  infrastructure/
+    models.py             model builders: the only place a provider client is made
+    agents/
+      registry.py         the only names langgraph.json may use
+      factory.py          composition: settings in, dependencies wired, graph out
+      checkpointers.py    in-memory for tests and the local server; durable for anything real
+      tools/              each with a typed schema, a capability, an authorisation check
+      <graph>/            state.py, graph.py, nodes.py, routes.py -- thin adapters
 ```
 
 Nodes read serialisable state, call a use case or a tool, and return a typed
-update. Conditional routes call a domain policy. See
-`docs/decisions/0003-langgraph-is-an-adapter.md` and
+update. Conditional routes call a domain policy. The graphs run on this machine
+only: `scripts/serve.sh` starts the development server on 127.0.0.1, from an
+environment in which nothing reaches LangSmith. See
+`docs/decisions/0003-langgraph-is-an-adapter.md`,
+`docs/decisions/0004-langgraph-runs-locally.md` and
 `.claude/rules/langgraph/graphs.md`.
+
+| Rule | Enforced by |
+|---|---|
+| `langgraph.json` names only registry exports, under stable ids, with no `env` | `tests/architecture/test_graphs.py` |
+| the agents adapter imports no provider SDK or client | `tests/architecture/test_graphs.py` (allowlist) |
+| no model built inline in the agents adapter | `tests/architecture/test_graphs.py` |
+| the server starts only through `scripts/serve.sh`; nothing reaches LangSmith | `.claude/settings.json` (deny rules and env), `scripts/serve.sh` |
+
+Each `test_graphs.py` check skips, with its reason, until the first graph
+exists -- and each is proved, on fixtures, to fail when it should.

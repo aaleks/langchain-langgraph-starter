@@ -16,14 +16,29 @@
 <!-- Only when the frame's rung is a hand-written graph, otherwise N-A. The
      table is the contract; a diagram is review evidence, not the source of truth. -->
 
-| Node (a business outcome) | Reads | Writes or side effect | Routes to | Decided by (domain policy or model) |
-|---|---|---|---|---|
+| Node (a business outcome) | Kind (read, decide, write) | Reads | Writes or side effect | Routes to | Decided by (domain policy or model) |
+|---|---|---|---|---|---|
 
-- **State:** <!-- fields, owner, retention, serialisable, version -->
+- **State:** <!-- fields, owner, serialisable, version -->
+- **Identity:** <!-- who creates a thread id, which user and tenant own it, and
+  the ownership check before a resume, a read or a fork -->
 - **Budgets:** <!-- steps, retries, replans, tool calls -- each with its terminal outcome -->
+- **Errors:** <!-- each failure the graph can meet, by class -- transient,
+  correctable, contract, policy, needs a human, defect -- and its handling and
+  terminal outcome -->
 - **Interrupts:** <!-- where a human approves, and how the same thread resumes -->
 - **Tools:** <!-- capability, authorisation, idempotency, retry class -->
-- **Persistence:** <!-- checkpointer per environment; what is never stored -->
+- **Streaming:** <!-- what streams to whom (updates, messages, custom events),
+  and what never does -->
+- **Persistence:** <!-- checkpointer per environment; encryption at rest;
+  retention and deletion; what is never stored -->
+- **Observability:** <!-- run and thread ids in every record; what is logged,
+  locally; what never is (secrets, raw user content) -->
+- **Runtime:** <!-- how it runs locally -- the entry points, the tests, the
+  development server -- and the durable store it needs, if any -->
+- **Test plan:** <!-- the tier for each claim: policies (unit), routes and
+  topology with fakes (integration), durability with a real saver, the local
+  server smoke (live), generated text (/eval) -->
 - **Graph id:** <!-- the registered id, and what changing it does to existing threads -->
 
 ## Risks

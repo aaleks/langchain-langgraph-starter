@@ -13,7 +13,8 @@ real. You report; you never fix. No graph exists yet: say so and stop.
    route taken and the terminal outcome: normal completion, refusal, approval,
    rejection, tool denial, malformed model output, retrieval failure, repeated
    transient failure, budget or retry exhaustion, interruption, and resume on
-   the same thread.
+   the same thread. Each error class in design.md has its terminal outcome
+   proved, and a topology test holds the graph to design.md's node table.
 2. **Deterministic doubles.** A fixed clock and id generator wherever retries,
    deadlines, checkpoint ids or audit records are asserted. Doubles for
    third-party classes subclass the real base class where one exists, so they

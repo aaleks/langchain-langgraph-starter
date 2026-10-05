@@ -17,6 +17,9 @@ trigger that has quietly fired is a finding.
 | SLOs, capacity, back-pressure | a latency or availability promise made to anyone |
 | Runbooks, dashboards, escalation | someone other than the author has to diagnose a failure |
 | OpenAPI and breaking-change diffs | an interface another system consumes |
+| An automated connection probe for the local LangGraph server, in CI | the second upgrade of `langgraph-cli` or `langgraph-api`, or the first manual probe that finds a connection. Today's probe is `strace`, Linux only; a Python audit hook misses uvloop's sockets |
+| A local run viewer beyond Mermaid text and the server's API | a person needs to inspect runs interactively more often than the API allows -- adopted through build-or-adopt, local only |
+| A delta-and-archive flow for the method's own requirements | a method change whose requirement diff a reviewer could not follow in its PR. Until then they change in place in `.claude/sdd/specs/`, under a change that declares `skip_specs` |
 | A layered documentation product | the method gains users who are not its author |
 | Assurance profiles and a production-readiness block | **refused**, not deferred: the intake classes and the coverage screen replaced them |
 

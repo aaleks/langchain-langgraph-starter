@@ -81,7 +81,7 @@ The core is stack-neutral. A pack adds what is true of every project on one stac
 |---|---|
 | `core` | everything above, always |
 | `python` | layer rules for `src/*/domain`, `application`, `infrastructure` -- see `packs/python.md` |
-| `langgraph` | the orchestration ladder, graph rules, and four auditors -- see `packs/langgraph.md` |
+| `langgraph` | the orchestration ladder, graph and runtime rules, four auditors, and LangGraph on the developer's machine only: a seeded `scripts/serve.sh` and settings that keep the agent away from LangSmith -- see `packs/langgraph.md` |
 
 ## Install, update, release
 
@@ -100,17 +100,22 @@ bash .claude/sdd/sdd.sh manifest
 
 - **install** copies what is absent and seeds the project-owned files once
   (`sdd.toml`, settings, `openspec/config.yaml`, `scripts/check.sh`, the lessons
-  and learnings files). It never writes `CLAUDE.md`, `.env`, `pyproject.toml`,
-  a lockfile, `src/` or `tests/`. An existing file is left alone and reported.
+  and learnings files). A pack seeds its own files too (`langgraph`:
+  `scripts/serve.sh`), and adds its rules to the settings being seeded. It
+  never writes `CLAUDE.md`, `.env`, `pyproject.toml`, a lockfile, `src/` or
+  `tests/`. An existing file is left alone and reported.
 - **update** replaces a shipped file only if it is still exactly what was
   installed. A file the project modified is reported and left alone -- never
-  merged -- and a file it deleted is not restored. Seeds are never updated.
+  merged -- and a file it deleted is not restored. Seeds are never updated; a
+  pack seed new in this version is reported, and running `install` again with
+  the same packs writes it.
 - **manifest --check** fails when a shipped file changed without the manifest
   moving with it; `scripts/check.sh` runs it here, so the method cannot drift
   from its own record. Install and update refuse a source whose manifest is stale.
 
 An existing `.claude/settings.json` is left alone: merge the `hooks` block from
-`seeds/settings.json` by hand, once.
+`seeds/settings.json` by hand, once -- and, with the langgraph pack, the `env`
+and `deny` entries of `seeds/settings.langgraph.json`, which install reports.
 
 ## What this guarantees -- and what it does not
 
@@ -128,8 +133,10 @@ An existing `.claude/settings.json` is left alone: merge the `hooks` block from
 **Guarded at write time, not guaranteed:** the edit hooks refuse writes to
 secrets, ground truth, lockfiles and CI workflows, and ask before the living
 spec or the enforcement changes. They watch the Edit and Write tools only -- a
-shell command goes around them, as it goes around any hook. They are a guard
-against habit, not a security boundary. **The boundary is outside the agent**:
+shell command goes around them, as it goes around any hook. With the langgraph
+pack, settings deny the agent the commands that would reach LangSmith; they
+match command text, so a launcher spelled another way goes around them too.
+All of these are a guard against habit, not a security boundary. **The boundary is outside the agent**:
 a protected default branch, required review, and CI that runs from the
 committed revision and that no agent can edit. Turn those on.
 
@@ -150,7 +157,7 @@ A terminal, CI and `/land` run that script, so the list cannot drift between the
   requirements are the right ones.
 - **The skills' wording is not yet pressure-tested** against an agent under
   deadline pressure the way Superpowers' is. `pressure-tests.md` holds the
-  protocol and the log -- empty, honestly, at 0.2.0.
+  protocol and the log -- empty, honestly, at 0.3.0.
 - **Portability is partly proved**: the checker reads its layout from the
   adapter, its own specs pass through a second adapter, and it has resolved and
   refused references in a TypeScript layout with only `sdd.toml` changed. No

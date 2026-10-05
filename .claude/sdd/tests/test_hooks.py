@@ -172,9 +172,19 @@ class TestTheLivingSpecAndTheEnforcementAsk(GuardCase):
             with self.subTest(rel=rel):
                 self.assertEqual("ask", self.decision(self.write(rel))["permissionDecision"])
 
-    def test_counter_example_a_change_delta_and_a_skill_are_written_freely(self):
+    def test_the_local_only_runtime_asks(self):
+        for rel in (
+            "scripts/serve.sh",
+            ".claude/sdd/seeds/serve.sh",
+            ".claude/sdd/seeds/settings.langgraph.json",
+        ):
+            with self.subTest(rel=rel):
+                self.assertEqual("ask", self.decision(self.write(rel))["permissionDecision"])
+
+    def test_counter_example_a_change_delta_a_skill_and_another_script_are_written_freely(self):
         self.assertAllowed(self.write("openspec/changes/add-x/specs/routing/spec.md"))
         self.assertAllowed(self.write(".claude/skills/intake/SKILL.md"))
+        self.assertAllowed(self.write("scripts/release.sh"))
 
 
 @requires_bash

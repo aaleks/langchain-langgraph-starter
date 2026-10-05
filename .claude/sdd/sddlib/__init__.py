@@ -9,7 +9,7 @@ Standard library only, Python 3.11 or later, so it runs in any project that has
 a Python on the path -- whatever language the project itself is written in.
 """
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # The OpenSpec release this method was verified against. sdd.sh pins the same
 # value; .claude/sdd/tests/test_distribution.py fails if the two disagree.

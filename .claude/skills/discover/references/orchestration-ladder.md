@@ -55,7 +55,7 @@ fake model. Before building one:
 A single-check review needs no `StateGraph`: an `after_model` hook can send a
 rejected answer back, bounded by the run's step budget. Write the graph when the
 review needs a terminal outcome of its own, state of its own (attempts,
-critique history), more than one reviewer, or its own node in Studio and traces.
+critique history), more than one reviewer, or its own node in the graph and its run history.
 
 When the rung is a graph, design.md's orchestration table is required, and
 `.claude/rules/langgraph/graphs.md` applies to every file under

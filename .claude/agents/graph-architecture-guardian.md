@@ -23,7 +23,8 @@ never fix. No graph exists yet (nothing under `infrastructure/agents/`, no
    has a budget and an exit; there is a terminal state for success, for
    failure, for exhausted budgets, and for each interrupt.
 4. **Registration.** `langgraph.json` names only compiled graphs exported by the
-   registry module, never a node, a prompt or a notebook. Graph ids are
+   registry module, never a node, a prompt or a notebook, and carries no `env`
+   -- the server would load it over its own environment. Graph ids are
    deliberate, stable identifiers: every id resolves, and the registry and
    `langgraph.json` agree.
 5. **Subgraphs** exist for an independent workflow with its own state contract,
@@ -31,6 +32,13 @@ never fix. No graph exists yet (nothing under `infrastructure/agents/`, no
 6. **Topology tests** assert a maintained public contract -- node names,
    allowed transitions, interrupt points, terminal outcomes -- never a pixel
    snapshot.
+7. **The runtime stays local** unless an ADR in `docs/decisions/` says
+   otherwise (`.claude/rules/langgraph/runtime.md`). The server starts only
+   through `scripts/serve.sh`. The wrapper and the agent's settings hold the
+   same local-only environment. Nothing in the repository points at
+   `smith.langchain.com`, a tunnel or a Studio URL, or renders a graph with
+   `draw_mermaid_png()`'s default (it posts the graph to mermaid.ink). A
+   reference to any of these is a VIOLATION.
 
 Report `[VIOLATION | WARNING | NOTE]` with Where / Rule / Why / Fix, and a
 one-line verdict.

@@ -21,7 +21,8 @@ change is `.claude/sdd/GUIDE.md`.
 - **OpenSpec 1.14** for the spec lifecycle, pinned and run through
   `bash .claude/sdd/sdd.sh openspec <args>`. Needs Node 20.19+.
 - **LangChain and LangGraph** arrive with the first change whose requirements
-  need them. None is installed yet.
+  need them. None is installed yet. They run on this machine only -- never
+  through LangSmith (below).
 
 ## Commands
 
@@ -29,6 +30,7 @@ change is `.claude/sdd/GUIDE.md`.
 uv sync                                   # install, dev group included
 bash scripts/check.sh                     # everything CI runs -- the one list
 bash scripts/check.sh live                # also tests needing services, models, quota
+bash scripts/serve.sh                     # the local LangGraph server, once a graph is registered
 uv run pytest                             # the suite; no services, no keys
 uv run pytest tests/architecture          # the layer contracts
 bash .claude/sdd/sdd.sh check             # requirement <-> test traceability
@@ -77,9 +79,23 @@ Two conventions carry the weight:
   `infrastructure/agents/registry.py`.** Graph ids are deliberate interfaces.
 - **No default test calls a model**: fake models, fake tools, every route proved
   by the route it takes. In-memory checkpointing is never evidence of durability.
-- **Studio rendering a graph is not evidence it is production-ready.**
+- **Local only, never through LangSmith**
+  (`docs/decisions/0004-langgraph-runs-locally.md`). No hosted Studio, no
+  LangSmith tracing, no `langgraph up` or `langgraph deploy`. The server starts
+  only with `bash scripts/serve.sh`: 127.0.0.1, and an environment in which
+  nothing reaches LangSmith. This session runs in that same environment, and
+  its settings deny the alternatives. The deny rules match text, so a Bash
+  command that merely mentions a denied phrase is refused too: search with the
+  Grep tool, and write a commit message or PR body that names one to a file
+  (`git commit -F`). Topology is
+  `draw_mermaid()` text; runs are the local server's API
+  (`.claude/rules/langgraph/runtime.md`).
+- **A graph seen running is not evidence it is production-ready**, in the local
+  server or in a diagram. Its routes are proved by fake-model tests.
 
-The full plan, in slices: `docs/roadmap.md`. The decision: `docs/decisions/0003-langgraph-is-an-adapter.md`.
+The full plan, in slices: `docs/roadmap.md`. The decisions:
+`docs/decisions/0003-langgraph-is-an-adapter.md` and
+`docs/decisions/0004-langgraph-runs-locally.md`.
 
 ## Where things are
 
@@ -94,6 +110,7 @@ docs/decisions/         ADRs -- one per decision that is expensive to reverse
 docs/roadmap.md         the first changes, in order
 docs/ci/                the CI workflow, proposed; a person moves it into .github/
 docs/learnings.md       what went wrong, and what it left behind
+scripts/                check.sh (every check, one list); serve.sh (the local LangGraph server)
 ```
 
 ## Rules for this project

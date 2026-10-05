@@ -16,6 +16,11 @@ What you get on day one:
   through the loop like every other.
 - **A LangGraph plan** -- the adoption ladder, where graphs live, and the slices
   to build them in: [`docs/roadmap.md`](docs/roadmap.md).
+- **LangGraph on your machine only** -- never through LangSmith: no hosted
+  Studio, no tracing, no `langgraph up`. `bash scripts/serve.sh` is the one way
+  to start the development server, from an environment measured to make no
+  outbound connection. Why, and what replaces Studio:
+  [`docs/decisions/0004-langgraph-runs-locally.md`](docs/decisions/0004-langgraph-runs-locally.md).
 
 ## Prerequisites
 
@@ -85,7 +90,9 @@ bash .claude/sdd/sdd.sh update  ../another-starter       # later, from a newer c
 
 Install never overwrites a file; update replaces only what the other project
 never modified, and reports the rest. Packs: `core` always, `python` for the
-layer rules, `langgraph` for graph rules and auditors.
+layer rules, `langgraph` for graph rules, auditors and the local-only runtime --
+it seeds `scripts/serve.sh` and adds the local-only environment and deny rules
+to the settings it seeds.
 
 ## Layout
 
@@ -97,6 +104,7 @@ openspec/             specs (living), changes (in flight), the sdd-proof schema
 sdd.toml              where this project keeps its specs and tests, and its commands
 docs/                 decisions (ADRs), architecture, roadmap, ci, learnings
 scripts/check.sh      every check, one list
+scripts/serve.sh      the local LangGraph server -- 127.0.0.1, nothing to LangSmith
 ```
 
 ## Licence

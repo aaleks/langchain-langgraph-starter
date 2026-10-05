@@ -46,6 +46,29 @@ Update SHALL replace a shipped file only if it is unchanged since install, remov
 | a shipped file the project deleted | not restored |
 | an upstream change to the sdd.toml seed | the project's sdd.toml untouched |
 
+### Requirement: DIST-PACK-SEEDS
+Install SHALL seed a pack's own project-owned files only when that pack is installed, and SHALL merge the pack's settings additions into the settings it seeds. Settings a project already has SHALL be left alone, with the additions reported for a merge by hand. Update SHALL report a pack seed the project lacks, and write nothing.
+
+- **Kind:** deterministic
+- **Proved by:** `.claude/sdd/tests/test_distribution.py::TestAPackSeedsItsOwnFiles`,
+  `.claude/sdd/tests/test_distribution.py::TestALangGraphInstallIsLocalOnly`
+
+#### Scenario: Seeded with the pack, and only with it
+| Given | Then |
+|---|---|
+| an empty project, packs `langgraph` | `scripts/serve.sh` seeded; `.claude/settings.json` holds the core seed's hooks, permissions and env, plus the pack's deny rules and env |
+| an empty project, packs `python` | no `scripts/serve.sh`; `.claude/settings.json` byte for byte the core seed |
+| a project with its own `.claude/settings.json`, packs `langgraph` | its settings untouched; `seeds/settings.langgraph.json` reported for a merge by hand |
+| the same, its settings malformed (`"env": []`) | the same: untouched and reported, never a crash |
+| update of a langgraph project without `scripts/serve.sh` | reported as not seeded; nothing written |
+
+#### Scenario: Counter-example -- a merge never drops or overrides a key silently
+| Given | Then |
+|---|---|
+| additions with a top-level `hooks` key | install refused before anything is written, naming the key |
+| additions whose `env` gives `OPENSPEC_TELEMETRY` another value | install refused, naming the variable |
+| install run twice, packs `langgraph` | nothing reported to merge the second time: the settings already hold the additions |
+
 ### Requirement: DIST-MANIFEST
 `manifest --check` SHALL fail when a shipped file changed, appeared or disappeared since the manifest was generated, and install and update SHALL refuse a source whose manifest is stale.
 
@@ -60,7 +83,7 @@ Update SHALL replace a shipped file only if it is unchanged since install, remov
 | Given | Then |
 |---|---|
 | `.claude/rules/project/lessons.md`, `.claude/skills/deploy/SKILL.md` | in no pack |
-| `discover/references/orchestration-ladder.md` | the langgraph pack, inside a core skill |
+| `discover/references/orchestration-ladder.md`, `accept/references/graph-routes.md` | the langgraph pack, inside a core skill |
 
 ### Requirement: DIST-ONE-VERSION
 The pinned OpenSpec release SHALL be stated in sdd.sh and the library alike, and the changelog SHALL have a `## <version>` heading for the current method version.
