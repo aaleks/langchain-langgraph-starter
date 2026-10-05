@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for the SDD hooks. Sourced, never executed.
 #
 # Portable on purpose: bash 3.2 (macOS's default) and Git Bash on Windows. So no

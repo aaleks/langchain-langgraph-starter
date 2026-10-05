@@ -176,9 +176,11 @@ as not collected. A method change is argued from these, not from taste.
 | project | its architecture, its packs' conventions, its lessons, its context | `CLAUDE.md`, `rules/project/`, `openspec/config.yaml` | the project decides |
 
 A stack pack (`python`, `langgraph`) is universal for every project on that
-stack. A place where the method had to be edited outside the adapter to fit a
-project is a tier violation: record it, and move that thing into the adapter or
-out of the method.
+stack. It may seed project-owned files and add rules to the settings install
+seeds -- the langgraph pack's local-only runtime does both -- after which they
+belong to the project. A place where the method had to be edited outside the
+adapter to fit a project is a tier violation: record it, and move that thing
+into the adapter or out of the method.
 
 ## 13. What was refused, and what waits
 

@@ -117,10 +117,13 @@ artifacts:
       Decisions with the alternatives considered and why. A decision that is
       expensive to reverse also gets an ADR in docs/decisions/. When the
       frame's rung is a hand-written graph, fill the orchestration design:
-      the node/transition table is the contract -- finite routes, budgets
-      with a terminal outcome each, interrupts, tools and their capabilities,
-      what is persisted and what never is. A diagram is review evidence, not
-      the source of truth. No code here; no restating the specs.
+      the node/transition table is the contract -- each node read, decide or
+      write; finite routes; budgets with a terminal outcome each; errors by
+      class; interrupts; tools and their capabilities; who owns a thread;
+      what streams; what is persisted, encrypted and deleted, and what never
+      is; how it runs locally; and the test tier for each claim. A diagram is
+      review evidence, not the source of truth. No code here; no restating
+      the specs.
     requires:
       - frame
 

@@ -16,7 +16,8 @@ so and stop.
 2. **Authorisation at the boundary.** Capability, identity, URL, file and network
    allow-lists, and side-effect policy are enforced by code right before
    execution -- never by a tool description, never by the prompt, never by
-   remote server metadata.
+   remote server metadata. No tool reaches a host the design did not name --
+   and none reaches LangSmith while the project's ADRs keep LangGraph local.
 3. **Writes are separate from reads.** A write-capable tool receives an
    already-authorised, schema-validated proposal; consequential writes need an
    interrupt for human approval.

@@ -1,0 +1,29 @@
+{
+  "env": {
+    "LANGSMITH_TRACING": "false",
+    "LANGSMITH_TRACING_V2": "false",
+    "LANGCHAIN_TRACING_V2": "false",
+    "LANGCHAIN_TRACING": "false",
+    "LANGSMITH_API_KEY": "",
+    "LANGCHAIN_API_KEY": "",
+    "LANGSMITH_CONTROL_PLANE_API_KEY": "",
+    "LANGGRAPH_CLOUD_LICENSE_KEY": "",
+    "LANGSMITH_ENDPOINT": "http://127.0.0.1:9",
+    "LANGCHAIN_ENDPOINT": "http://127.0.0.1:9",
+    "LANGGRAPH_CLI_NO_ANALYTICS": "1",
+    "LANGGRAPH_NO_VERSION_CHECK": "true"
+  },
+  "permissions": {
+    "deny": [
+      "Bash(*smith.langchain.com*)",
+      "Bash(*--studio-url*)",
+      "Bash(*--tunnel*)",
+      "Bash(*langgraph deploy*)",
+      "Bash(*langgraph up*)",
+      "Bash(*langgraph dev*)",
+      "Bash(*langgraph_cli dev*)",
+      "Bash(*langgraph-cli dev*)",
+      "Bash(*langgraph_api.cli*)"
+    ]
+  }
+}

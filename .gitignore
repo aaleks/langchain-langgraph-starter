@@ -31,6 +31,13 @@ quality-report.md
 mutation.sqlite
 mutation.html
 
+# LangGraph: the local server's threads, and checkpoint stores -- data, not
+# source, and never evidence of anything when committed
+.langgraph_api/
+*.sqlite
+*.sqlite3
+*.db
+
 # Editors and OS
 .idea/
 .vscode/*

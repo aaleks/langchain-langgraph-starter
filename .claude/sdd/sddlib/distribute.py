@@ -17,8 +17,10 @@ So every shipped file is listed in manifest.json with its pack and its hash:
 
 Project-owned files -- sdd.toml, settings, lessons, openspec/config.yaml,
 scripts/check.sh -- are SEEDED once from .claude/sdd/seeds/ and never touched
-again. CLAUDE.md, .env, pyproject.toml, lockfiles, src/ and tests/ are never
-written at all.
+again. A pack seeds its own files too (the langgraph pack: scripts/serve.sh), and
+may add rules to the settings install seeds -- merged once, into settings being
+seeded, never into settings a project already has. CLAUDE.md, .env,
+pyproject.toml, lockfiles, src/ and tests/ are never written at all.
 """
 
 from __future__ import annotations
@@ -68,6 +70,7 @@ PACK_RULES: tuple[tuple[str, str], ...] = (
     ("langgraph", ".claude/rules/langgraph/*"),
     *(("langgraph", f".claude/agents/{a}.md") for a in LANGGRAPH_AGENTS),
     ("langgraph", ".claude/skills/discover/references/orchestration-ladder.md"),
+    ("langgraph", ".claude/skills/accept/references/graph-routes.md"),
     ("langgraph", ".claude/sdd/packs/langgraph.md"),
     ("python", ".claude/rules/python/*"),
     ("python", ".claude/sdd/packs/python.md"),
@@ -95,6 +98,13 @@ SEEDS = {
     "openspec/specs/.gitkeep": None,
     "openspec/changes/archive/.gitkeep": None,
 }
+# A pack's own project-owned files: seeded only when the pack is installed.
+PACK_SEEDS = {
+    "langgraph": {"scripts/serve.sh": ".claude/sdd/seeds/serve.sh"},
+}
+# A pack's additions to the settings install seeds: env and permission rules.
+SETTINGS = ".claude/settings.json"
+PACK_SETTINGS = {"langgraph": ".claude/sdd/seeds/settings.langgraph.json"}
 NEVER = ("CLAUDE.md", ".env", "pyproject.toml", "lockfiles", "src/", "tests/")
 
 
@@ -145,6 +155,8 @@ class Report:
     kept: list[str] = field(default_factory=list)  # modified locally: left alone
     not_restored: list[str] = field(default_factory=list)  # deleted locally: left deleted
     seeded: list[str] = field(default_factory=list)
+    merge_by_hand: list[str] = field(default_factory=list)  # pack settings, settings present
+    unseeded: list[str] = field(default_factory=list)  # pack seeds update will not write
     dry_run: bool = False
 
     def describe(self) -> str:
@@ -159,6 +171,17 @@ class Report:
             ),
             ("left alone: deleted in this project, not restored", self.not_restored, "!"),
             ("seeded (project-owned from now on; never updated)", self.seeded, "+"),
+            (
+                f"left alone: {SETTINGS} exists -- merge these pack additions into it by hand",
+                self.merge_by_hand,
+                "!",
+            ),
+            (
+                "not seeded: update never writes a project-owned file -- run install "
+                "with the same packs to seed",
+                self.unseeded,
+                "!",
+            ),
         )
         lines = ["dry run -- nothing was written" if self.dry_run else ""]
         for title, items, mark in sections:
@@ -175,6 +198,7 @@ def install(source: Path, target: Path, packs: list[str], dry_run: bool = False)
     """Copy the method into a project. An existing file is never overwritten."""
     manifest = _source_manifest(source)
     selected = _select(manifest, ["core", *packs])
+    settings = seeded_settings(source, packs)  # a bad merge is refused before any write
     report = Report(dry_run=dry_run)
     for rel, entry in sorted(selected.items()):
         destination = target / rel
@@ -184,7 +208,7 @@ def install(source: Path, target: Path, packs: list[str], dry_run: bool = False)
         else:
             report.written.append(rel)
             _copy(source / rel, destination, dry_run)
-    _seed(source, target, report, dry_run)
+    _seed(source, target, packs, settings, report, dry_run)
     if not dry_run:
         write_manifest(target, {**manifest, "files": selected, "packs": ["core", *packs]})
     return report
@@ -232,6 +256,9 @@ def update(source: Path, target: Path, dry_run: bool = False) -> Report:
         elif destination.exists():
             report.kept.append(rel)
 
+    report.unseeded += [
+        rel for pack in packs for rel in PACK_SEEDS.get(pack, {}) if not (target / rel).exists()
+    ]
     if not dry_run:
         write_manifest(target, {**new_manifest, "files": new, "packs": packs})
     return report
@@ -289,10 +316,62 @@ def _select(manifest: dict, packs: list[str]) -> dict:
     return {rel: e for rel, e in manifest["files"].items() if e["pack"] in packs}
 
 
-def _seed(source: Path, target: Path, report: Report, dry_run: bool) -> None:
-    for rel, seed in SEEDS.items():
+def seeded_settings(source: Path, packs: list[str]) -> str | None:
+    """The settings a fresh install seeds: the core seed plus each pack's additions.
+
+    None when no installed pack adds anything, so the core seed is copied byte for
+    byte. Raises before install writes anything when an addition cannot merge.
+    """
+    additions = [PACK_SETTINGS[pack] for pack in packs if pack in PACK_SETTINGS]
+    if not additions:
+        return None
+    settings = json.loads((source / SEEDS[SETTINGS]).read_text(encoding="utf-8"))
+    for rel in additions:
+        merge_settings(settings, json.loads((source / rel).read_text(encoding="utf-8")), rel)
+    return json.dumps(settings, indent=2) + "\n"
+
+
+def merge_settings(settings: dict, additions: dict, origin: str) -> None:
+    """Add a pack's env and permission rules to settings, in place.
+
+    Anything else, and an env value that would change one already there, is
+    refused: a merge that dropped or overrode a key silently would make a pack
+    look installed when it was not.
+    """
+    unknown = sorted(set(additions) - {"env", "permissions"})
+    if unknown:
+        raise ValueError(
+            f"{origin}: a pack adds env and permissions only, not {', '.join(unknown)}"
+        )
+    env = settings.setdefault("env", {})
+    for key, value in additions.get("env", {}).items():
+        if key in env and env[key] != value:
+            raise ValueError(f"{origin}: env {key} would change {env[key]!r} to {value!r}")
+        env[key] = value
+    permissions = settings.setdefault("permissions", {})
+    for kind, rules in additions.get("permissions", {}).items():
+        if kind not in ("allow", "ask", "deny"):
+            raise ValueError(f"{origin}: a pack adds permissions allow, ask or deny, not {kind}")
+        current = permissions.setdefault(kind, [])
+        current += [rule for rule in rules if rule not in current]
+
+
+def _seed(
+    source: Path,
+    target: Path,
+    packs: list[str],
+    settings: str | None,
+    report: Report,
+    dry_run: bool,
+) -> None:
+    seeds = dict(SEEDS)
+    for pack in packs:
+        seeds.update(PACK_SEEDS.get(pack, {}))
+    for rel, seed in seeds.items():
         destination = target / rel
         if destination.exists():
+            if rel == SETTINGS and settings is not None:
+                report.merge_by_hand += _unmerged(destination, source, packs)
             continue
         report.seeded.append(rel)
         if dry_run:
@@ -300,8 +379,33 @@ def _seed(source: Path, target: Path, report: Report, dry_run: bool) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         if seed is None:
             destination.touch()
+        elif rel == SETTINGS and settings is not None:
+            destination.write_text(settings, encoding="utf-8")
         else:
             shutil.copyfile(source / seed, destination)
+
+
+def _unmerged(existing: Path, source: Path, packs: list[str]) -> list[str]:
+    """The packs' settings additions that settings a project already has lack."""
+    try:
+        current = json.loads(existing.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        current = {}
+    lacking = []
+    for pack in packs:
+        rel = PACK_SETTINGS.get(pack)
+        if rel is None:
+            continue
+        wanted = json.loads((source / rel).read_text(encoding="utf-8"))
+        env = current.get("env", {}) if isinstance(current, dict) else {}
+        permissions = current.get("permissions", {}) if isinstance(current, dict) else {}
+        if any(env.get(k) != v for k, v in wanted.get("env", {}).items()) or any(
+            rule not in permissions.get(kind, [])
+            for kind, rules in wanted.get("permissions", {}).items()
+            for rule in rules
+        ):
+            lacking.append(rel)
+    return lacking
 
 
 def _copy(origin: Path, destination: Path, dry_run: bool) -> None:

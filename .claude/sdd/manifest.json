@@ -2,7 +2,7 @@
   "files": {
     ".claude/agents/agent-capability-auditor.md": {
       "pack": "langgraph",
-      "sha256": "ecdf3985d899e09d7682ff8d62977210d3815354aa2e51111b0762a06ff4ea83"
+      "sha256": "c4494c960527b259ba7d94aa04ec7c8c2aec77c629d45b7f43d9dc6e403c8848"
     },
     ".claude/agents/architecture-guardian.md": {
       "pack": "core",
@@ -18,15 +18,15 @@
     },
     ".claude/agents/durability-auditor.md": {
       "pack": "langgraph",
-      "sha256": "26f55120515d3384abdbd69e7f46a615d58acacac3af92f1ce3e1edd04d0667c"
+      "sha256": "7635b1a22e9e91393f6046a213bdd643efe75b958f4ca6dff1e3590ca605b116"
     },
     ".claude/agents/graph-architecture-guardian.md": {
       "pack": "langgraph",
-      "sha256": "a7660effce9d15dfb6bb3ac26f07ca671f68fcf3f16e0aebc788bcfc6e648e3b"
+      "sha256": "b4f60468511e8046c22233ae32d70441c34ef7a12db2e2f300a8eed6331810ca"
     },
     ".claude/agents/graph-eval-auditor.md": {
       "pack": "langgraph",
-      "sha256": "46669a2ef1860b18986bda33d561a805aec971b078fd4afe6b4016b7ddc285f3"
+      "sha256": "c015a35bf98ddac97e80723656be69def5d0abf3835693b105e5d9dafe051cba"
     },
     ".claude/agents/mutation-analyst.md": {
       "pack": "core",
@@ -50,7 +50,7 @@
     },
     ".claude/hooks/lib.sh": {
       "pack": "core",
-      "sha256": "8dfa8cedeeb7caa07e2495847db12aaaeee48d359d4c7e8d1b124a743221edbe"
+      "sha256": "b1826d13d72e31177e16607552b384fe9a894c0c630b067bc0c77e0ec10a5acc"
     },
     ".claude/hooks/session-context.sh": {
       "pack": "core",
@@ -58,7 +58,11 @@
     },
     ".claude/rules/langgraph/graphs.md": {
       "pack": "langgraph",
-      "sha256": "8d65479f40783462b25ad96573945f028a80b0c3039c605cd6708715fb544a87"
+      "sha256": "8885ba5986940b97553fdf38519e993c33e020c56195b53e73941de371eed120"
+    },
+    ".claude/rules/langgraph/runtime.md": {
+      "pack": "langgraph",
+      "sha256": "b2e37f51a00bf37b350d8f13efeeb91a52f9bcee313c72954a135c95642d7762"
     },
     ".claude/rules/python/application.md": {
       "pack": "python",
@@ -86,7 +90,7 @@
     },
     ".claude/sdd/CHANGELOG.md": {
       "pack": "core",
-      "sha256": "f893f412ffd37bf27636ab645e091a2a19aba8963b0124ef28514c09b0c73380"
+      "sha256": "f19629201b9bbc0a2ef099cb7ae48a1a427c47dca82ab74a2fcf4eacd0c5ed5c"
     },
     ".claude/sdd/CREDITS.md": {
       "pack": "core",
@@ -98,15 +102,15 @@
     },
     ".claude/sdd/METHOD.md": {
       "pack": "core",
-      "sha256": "7e4532d362b3ae441167eb6dbd36cb5ae913e931b9902c33f0bdb6f62b9ca998"
+      "sha256": "25a6515a3125d725affae9973d0bd3c28cda94128b4ddb4941b33293633d674e"
     },
     ".claude/sdd/README.md": {
       "pack": "core",
-      "sha256": "0043ba4cb3907586e3192b437b96762a0a386345c4e5e0da01edd7c459c99789"
+      "sha256": "58f596b3cdbb095d78bd6e7cf413fe8273763ce44fdcf0dd23f57addb1b8b38d"
     },
     ".claude/sdd/deferred-register.md": {
       "pack": "core",
-      "sha256": "786cafce3ecbf7b721ec86837902147a9096ff125ca29acdaf2f6464287c2390"
+      "sha256": "b117a5cb94044a2923182371716def1ee9cfec382c33697f67f45b3b3d0981a2"
     },
     ".claude/sdd/fixtures/check/agreed-threshold-without-check.txtar": {
       "pack": "core",
@@ -194,7 +198,7 @@
     },
     ".claude/sdd/packs/langgraph.md": {
       "pack": "langgraph",
-      "sha256": "de9f82a2c349df3e9c7265a81115f4830638ef39648aeb5683aefbedf1143a09"
+      "sha256": "2ca6e202d09ce84c041a722129101aa25dd416dc5827c521b81d99b86d5efcb9"
     },
     ".claude/sdd/packs/python.md": {
       "pack": "python",
@@ -202,7 +206,7 @@
     },
     ".claude/sdd/pressure-tests.md": {
       "pack": "core",
-      "sha256": "dde89c0289c526be7e1e3a5302314237136b189a3b4f9ce4b141a56f0ebfecaa"
+      "sha256": "1682e0e5d43460291246fd6c355249c7c456a35afffbb319f7c001a6e5debed1"
     },
     ".claude/sdd/sdd.py": {
       "pack": "core",
@@ -214,7 +218,7 @@
     },
     ".claude/sdd/sddlib/__init__.py": {
       "pack": "core",
-      "sha256": "a1f426a5f577ee3bc774c604e7ee7048fa01dfaf7cfc60093f2197be64a0265e"
+      "sha256": "fa1db58fdd782654b5b7f6e540aaec103d42f01abaceb2427bee40002f164a16"
     },
     ".claude/sdd/sddlib/adapter.py": {
       "pack": "core",
@@ -230,7 +234,7 @@
     },
     ".claude/sdd/sddlib/distribute.py": {
       "pack": "core",
-      "sha256": "607362846525193f79a5b9035e19091fc8af0c21ba24b6e9f41b0e5f5817ec1c"
+      "sha256": "93490fddfec674b2eb993e511d0a23b18d7705ef957c8175b850964fa6959d31"
     },
     ".claude/sdd/sddlib/report.py": {
       "pack": "core",
@@ -246,7 +250,7 @@
     },
     ".claude/sdd/sddlib/status.py": {
       "pack": "core",
-      "sha256": "04e89eddc6fa976404767705268e7f8bb3ddf09d277f7d5a689e10d614e6d0b9"
+      "sha256": "8d37dd1dac5158b3e50b9c15c327c229fb4873363e40ee3110a82859b40ffe35"
     },
     ".claude/sdd/sddlib/testfiles.py": {
       "pack": "core",
@@ -272,9 +276,17 @@
       "pack": "core",
       "sha256": "fe068f6c63d8dec30e6e5710755dfff188276bd71c933ec3c9de23fe7a456ee8"
     },
+    ".claude/sdd/seeds/serve.sh": {
+      "pack": "core",
+      "sha256": "b011dbe76af6eca416a349be0c3e5ac9507927a3adc7e515b288f22e440e97d2"
+    },
     ".claude/sdd/seeds/settings.json": {
       "pack": "core",
       "sha256": "e6e0ab50e7de6574c4cbc3917d656cc6f0ad9e787c5bdb3834aee2eeb9ef4e7a"
+    },
+    ".claude/sdd/seeds/settings.langgraph.json": {
+      "pack": "core",
+      "sha256": "0b8db7a6a24c1cb64af2e137831d212dbd5bb201cd380ab84484438e9cda974d"
     },
     ".claude/sdd/self.toml": {
       "pack": "core",
@@ -286,11 +298,15 @@
     },
     ".claude/sdd/specs/distribution/spec.md": {
       "pack": "core",
-      "sha256": "7d4c10383b8a10920f09dc3656fe014ce30e854e0ebef2e430ca4802239fa9d6"
+      "sha256": "4da8529a4226f4fbaccba51d0df204c3771cda9715d48b11d6603ee37971068c"
     },
     ".claude/sdd/specs/edit-guards/spec.md": {
       "pack": "core",
       "sha256": "879e20a710c8a88336db17a806b2cc2e2589b3953211004f409a4a6e36deccab"
+    },
+    ".claude/sdd/specs/local-runtime/spec.md": {
+      "pack": "core",
+      "sha256": "7a18288e675efc24c37b21470d35b0d3c98a3be14ecc96c95d8dde4f00f633aa"
     },
     ".claude/sdd/specs/method-health/spec.md": {
       "pack": "core",
@@ -298,7 +314,7 @@
     },
     ".claude/sdd/specs/session-hooks/spec.md": {
       "pack": "core",
-      "sha256": "e20f6f70a39bd6209e4a05e3f186dc42c6ca61145e239a9e32b811ee61c15798"
+      "sha256": "ba72ce82ea3741e7c9cb57e84e589bbd6c5483499a106ae0340942bd478e832e"
     },
     ".claude/sdd/specs/traceability/spec.md": {
       "pack": "core",
@@ -306,7 +322,7 @@
     },
     ".claude/sdd/tests/sddsupport.py": {
       "pack": "core",
-      "sha256": "7ded417ca411ccfd24d42ea2d1f8947a672a886ad6012361562ce40edec95638"
+      "sha256": "1bb44cacce9e11e2b1f18415db5ea136eda86524182d371e8634cebc6e7ed4ba"
     },
     ".claude/sdd/tests/test_check.py": {
       "pack": "core",
@@ -314,19 +330,27 @@
     },
     ".claude/sdd/tests/test_distribution.py": {
       "pack": "core",
-      "sha256": "9bd3bd16b5e73c13cdc1e42b08e7292f5d3132fec01f14e757a4d22d6b2f6a75"
+      "sha256": "9ccfb6698471d27031fb910440c9423d93042e5bf2fea877edc64dc6578ccbb2"
     },
     ".claude/sdd/tests/test_hooks.py": {
       "pack": "core",
       "sha256": "6bbcdb530442abbda49946426e4d0152b19a8c86c9e4c5bc46d91e35f24a29f2"
     },
+    ".claude/sdd/tests/test_serve.py": {
+      "pack": "core",
+      "sha256": "d8d5ee616fb9a7cff952e71b6c3a1e569d0ef558e5c3eedb247f83cffae569d3"
+    },
     ".claude/sdd/tests/test_status.py": {
       "pack": "core",
-      "sha256": "75f7a80d0571389dd3f1e920d1f537f687525e215b35966006f36c645606d24a"
+      "sha256": "ff248537bb6e081b43d6cb2fba1ba8a59768402a86b8685cc290916294c43a2f"
     },
     ".claude/skills/accept/SKILL.md": {
       "pack": "core",
-      "sha256": "c04b8d6683c95443b488a29801f36ab2c5e2b93b6eadf207390a536a709b293f"
+      "sha256": "7458cd523944a755dcaf66cfb60c4fab1589501e6abbb1dc82e7fa8c52ffbbe9"
+    },
+    ".claude/skills/accept/references/graph-routes.md": {
+      "pack": "langgraph",
+      "sha256": "d744ae5151903498f64699c417515462a456d755ca262b0619a654686909be4a"
     },
     ".claude/skills/debug/SKILL.md": {
       "pack": "core",
@@ -342,7 +366,7 @@
     },
     ".claude/skills/discover/references/orchestration-ladder.md": {
       "pack": "langgraph",
-      "sha256": "da6e5caf935d41eb0d98268840fed411d2592614bfb77541beaf6be45874a08a"
+      "sha256": "77708d9d44d3d40904c1adb08cb09ef700cb515a4017cb5bc1dc464463a45f43"
     },
     ".claude/skills/discover/references/splitting-rules.md": {
       "pack": "core",
@@ -378,11 +402,11 @@
     },
     "openspec/schemas/sdd-proof/schema.yaml": {
       "pack": "core",
-      "sha256": "cf5c605db008afc8d33b3592de26dec01585d6bb54ead16be4232fe99f3fb889"
+      "sha256": "5630bea776a9bc67c567639a36ee3f113897fdf83b8bf776e01bc6c26ec33e7b"
     },
     "openspec/schemas/sdd-proof/templates/design.md": {
       "pack": "core",
-      "sha256": "ab677ef694dc5890761b70d8a2a471ef6c3d145d43ad55eb6903b3b8d8f9546b"
+      "sha256": "a3e41e17b06bad9cb70cc606cc3adf2d1f4c4ba4e475abe72a3059f54bf39a6f"
     },
     "openspec/schemas/sdd-proof/templates/frame.md": {
       "pack": "core",
@@ -407,5 +431,5 @@
   },
   "method": "sdd",
   "openspec": "1.14.0",
-  "version": "0.2.0"
+  "version": "0.3.0"
 }

@@ -5,13 +5,14 @@ Each class proves one requirement in .claude/sdd/specs/distribution/spec.md.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from sddsupport import SDD
+from sddsupport import BASH, DEFAULT_CONFIG, LOCAL_ONLY, SDD, denied, run_serve
 
 from sddlib import OPENSPEC_VERSION, VERSION
 from sddlib.distribute import (
@@ -169,6 +170,93 @@ class TestUpdateReplacesOnlyWhatTheProjectNeverTouched(SourceAndTarget):
             update(self.source, Path(empty))
 
 
+class TestAPackSeedsItsOwnFiles(SourceAndTarget):
+    """DIST-PACK-SEEDS"""
+
+    SETTINGS = ".claude/settings.json"
+    CORE = ".claude/sdd/seeds/settings.json"
+    ADDITIONS = ".claude/sdd/seeds/settings.langgraph.json"
+
+    def source_json(self, rel: str) -> dict:
+        return json.loads((self.source / rel).read_text(encoding="utf-8"))
+
+    def test_the_langgraph_pack_seeds_its_wrapper_and_adds_to_the_settings(self):
+        report = install(self.source, self.target, ["langgraph"])
+        self.assertTrue((self.target / "scripts/serve.sh").is_file())
+        self.assertIn("scripts/serve.sh", report.seeded)
+        core, additions = self.source_json(self.CORE), self.source_json(self.ADDITIONS)
+        settings = json.loads((self.target / self.SETTINGS).read_text(encoding="utf-8"))
+        self.assertEqual(core["hooks"], settings["hooks"])
+        self.assertEqual(core["permissions"]["allow"], settings["permissions"]["allow"])
+        self.assertEqual(
+            core["permissions"]["deny"] + additions["permissions"]["deny"],
+            settings["permissions"]["deny"],
+        )
+        self.assertEqual({**core["env"], **additions["env"]}, settings["env"])
+
+    def test_without_the_pack_neither_is_seeded(self):
+        install(self.source, self.target, ["python"])
+        self.assertFalse((self.target / "scripts/serve.sh").exists())
+        self.assertEqual(
+            (self.source / self.CORE).read_bytes(), (self.target / self.SETTINGS).read_bytes()
+        )
+
+    def test_settings_a_project_has_are_left_alone_and_the_merge_reported(self):
+        existing = self.target / self.SETTINGS
+        existing.parent.mkdir(parents=True)
+        existing.write_text('{"permissions": {"deny": []}}\n', encoding="utf-8")
+        report = install(self.source, self.target, ["langgraph"])
+        self.assertEqual('{"permissions": {"deny": []}}\n', existing.read_text(encoding="utf-8"))
+        self.assertIn(self.ADDITIONS, report.merge_by_hand)
+        self.assertIn("by hand", report.describe())
+
+    def test_update_reports_a_pack_seed_the_project_lacks_and_writes_nothing(self):
+        install(self.source, self.target, ["langgraph"])
+        (self.target / "scripts/serve.sh").unlink()
+        report = update(self.source, self.target)
+        self.assertIn("scripts/serve.sh", report.unseeded)
+        self.assertFalse((self.target / "scripts/serve.sh").exists())
+
+    def test_counter_example_settings_that_already_hold_the_additions_are_not_reported(self):
+        install(self.source, self.target, ["langgraph"])
+        again = install(self.source, self.target, ["langgraph"])
+        self.assertEqual(([], []), (again.seeded, again.merge_by_hand))
+
+    def test_counter_example_a_merge_never_drops_or_overrides_a_key(self):
+        original = (self.source / self.ADDITIONS).read_text(encoding="utf-8")
+        for named in ("hooks", "OPENSPEC_TELEMETRY"):
+            with self.subTest(named=named):
+                additions = json.loads(original)
+                if named == "hooks":
+                    additions["hooks"] = {}
+                else:
+                    additions["env"]["OPENSPEC_TELEMETRY"] = "1"
+                (self.source / self.ADDITIONS).write_text(json.dumps(additions), encoding="utf-8")
+                self.release()
+                with self.assertRaisesRegex(ValueError, named):
+                    install(self.source, self.target, ["langgraph"])
+                self.assertEqual([], list(self.target.iterdir()))
+
+
+@unittest.skipUnless(BASH, "bash is required to run the wrapper")
+class TestALangGraphInstallIsLocalOnly(SourceAndTarget):
+    """DIST-PACK-SEEDS, end to end -- the story test of the change that made the
+    langgraph pack local-only: a fresh install is local-only, with no edit by hand."""
+
+    def test_a_fresh_install_serves_on_loopback_and_denies_hosted_commands(self):
+        install(self.source, self.target, ["python", "langgraph"])
+        (self.target / "langgraph.json").write_text(DEFAULT_CONFIG, encoding="utf-8")
+        served = run_serve(self.target, exports={"LANGSMITH_API_KEY": "lsv2_from_shell"})
+        self.assertEqual(0, served.run.returncode, served.run.stderr)
+        self.assertIn("127.0.0.1", served.argv)
+        self.assertIn("--no-browser", served.argv)
+        self.assertEqual(LOCAL_ONLY, {k: v for k, v in served.env.items() if k in LOCAL_ONLY})
+        settings = json.loads((self.target / ".claude/settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(LOCAL_ONLY, {k: v for k, v in settings["env"].items() if k in LOCAL_ONLY})
+        self.assertTrue(denied("uv run langgraph dev --tunnel", settings["permissions"]["deny"]))
+        self.assertFalse(denied("bash scripts/serve.sh", settings["permissions"]["deny"]))
+
+
 class TestTheManifestMovesWithWhatShips(SourceAndTarget):
     """DIST-MANIFEST"""
 
@@ -192,6 +280,7 @@ class TestTheManifestMovesWithWhatShips(SourceAndTarget):
         self.assertEqual(
             "langgraph", pack_of(".claude/skills/discover/references/orchestration-ladder.md")
         )
+        self.assertEqual("langgraph", pack_of(".claude/skills/accept/references/graph-routes.md"))
         self.assertEqual("core", pack_of(".claude/skills/discover/references/splitting-rules.md"))
 
 

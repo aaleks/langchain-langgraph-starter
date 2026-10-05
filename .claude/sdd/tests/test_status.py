@@ -65,6 +65,34 @@ class TestResumeAtTheEarliestIncompleteStage(unittest.TestCase):
         )
         self.assertIsNone(self.next_of("probe"))
 
+    def test_a_declared_skip_specs_moves_past_specs_as_openspec_does(self):
+        change(
+            self.root,
+            "method",
+            {
+                ".openspec.yaml": "schema: sdd-proof\ncreated: 2026-10-05\nskip_specs: true\n",
+                "intake.md": "- **Class:** structural\n",
+                "frame.md": "x",
+            },
+        )
+        self.assertEqual("design", self.next_of("method"))
+        (status,) = read(self.root)
+        self.assertIn("specs~", status.line())
+
+    def test_counter_example_without_the_declaration_a_missing_spec_is_a_missing_stage(self):
+        for name, declaration in (("silent", ""), ("declined", "skip_specs: false\n")):
+            with self.subTest(declaration=declaration):
+                change(
+                    self.root,
+                    name,
+                    {
+                        ".openspec.yaml": "schema: sdd-proof\n" + declaration,
+                        "intake.md": "- **Class:** bounded\n",
+                        "frame.md": "x",
+                    },
+                )
+                self.assertEqual("specs", self.next_of(name))
+
     def test_counter_example_archived_changes_are_not_in_flight(self):
         self.assertEqual([], read(self.root))
 

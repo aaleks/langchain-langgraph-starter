@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import ast
 import io
+import json
+import re
 import sys
 import tomllib
 from collections.abc import Iterable
@@ -35,6 +37,20 @@ CONFINED_RUNTIMES = frozenset({"langgraph", "deepagents"})
 AGENTS_SUBPACKAGE = "infrastructure.agents"
 
 ENV_READERS = frozenset({"environ", "getenv", "putenv", "unsetenv"})
+
+# The agents adapter composes graphs and builds no client of its own: beyond the
+# runtimes and their abstractions, an import there is a dependency that did not
+# arrive through composition -- and a node no fake model can replace.
+AGENTS_ALLOWED_EXTERNALS = frozenset(
+    {"langgraph", "deepagents", "langchain", "langchain_core", "pydantic", "typing_extensions"}
+)
+# A model client built from a string, where no fake can be passed in instead.
+INLINE_MODEL_BUILDERS = frozenset({"init_chat_model"})
+AGENT_FACTORIES = frozenset({"create_agent", "create_deep_agent", "create_react_agent"})
+
+# langgraph.json names graphs only through the registry, under stable ids.
+REGISTRY = "infrastructure/agents/registry.py"
+GRAPH_ID = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 def importlinter_config() -> dict:
@@ -178,6 +194,77 @@ def exits_outside_cli(source: Path) -> list[str]:
                 if isinstance(exc, ast.Name) and exc.id == "SystemExit":
                     found.append(f"{path.name}:{node.lineno} raise SystemExit")
     return found
+
+
+def agents_dir(source: Path) -> Path:
+    return source / "infrastructure" / "agents"
+
+
+def models_built_inline(source: Path) -> list[str]:
+    """`init_chat_model(...)`, or a string model given to `create_agent` and its kin,
+    anywhere in the agents adapter. The model arrives as an object, built outside."""
+    found = []
+    for path in sorted(agents_dir(source).rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name in INLINE_MODEL_BUILDERS:
+                found.append(f"{path.name}:{node.lineno} {name}()")
+            elif name in AGENT_FACTORIES:
+                model = node.args[0] if node.args else None
+                model = next((k.value for k in node.keywords if k.arg == "model"), model)
+                if isinstance(model, ast.Constant) and isinstance(model.value, str):
+                    found.append(f"{path.name}:{node.lineno} {name}(model={model.value!r})")
+    return found
+
+
+def top_level_names(path: Path) -> set[str]:
+    """Every name a module binds at its top level: what it exports."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            names |= {(a.asname or a.name).split(".")[0] for a in node.names}
+    return names
+
+
+def registration_problems(config: Path, source: Path, package: str) -> list[str]:
+    """What is wrong with a langgraph.json, judged against the registry module.
+
+    Every graph names a top-level name of infrastructure/agents/registry.py -- as
+    a path or as a dotted module -- under a stable id. The file has no "env": the
+    server loads it over the environment scripts/serve.sh starts it from.
+    """
+    data = json.loads(config.read_text(encoding="utf-8"))
+    problems = []
+    if "env" in data:
+        problems.append('"env": the server loads it over the local-only environment')
+    registry = source / REGISTRY
+    exported = top_level_names(registry) if registry.is_file() else set()
+    module = f"{package}.{REGISTRY[:-3].replace('/', '.')}"
+    for graph_id, spec in (data.get("graphs") or {}).items():
+        if not GRAPH_ID.fullmatch(graph_id):
+            problems.append(f"graph id {graph_id!r}: not lowercase letters, digits, - and _")
+        target = str(spec.get("path") if isinstance(spec, dict) else spec)
+        location, _, name = target.rpartition(":")
+        if location.endswith(".py"):
+            in_registry = (config.parent / location).resolve() == registry.resolve()
+        else:
+            in_registry = location == module
+        if not in_registry:
+            problems.append(f"graph {graph_id!r}: {target} is not in {REGISTRY}")
+        elif name not in exported:
+            problems.append(f"graph {graph_id!r}: {REGISTRY} binds no {name!r}")
+    return problems
 
 
 def build_package(base: Path, name: str, files: dict[str, str]) -> Path:

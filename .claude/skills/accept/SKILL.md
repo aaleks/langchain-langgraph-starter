@@ -68,6 +68,10 @@ bias the test toward what it does.
 Most deterministic requirements are unit tests, because most of what an LLM
 application does is decide things.
 
+A requirement about a graph's route -- nodes visited, an interrupt, an
+exhausted budget: if `references/graph-routes.md` exists, read it first. It says
+what such a test asserts, and where it lives.
+
 ## 3. Write it
 
 - One class per requirement, named after it; the class docstring quotes the id
