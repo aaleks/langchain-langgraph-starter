@@ -46,7 +46,8 @@ artifacts:
       an empty slot is a visible omission, which is the point of it.
 
       - Outcome: who benefits and the observable signal that says it worked,
-        kept apart from the requirements (which state behaviour).
+        kept apart from the requirements (which state behaviour) -- and the
+        non-goals, what the change deliberately does not do.
       - Existing options considered: when the request names a capability with
         an established category of tooling (crawling, parsing, retries,
         scheduling, auth, vector stores, evaluation harnesses, agent
@@ -97,6 +98,13 @@ artifacts:
       - scenarios with real values, never placeholders, and at least one titled
         `Counter-example -- ...`: the case where the rule deliberately does not
         apply. On a threshold rule it is the off-by-one.
+
+      When the frame's rung is a tool loop or a hand-written graph, the
+      requirements name its observable routes, not only the happy path:
+      completion, refusal, approval and rejection, interruption and resume,
+      each exhausted retry or budget, and each failure the design classifies
+      -- each a requirement or a scenario of one, or N-A with the reason. The
+      outcome of a route is a status, never the text.
 
       Never a requirement whose proof would assert generated prose. More than
       about eight requirements means the change is too big: split it.

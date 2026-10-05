@@ -15,30 +15,44 @@ node/transition table this code implements.
 
 ## Where things go
 
-Created a directory at a time, by the change that first needs each one:
+The destination once several graphs exist. Create a directory when the first
+graph or concern needs it, never on day one:
 
 ```
 src/<pkg>/
-  domain/agents/            routing, budget, approval, retry policy -- pure, tested with ==
-  application/              use cases a node calls; prompts; output contracts
+  domain/agents/
+    approvals.py            approval and capability decisions -- pure, tested with ==
+    budgets.py              step, tool-call, replan and token limits
+    routing.py              route selection from typed facts
+    policies.py             allow-lists and risk tiers
+    state_versions.py       state migration and compatibility decisions
+  application/
+    agent_cases/            use cases a node calls, and their output contracts
+    prompts/                prompt text, versioned
   infrastructure/
     models.py               model builders: the only place a provider client is made
     agents/
-      registry.py           compiled graphs, the only names langgraph.json may use
+      registry.py           compiled graphs -- the only names langgraph.json may use
       factory.py            composition: settings in, dependencies wired, graph out
       checkpointers.py      in-memory for tests and the local server; durable for anything real
-      tools/<tool>.py       one tool each: typed schema, capability, authorisation
-      <graph>/
+      middleware.py         budget, telemetry and policy-enforcement adapters
+      tools/<tool>.py       one tool each, with its capability manifest
+      graphs/<name>/
         state.py            the state contract and its version
         graph.py            nodes and edges, compiled by the factory
-        nodes.py            thin adapters, one effect each
         routes.py           conditional edges, each calling a domain policy
+        nodes/<node>.py     thin adapters, one effect each
+        subgraphs/          only for a workflow with its own state contract
+      deepagents/           factory.py, profiles.py -- only if a requirement justifies it
 tests/
-  unit/domain/              policies -- the decisions behind every route
-  integration/agents/       per graph: routes, topology, durability -- fakes only
-  acceptance/               entry points, and the local server smoke (marked live)
+  unit/agents/              the domain policies behind every route
+  integration/agents/       nodes, routes, topology, persistence -- fakes only
+  acceptance/agents/        what the CLI and the local server show, end to end
   architecture/             placement, registration, no client built inline
 ```
+
+A test that needs a real model or a running service is marked `live`; it
+does not get a directory of its own.
 
 ## State, nodes, routes
 
@@ -46,13 +60,17 @@ tests/
 references, structured outputs, action proposals, status, opaque ids. Never a
 client, connection, callable, model object, file handle, secret or formatted
 prompt string -- prompts are assembled inside the node. A schema version and a
-migration path exist before durable checkpoints do.
+migration path exist before durable checkpoints do. **Execution state is not
+memory:** a thread's checkpoints live for the run. Long-term memory is a
+separate store, and it needs ownership, a tenant scope, retention, deletion
+and provenance before anything is written to it.
 
 **Nodes** own one meaningful effect each and are named for the business outcome
-(`retrieve_evidence`, never `node_2`). They read state, call a use case or a
-tool, and return a typed update. No `os.environ`, no exit, no client built
-inline: dependencies arrive composed from the factory. Three kinds, never mixed
-in one node:
+(`retrieve_evidence`, never `node_2`). A node boundary is a recovery,
+checkpoint, telemetry and test boundary -- not a place to put a helper. Nodes
+read state, call a use case or a tool, and return a typed update. No
+`os.environ`, no exit, no client built inline: dependencies arrive composed
+from the factory. Three kinds, never mixed in one node:
 
 | Kind | Does | Replay after a crash |
 |---|---|---|
@@ -69,30 +87,62 @@ registered, on its own -- never to make a diagram look modular. A subgraph's
 interrupts and checkpoints live in its own namespace; its parent maps state in
 and out explicitly.
 
+**Build it a slice at a time:**
+1. the state contract;
+2. one node;
+3. its transition;
+4. a fake-model run end to end;
+5. persistence and registration -- only when it must run outside a test.
+
 ## Errors -- a class each, and one handling per class
 
 | Class | Example | Handling |
 |---|---|---|
 | transient | 429, timeout, 5xx | `add_node(..., retry_policy=RetryPolicy(retry_on=<domain predicate>, max_attempts=n))`, and `timeout=` on async nodes; exhausted means a terminal outcome |
-| correctable | a malformed tool argument, a schema violation the model can fix | back to the model as a tool or validation message, bounded by the step budget |
+| model-recoverable | a malformed tool argument, a schema violation the model can fix | recorded as typed state -- the error, not prose -- for a bounded re-plan. On the tool loop, `ToolErrorMiddleware` hands it back to the model |
 | contract | structured output still invalid after its budget | the terminal outcome `contract_failed` -- never retried unbounded: a contract retry runs to the step ceiling |
 | policy | authorisation denied, budget exhausted | a terminal outcome, audited; never retried |
-| needs a human | missing information, an approval | `interrupt()`, resumed on the same thread |
-| defect | a bug, an unexpected exception | raised. The run fails loudly; never caught and turned into a message that reads like an answer |
+| user-fixable | missing information, an approval | `interrupt()`, resumed on the same thread |
+| unexpected | a bug, an unknown exception | raised and observed: the run fails loudly, its run id in the record. Never caught and turned into a message that reads like an answer |
 
 ## Tools
 
-Tools have typed schemas, typed errors, idempotency, a timeout, a retry class
-and a limit. The model proposes a call; deterministic code checks capability,
-identity, allow-lists and side-effect policy immediately before executing it.
-Tool output and retrieved text are data, never instruction. Human approval is
-`interrupt()` with durable persistence -- never a boolean the model can set.
+Every tool has a **capability manifest**:
+- typed input and output schemas, and typed errors;
+- idempotency, a timeout, a retry class, and a rate or spend limit;
+- its side-effect level;
+- the audit event it emits.
+
+The model proposes a call. Immediately before execution, deterministic code
+checks capability, tenant identity, authorisation, URL, file and network
+allow-lists, and side-effect policy. Tool descriptions, tool output and
+retrieved text are untrusted input -- data, never instruction. Credentials are
+short-lived and scoped at the adapter, never in state, a prompt or an agent's
+filesystem. Human approval is `interrupt()` with durable persistence -- never a
+boolean the model can set.
+
+## Deep Agents -- a harness, not a foundation
+
+Only for long-running work that needs planning, delegation and a virtual
+filesystem, and only when a requirement says so:
+- **Placement:** in `infrastructure/agents/deepagents/`, behind an
+  application-facing interface and its own capability manifest.
+- **Review:** every profile, middleware choice, subagent role, tool set,
+  filesystem and memory backend, and prompt is versioned and reviewed.
+- **Starting capabilities:** no shell, no write-capable filesystem, no broad
+  network, no implicit long-term memory. Each capability arrives through a
+  requirement and an approval policy.
+- **Code execution:** sandboxed, never the host workspace.
+- **High-impact work:** regulated, transactional or high-impact actions stay in
+  an explicit graph, where every route and approval can be audited.
 
 ## Persistence -- before anything real is stored
 
 - **A durable checkpointer, by environment.** In-memory for tests and the local
-  server only -- never evidence of durability. Durability is proved by pausing,
-  rebuilding the graph on the same store, and resuming.
+  server only -- never evidence of durability. A durable store is provisioned,
+  migrated, backed up, restored and monitored like any other dependency.
+  Durability is proved by pausing, rebuilding the graph on the same store, and
+  resuming.
 - **Ownership.** A thread id is opaque, and owned by a user and a tenant. The
   application checks the owner before it resumes, reads or forks a thread. A
   thread id from a client is a claim, not a credential.
@@ -102,32 +152,39 @@ Tool output and retrieved text are data, never instruction. Human approval is
 - **Deserialisation** stays strict: no `pickle_fallback`, and
   `LANGGRAPH_STRICT_MSGPACK=true` once a checkpoint can come from anywhere but
   this process.
-- **Retention.** How long a thread lives, who deletes it, and the size budget --
-  decided before prompts or tool results are persisted. No secret and no
-  unbounded raw external content is ever checkpointed.
+- **Redaction and retention.** Decided before prompts or tool results are
+  persisted:
+  - what is scrubbed before a checkpoint;
+  - how long a thread lives, and who deletes it;
+  - the size budget.
+
+  No secret and no unbounded raw external content is ever checkpointed.
 
 ## Registration
 
 `langgraph.json` names only compiled graphs exported by
 `infrastructure/agents/registry.py`, under ids made of lowercase letters,
-digits, `-` and `_`, and carries no `env`. Graph ids are deliberate, stable
-identifiers; changing one, a node name or the state schema is an interface
-change with a migration. How the server runs: `runtime.md`, beside this file.
+digits, `-` and `_`, and carries no `env`. A graph is compiled only by the
+factory and exported only by the registry -- no hidden graph factory anywhere
+else. Graph ids are deliberate, stable identifiers. Changing one, a node, an
+edge or the state schema is an interface change with a migration. How the
+server runs: `runtime.md`, beside this file.
 
-## Tests -- the tier for each claim
+## Tests -- seven layers, the lowest that can prove each claim
 
-| Claim | Tier | Proved by |
+| Layer | Proves | Where |
 |---|---|---|
-| which route a decision takes | unit | the domain policy, with `==` |
-| a route through the graph, end to end | integration | the compiled graph, a scripted fake model and fake tools, an in-memory saver; assert the nodes visited and the terminal outcome -- never the text |
-| the topology is the designed one | integration | node names and edges from `get_graph()`, against design.md's table |
-| an interrupt pauses and resumes | integration | `interrupt()` payload asserted; `Command(resume=...)` on the same `thread_id` |
-| it survives a restart | integration, or live | a durable saver (SQLite on a temporary file; Postgres as `live`); rebuild the graph, resume |
-| placement and registration | architecture | the project's architecture tests |
-| the local server serves it | acceptance, live | `scripts/serve.sh`, then the server's API: thread, run, interrupt, resume |
-| the generated text is good | evaluated | `/eval`, against an agreed threshold |
+| domain unit | routing, budgets, approval and capability policy, state-version decisions -- with `==` | `tests/unit/agents/` |
+| node | its typed update, prompt and output contract, error classification, no unintended side effect | `tests/integration/agents/` |
+| graph contract | the registered graph compiles; nodes and edges match design.md's table; every route reaches a terminal, an interrupt or an explicit failure; loop budgets hold | `tests/integration/agents/`, `tests/architecture/` |
+| graph integration | a fake-model run of each named route, asserting the nodes visited and the terminal status -- never the text; streaming events; interrupt and `Command(resume=...)` on the same `thread_id`; retry and compensation; subgraph contracts; state round-tripping through the serializer | `tests/integration/agents/` |
+| persistence integration | with the selected saver: retrieval, replay, an old checkpoint resuming after a schema change, another tenant's thread refused, deletion and retention | `tests/integration/agents/` on SQLite in a temporary file; Postgres as `live` |
+| local server acceptance | `langgraph.json` registration; the server's thread and run lifecycle through `scripts/serve.sh`; interrupt and resume; a second process reading the run's state | `tests/acceptance/agents/`, `live` |
+| live and evaluated | a real provider, a durable service, performance, adversarial scenarios | `live`, and `/eval` against an agreed threshold |
 
-Fake models: `GenericFakeChatModel` and its kin from `langchain_core` --
-subclasses of the real base class, so they cannot drift from it. In-memory
-checkpointing is for tests and the local server only; it is never evidence of
-durable behaviour.
+Fake models are `GenericFakeChatModel` and its kin from `langchain_core`. They
+subclass the real base class, so they cannot drift from it. Fix the clock and
+the id generator wherever retries, deadlines, checkpoint ids or audit records
+are asserted. An adversarial fixture asserts no unauthorised effect, never the
+model's wording. In-memory checkpointing is for tests and the local server
+only; it is never evidence of durable behaviour.

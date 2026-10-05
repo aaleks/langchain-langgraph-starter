@@ -4,6 +4,63 @@ The SDD method's own history -- one changelog for the method and its docs.
 Every shipped file is listed in `manifest.json`; `sdd.sh manifest --check`
 fails when one changes without the version moving and an entry here.
 
+## 0.4.0 -- 2026-10-05
+
+The langgraph pack, held line by line against its source plan
+(`langgraph-adaptation.md` in the project the method came from). The trace is
+in the change `langgraph-pack-completeness`, archived with this release.
+
+### Added
+
+- **The edit guard refuses runtime data and server configuration.**
+  - An agent's write to `.langgraph_api/`, the local server's state, is
+    refused.
+  - So is a write to a data store -- `*.sqlite`, `*.sqlite3`, `*.db` --
+    which a checkpointer writes and a hand edit corrupts.
+  - So is new text that gives `langgraph.json` an `env` key. Removing one is
+    allowed.
+
+  Requirements `GUARD-RUNTIME-DATA` and `GUARD-SERVER-CONFIG`.
+- **Routes are named where requirements are written.** On the tool-loop or
+  graph rung, every observable route is a requirement, a scenario of one, or
+  N-A with the reason: completion, refusal, approval and rejection,
+  interruption and resume, each exhausted retry or budget, each classified
+  failure. Its outcome is a status, never the text. This is in the schema's
+  specs instruction, `/discover`, and a route checklist in the ladder.
+- **The ladder names the tool loop's budgets, and their traps** (checked
+  against langchain 1.4.3):
+  - both call-limit middlewares default to no limit;
+  - `ModelCallLimitMiddleware` ends by injecting a message that reads like an
+    answer;
+  - both retry middlewares default to `on_failure="continue"`.
+
+  Set them explicitly, with `"error"`.
+- **Deep Agents' place** in the ladder and the rules: a harness for one class
+  of task, never a rung above the graph.
+
+### Changed
+
+- **`graphs.md`** carries the source's whole plan:
+  - its destination tree, and tests that mirror it;
+  - execution state kept apart from long-term memory;
+  - node boundaries as recovery and test boundaries;
+  - errors renamed to the source's classes;
+  - tools with a capability manifest and an audit event, their descriptions
+    untrusted;
+  - persistence with redaction, and a store operated like any dependency;
+  - building a graph a slice at a time;
+  - the seven test layers.
+- **`/verify` adds each langgraph auditor whose subject the diff touches** --
+  now the durability and graph-evaluation auditors too.
+- **The auditors ask the source's review questions:**
+  - is each state field justified, serialisable, classified and owned;
+  - do `langgraph.json`, the registry and the checkpointer agree;
+  - are there hidden graph factories;
+  - are cross-tenant access and timeouts among the routes.
+- **The frame asks for non-goals.** The design template's Runtime slot asks how
+  the graph would run beyond this machine, and its Test plan slot asks for
+  security, operations and migration.
+
 ## 0.3.0 -- 2026-10-05
 
 LangGraph on the developer's machine only, and the langgraph pack's

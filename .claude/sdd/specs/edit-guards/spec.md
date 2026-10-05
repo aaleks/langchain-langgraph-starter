@@ -55,6 +55,42 @@ The edit guard SHALL refuse writes to lockfiles a tool generates and to `.github
 - **GIVEN** a write to `pyproject.toml`, or to `docs/ci/ci.yml`
 - **THEN** allowed
 
+### Requirement: GUARD-RUNTIME-DATA
+The edit guard SHALL refuse an agent's write to the LangGraph server's local state, `.langgraph_api/`, and to data stores -- `*.sqlite`, `*.sqlite3`, `*.db` -- wherever they sit. A server or a checkpointer writes them; a hand-edited store corrupts the threads in it.
+
+- **Kind:** deterministic
+- **Proved by:** `.claude/sdd/tests/test_hooks.py::TestRuntimeDataIsWrittenByTheRuntimeOnly`
+
+#### Scenario: Data a runtime writes
+| Given | Then |
+|---|---|
+| `.langgraph_api/.langgraph_checkpoint.1.pckl` | exit 2, "runtime" |
+| `checkpoints.sqlite`, `data/threads.db`, `var/store.sqlite3` | exit 2, "store" |
+
+#### Scenario: Counter-example -- names that only resemble one
+| Given | Then |
+|---|---|
+| `docs/database.md`, `src/app/infrastructure/agents/checkpointers.py` | allowed, with no output |
+
+### Requirement: GUARD-SERVER-CONFIG
+The edit guard SHALL refuse new text in `langgraph.json` that sets an `env` key, which the server would load over the local-only environment. It SHALL judge only the text being written, never the text being replaced.
+
+- **Kind:** deterministic
+- **Proved by:** `.claude/sdd/tests/test_hooks.py::TestTheServerConfigCarriesNoEnvironment`
+
+#### Scenario: An env key written
+| Given | Then |
+|---|---|
+| `{"graphs": {"chat": "./x.py:chat"}, "env": ".env"}` written to `langgraph.json` | exit 2, "env" |
+| `"env": {"OPENAI_API_KEY": "sk-1"}` added to `deploy/langgraph.json` | exit 2 |
+
+#### Scenario: Counter-example -- removing it, and other files
+| Given | Then |
+|---|---|
+| an edit whose old text holds `"env": ".env",` and whose new text is empty | allowed |
+| `{"graphs": {"chat": "./x.py:chat"}}` written to `langgraph.json` | allowed, with no output |
+| `{"env": ".env"}` written to `config/server.json` | allowed |
+
 ### Requirement: GUARD-DOMAIN-IMPORTS
 The edit guard SHALL refuse new text that imports a common SDK into `src/*/domain/`, judging only the text being written -- never the text being replaced.
 

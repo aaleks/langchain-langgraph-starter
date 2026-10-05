@@ -154,6 +154,50 @@ class TestDomainImportsAreRefusedAtWriteTime(GuardCase):
 
 
 @requires_bash
+class TestRuntimeDataIsWrittenByTheRuntimeOnly(GuardCase):
+    """GUARD-RUNTIME-DATA"""
+
+    def test_the_local_servers_state_is_refused(self):
+        self.assertRefused(self.write(".langgraph_api/.langgraph_checkpoint.1.pckl"), "runtime")
+
+    def test_data_stores_are_refused_wherever_they_sit(self):
+        for rel in ("checkpoints.sqlite", "data/threads.db", "var/store.sqlite3"):
+            with self.subTest(rel=rel):
+                self.assertRefused(self.write(rel), "store")
+
+    def test_counter_example_names_that_only_resemble_a_store_are_written_freely(self):
+        self.assertAllowed(self.write("docs/database.md"))
+        self.assertAllowed(self.write("src/app/infrastructure/agents/checkpointers.py"))
+
+
+@requires_bash
+class TestTheServerConfigCarriesNoEnvironment(GuardCase):
+    """GUARD-SERVER-CONFIG"""
+
+    def test_an_env_key_written_to_langgraph_json_is_refused(self):
+        for rel, content in (
+            ("langgraph.json", '{"graphs": {"chat": "./x.py:chat"}, "env": ".env"}'),
+            ("deploy/langgraph.json", '{"env": {"OPENAI_API_KEY": "sk-1"}}'),
+        ):
+            with self.subTest(rel=rel):
+                self.assertRefused(self.write(rel, content), "env")
+
+    def test_counter_example_removing_the_key_is_not_refused_for_containing_it(self):
+        run = self.guard(
+            {
+                "file_path": str(self.root / "langgraph.json"),
+                "old_string": '"env": ".env",',
+                "new_string": "",
+            }
+        )
+        self.assertAllowed(run)
+
+    def test_counter_example_a_config_without_it_and_other_files_are_written_freely(self):
+        self.assertAllowed(self.write("langgraph.json", '{"graphs": {"chat": "./x.py:chat"}}'))
+        self.assertAllowed(self.write("config/server.json", '{"env": ".env"}'))
+
+
+@requires_bash
 class TestTheLivingSpecAndTheEnforcementAsk(GuardCase):
     """GUARD-ASK"""
 

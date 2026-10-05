@@ -114,6 +114,14 @@ requirements; on a threshold rule the counter-example *is* the off-by-one.
 Talk in plain sentences while discovering; the scenario format is just how the
 agreed cases get recorded.
 
+**Orchestrated work names its routes.** On the tool-loop or graph rung, the
+happy path is one route of many. Name each observable one: completion,
+refusal, approval and rejection, interruption and resume, each exhausted retry
+or budget, and each failure the design classifies. Each becomes a requirement
+or a scenario of one, or N-A with the reason. A route's outcome is a status the
+design names, never the text. If `references/orchestration-ladder.md` exists,
+its route checklist is the list to walk.
+
 **Name the proof now.** A deterministic requirement's Proved by line names its
 test -- `tests/unit/test_providers.py::TestProviderPrecedence` -- at the lowest
 tier that can prove it. The test
@@ -177,7 +185,9 @@ fill the orchestration design: the node table is the contract.
 An order and a critical path, never code. One group per requirement in
 dependency order, the wiring point, and -- for more than one requirement -- the
 **story test**: the acceptance test, driven through the real entry point, that
-stays red until the last group lands.
+stays red until the last group lands. On the graph rung, the ladder's build
+order applies: the state contract, one node, its transition, a fake-model run,
+and only then persistence and registration.
 
 ## Report, then stop
 

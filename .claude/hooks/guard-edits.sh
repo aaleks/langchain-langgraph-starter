@@ -74,14 +74,27 @@ case "$base" in
     refuse "$rel is generated. Change the manifest and regenerate it with its tool (uv sync, npm install, ...)." ;;
 esac
 
-# 4. CI is where enforcement is decided; an agent that could rewrite it could
+# 4. Runtime data is written by the runtime. The LangGraph server's local state
+#    is the langgraph pack's; a data store -- a checkpointer's, a migration's,
+#    any program's -- is every project's. Hand-edited, a store corrupts what is
+#    in it.
+case "$rel" in
+  .langgraph_api/* | */.langgraph_api/*)
+    refuse "$rel is the LangGraph server's local runtime state. Delete .langgraph_api/ to reset it; never edit it by hand." ;;
+esac
+case "$base" in
+  *.sqlite | *.sqlite3 | *.db)
+    refuse "$rel is a data store, written by a checkpointer or a migration. Change the code that writes it, or delete the store." ;;
+esac
+
+# 5. CI is where enforcement is decided; an agent that could rewrite it could
 #    quietly stop enforcing anything. Propose it in docs/ci/, a person moves it.
 case "$rel" in
   .github/workflows/*)
     refuse "$rel is CI. Propose the change under docs/ci/ and let a person move it into place." ;;
 esac
 
-# 5. The decision layer imports nothing but the standard library (python pack).
+# 6. The decision layer imports nothing but the standard library (python pack).
 #    The architecture test enforces the full allowlist; this catches the common
 #    SDKs at write time and says why.
 case "$rel" in
@@ -91,14 +104,26 @@ case "$rel" in
     fi ;;
 esac
 
-# 6. The living spec is written by `openspec archive`, never by hand. A change
+# 7. The server's configuration carries no environment (langgraph pack): the
+#    server loads langgraph.json's "env" over the local-only environment that
+#    scripts/serve.sh starts it from. Inside the JSON payload the quotes are
+#    escaped, hence \". Only the new text is judged. Textual, as serve.sh's check
+#    is: a graph id named "env" trips it too -- rename the graph.
+case "$base" in
+  langgraph.json)
+    if new_text | grep -Eq '\\"env\\"[[:space:]]*:'; then
+      refuse "$rel would set an \"env\" key, which the server loads over the local-only environment. Settings reach the graphs through config/ (.claude/rules/langgraph/runtime.md)."
+    fi ;;
+esac
+
+# 8. The living spec is written by `openspec archive`, never by hand. A change
 #    writes a delta under openspec/changes/<id>/specs/ instead.
 case "$rel" in
   openspec/specs/*)
     ask "$rel is the living spec: archive writes it. Amend a requirement with a delta in openspec/changes/<id>/specs/. Approve only a Purpose-only fix." ;;
 esac
 
-# 7. The enforcement itself. An agent weakening its own checks needs a human
+# 9. The enforcement itself. An agent weakening its own checks needs a human
 #    to agree, every time -- and the local-only runtime (scripts/serve.sh and
 #    the seeds it and the agent's settings come from) is enforcement too.
 case "$rel" in
@@ -106,7 +131,7 @@ case "$rel" in
     ask "$rel is part of the method's enforcement. Changing it changes what gets checked -- approve only if you meant to." ;;
 esac
 
-# 8. A prompt is behaviour no deterministic test asserts (python pack).
+# 10. A prompt is behaviour no deterministic test asserts (python pack).
 case "$rel" in
   src/*/application/*.py)
     if new_text | grep -Eq '[A-Z_]*(PROMPT|TEMPLATE|INSTRUCTIONS)[A-Z_]*[[:space:]]*(:[^=]*)?='; then
