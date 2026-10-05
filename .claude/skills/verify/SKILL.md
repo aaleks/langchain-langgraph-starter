@@ -39,9 +39,15 @@ reviewer sees the work product, not your reasoning about it.
 | defects | `code-reviewer` | Is the code wrong in a way no requirement mentions? |
 | placement | `architecture-guardian` | Is each decision in the right layer, and does every boundary hold? |
 
-When the diff touches graphs, tools or checkpointers and the langgraph pack is
-installed, add `graph-architecture-guardian` and `agent-capability-auditor` to
-the same message.
+When the langgraph pack is installed, add to the same message the auditors
+whose subject the diff touches:
+
+| The diff touches | Add |
+|---|---|
+| graphs, nodes, routes, the registry, `langgraph.json` | `graph-architecture-guardian` |
+| tools, permissions, network access, a Deep Agents profile | `agent-capability-auditor` |
+| state, checkpointers, interrupts, thread handling | `durability-auditor` |
+| routes, agent prompts, evaluation sets | `graph-eval-auditor` |
 
 ## 3. What you check yourself
 

@@ -1,7 +1,9 @@
 # Accepting a requirement about a graph's route
 
 Read by `/accept` when the requirement is a route through a LangGraph graph.
-Part of the langgraph pack.
+Part of the langgraph pack. Which routes a change must name is the route
+checklist in `discover/references/orchestration-ladder.md`; this file is how
+each one's test asserts it.
 
 The text is non-deterministic; the route is not. Prove the decision behind a
 route at unit level first. When the requirement is the route itself, the test

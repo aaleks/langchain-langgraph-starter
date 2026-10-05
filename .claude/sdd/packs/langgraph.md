@@ -7,8 +7,9 @@ things act from the first day: the agent's settings, and the server wrapper.
 
 | File | Does |
 |---|---|
-| `skills/discover/references/orchestration-ladder.md` | the frame's **orchestration rung**: one call, a `create_agent` tool loop, or a hand-written `StateGraph` -- the lowest that expresses the control flow a requirement needs; retries as three problems; reviewing output before it returns |
-| `rules/langgraph/graphs.md` | loads on graph code, graph tests and `langgraph.json`: where things go, state as a versioned contract, read / decide / write nodes, finite routes with budgets, error classes, subgraphs, tools authorised at the boundary, persistence (ownership, encryption, retention), and the test tier for each claim |
+| `skills/discover/references/orchestration-ladder.md` | the frame's **orchestration rung**: one call, a `create_agent` tool loop, or a hand-written `StateGraph` -- the lowest that expresses the control flow a requirement needs; Deep Agents' place; retries as three problems; the tool loop's budgets and their traps (langchain 1.4.3 defaults); the **routes every requirement set names**; the build order; reviewing output before it returns |
+| `skills/accept/references/graph-routes.md` | what a test of a graph's route asserts -- nodes visited, terminal status, interrupt and resume on the same thread, an exhausted budget -- with a scripted fake model |
+| `rules/langgraph/graphs.md` | loads on graph code, graph tests and `langgraph.json`: the destination tree; state as a versioned contract, apart from long-term memory; read / decide / write nodes; finite routes with budgets; error classes; subgraphs; a vertical slice at a time; tools with capability manifests, authorised at the boundary; Deep Agents as a harness; persistence (ownership, encryption, redaction, retention); the seven test layers |
 | `rules/langgraph/runtime.md` | loads on `langgraph.json`, `scripts/serve.sh`, the registry and acceptance tests: the local server, what replaces Studio, and how to re-measure that nothing leaves the machine |
 | `sdd/seeds/serve.sh` -> `scripts/serve.sh` | **seeded**: the one way to start the development server -- 127.0.0.1, no browser, an allowlist of flags, the local-only environment |
 | `sdd/seeds/settings.langgraph.json` | **merged into the seeded settings**: the same local-only environment for every command the agent runs, and deny rules for every command that would reach LangSmith or expose the server |
@@ -17,8 +18,11 @@ things act from the first day: the agent's settings, and the server wrapper.
 | `agents/agent-capability-auditor.md` | tool manifests, least privilege, authorisation, budgets, Deep Agents profiles |
 | `agents/graph-eval-auditor.md` | every route proved with fakes, adversarial fixtures, evaluator validity |
 
-`/verify` adds the first and third auditors when a diff touches graphs or tools;
-`/quality --graphs` runs all four.
+`/verify` adds each auditor whose subject the diff touches -- graphs, tools,
+durable state, routes; `/quality --graphs` runs all four. The core edit guard
+carries two of the pack's rules: it refuses an agent's write to the server's
+local state or a data store, and new text that gives `langgraph.json` an `env`
+key.
 
 ## Local only, by default
 

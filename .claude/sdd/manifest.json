@@ -18,15 +18,15 @@
     },
     ".claude/agents/durability-auditor.md": {
       "pack": "langgraph",
-      "sha256": "7635b1a22e9e91393f6046a213bdd643efe75b958f4ca6dff1e3590ca605b116"
+      "sha256": "771e7e113b70405f18b40f56500e27338a57efca524237bd548443e60ece5305"
     },
     ".claude/agents/graph-architecture-guardian.md": {
       "pack": "langgraph",
-      "sha256": "b4f60468511e8046c22233ae32d70441c34ef7a12db2e2f300a8eed6331810ca"
+      "sha256": "0c7ddd02ae2758ca3bb699ca9f3698ab131086df21e8a320dfefdf0099b86c67"
     },
     ".claude/agents/graph-eval-auditor.md": {
       "pack": "langgraph",
-      "sha256": "c015a35bf98ddac97e80723656be69def5d0abf3835693b105e5d9dafe051cba"
+      "sha256": "f933a111b2773632b19d83cd2fefacd48208df38a86ba9f5849eee20cb6c5469"
     },
     ".claude/agents/mutation-analyst.md": {
       "pack": "core",
@@ -46,7 +46,7 @@
     },
     ".claude/hooks/guard-edits.sh": {
       "pack": "core",
-      "sha256": "75a9f24342346cb74902da5b79f6b03065a6a6dadd38460069f3f726f93eb7ef"
+      "sha256": "82a75faf35039fe3abbf6ff87b47f97b494077f7f8f0c80fa11d83bde6968e6a"
     },
     ".claude/hooks/lib.sh": {
       "pack": "core",
@@ -58,7 +58,7 @@
     },
     ".claude/rules/langgraph/graphs.md": {
       "pack": "langgraph",
-      "sha256": "8885ba5986940b97553fdf38519e993c33e020c56195b53e73941de371eed120"
+      "sha256": "f8a9978c88ff1f2c1901d0549fde4567fd5c7773331157b5fd501be1b9ac2ab1"
     },
     ".claude/rules/langgraph/runtime.md": {
       "pack": "langgraph",
@@ -90,7 +90,7 @@
     },
     ".claude/sdd/CHANGELOG.md": {
       "pack": "core",
-      "sha256": "4789fe01a14d3a0c6d08b2a7a113a95d980a5b8beb1c8deca6b976acf8d4c2da"
+      "sha256": "7a6e3d8f9cd38893ff45bf3ca3773399130ba27e1dcfca414efdf5eeadddfeb1"
     },
     ".claude/sdd/CREDITS.md": {
       "pack": "core",
@@ -106,7 +106,7 @@
     },
     ".claude/sdd/README.md": {
       "pack": "core",
-      "sha256": "58f596b3cdbb095d78bd6e7cf413fe8273763ce44fdcf0dd23f57addb1b8b38d"
+      "sha256": "dfc0108dd0566fe2a85968f49d0d9648086423c950bd60cc01202ae1c0a570e2"
     },
     ".claude/sdd/deferred-register.md": {
       "pack": "core",
@@ -198,7 +198,7 @@
     },
     ".claude/sdd/packs/langgraph.md": {
       "pack": "langgraph",
-      "sha256": "2ca6e202d09ce84c041a722129101aa25dd416dc5827c521b81d99b86d5efcb9"
+      "sha256": "ba05a5d47a010f78b761d38ed014e2ddd406d0ab5cfe8a6fac569772ac2f4032"
     },
     ".claude/sdd/packs/python.md": {
       "pack": "python",
@@ -206,7 +206,7 @@
     },
     ".claude/sdd/pressure-tests.md": {
       "pack": "core",
-      "sha256": "1682e0e5d43460291246fd6c355249c7c456a35afffbb319f7c001a6e5debed1"
+      "sha256": "b0b330822b84fdf7c9b9c56d48ca209646476148d26f8ccb60a6c44fe74e785c"
     },
     ".claude/sdd/sdd.py": {
       "pack": "core",
@@ -218,7 +218,7 @@
     },
     ".claude/sdd/sddlib/__init__.py": {
       "pack": "core",
-      "sha256": "fa1db58fdd782654b5b7f6e540aaec103d42f01abaceb2427bee40002f164a16"
+      "sha256": "ea33d44f1a39e286d324ea5d80ae16b0cfa02cf1bbecc6ac26fe9955293e2758"
     },
     ".claude/sdd/sddlib/adapter.py": {
       "pack": "core",
@@ -302,7 +302,7 @@
     },
     ".claude/sdd/specs/edit-guards/spec.md": {
       "pack": "core",
-      "sha256": "043ef289997c743f3e00621a9653bf13db1c1c21883e7038b733eb16492cff05"
+      "sha256": "64ae5f699d7475505c29a04c734a15edaa2345507233275dc8797c9f28e4d0ef"
     },
     ".claude/sdd/specs/local-runtime/spec.md": {
       "pack": "core",
@@ -334,7 +334,7 @@
     },
     ".claude/sdd/tests/test_hooks.py": {
       "pack": "core",
-      "sha256": "0eb7b607ef9ee1190cb2a6be83e0a4e62983420bfca94529f571956cc13858b4"
+      "sha256": "9f05eb0c125140048bba2752493e33c43252e0f4ea6eb0c8651bb64b6f119ba8"
     },
     ".claude/sdd/tests/test_serve.py": {
       "pack": "core",
@@ -350,7 +350,7 @@
     },
     ".claude/skills/accept/references/graph-routes.md": {
       "pack": "langgraph",
-      "sha256": "d744ae5151903498f64699c417515462a456d755ca262b0619a654686909be4a"
+      "sha256": "02cfe1e745ae33eacc06816111c064ef884f7542182cfbb49ba4545ad311e48f"
     },
     ".claude/skills/debug/SKILL.md": {
       "pack": "core",
@@ -358,7 +358,7 @@
     },
     ".claude/skills/discover/SKILL.md": {
       "pack": "core",
-      "sha256": "99bdfac1ca646fcd97da0fb4530d94835e7f42201b778367d30ace2693b93656"
+      "sha256": "c13f8f870f35161722fb5e3a41180c9c1df6d017a44365fad47cf37bf688718c"
     },
     ".claude/skills/discover/references/coverage-screen.md": {
       "pack": "core",
@@ -366,7 +366,7 @@
     },
     ".claude/skills/discover/references/orchestration-ladder.md": {
       "pack": "langgraph",
-      "sha256": "77708d9d44d3d40904c1adb08cb09ef700cb515a4017cb5bc1dc464463a45f43"
+      "sha256": "de554ff8f1449531b53dd229add6f06939f9178d8565dac2641f4e548044dc64"
     },
     ".claude/skills/discover/references/splitting-rules.md": {
       "pack": "core",
@@ -398,19 +398,19 @@
     },
     ".claude/skills/verify/SKILL.md": {
       "pack": "core",
-      "sha256": "09ffac91fc5da0bb0635ca8583155e1247dc5d3b98aaaaa6eece358effe16da6"
+      "sha256": "73979d25abe1f5ad3310da9c59c3c795f58f781028f827719acd26cd2bfcbc64"
     },
     "openspec/schemas/sdd-proof/schema.yaml": {
       "pack": "core",
-      "sha256": "5630bea776a9bc67c567639a36ee3f113897fdf83b8bf776e01bc6c26ec33e7b"
+      "sha256": "d3c31b1623c11f6e109c40b41d3292a08b189dc4b7f1eaf59def64ecf9bc0cb6"
     },
     "openspec/schemas/sdd-proof/templates/design.md": {
       "pack": "core",
-      "sha256": "a3e41e17b06bad9cb70cc606cc3adf2d1f4c4ba4e475abe72a3059f54bf39a6f"
+      "sha256": "87f033e3ef998293f53165e39209684cf4efec8df57a215ef7ff626a5edcc721"
     },
     "openspec/schemas/sdd-proof/templates/frame.md": {
       "pack": "core",
-      "sha256": "baa0105a34ddb4faaa029fb52f9a70983147ed3e60596c43ea4808ffb13e3116"
+      "sha256": "174f3d26296ad97a1dfa1ad402a58632e158e4869734bdbf882bbe3cb3a93836"
     },
     "openspec/schemas/sdd-proof/templates/intake.md": {
       "pack": "core",
@@ -431,5 +431,5 @@
   },
   "method": "sdd",
   "openspec": "1.14.0",
-  "version": "0.3.0"
+  "version": "0.4.0"
 }

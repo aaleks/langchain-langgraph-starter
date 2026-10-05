@@ -131,8 +131,9 @@ and `deny` entries of `seeds/settings.langgraph.json`, which install reports.
   counter-examples that must pass.
 
 **Guarded at write time, not guaranteed:** the edit hooks refuse writes to
-secrets, ground truth, lockfiles and CI workflows, and ask before the living
-spec or the enforcement changes. They watch the Edit and Write tools only -- a
+secrets, ground truth, lockfiles and CI workflows -- and, for LangGraph, to the
+server's local state, data stores, and an `env` key in `langgraph.json` -- and
+ask before the living spec or the enforcement changes. They watch the Edit and Write tools only -- a
 shell command goes around them, as it goes around any hook. With the langgraph
 pack, settings deny the agent the commands that would reach LangSmith; they
 match command text, so a launcher spelled another way goes around them too.
@@ -157,7 +158,7 @@ A terminal, CI and `/land` run that script, so the list cannot drift between the
   requirements are the right ones.
 - **The skills' wording is not yet pressure-tested** against an agent under
   deadline pressure the way Superpowers' is. `pressure-tests.md` holds the
-  protocol and the log -- empty, honestly, at 0.3.0.
+  protocol and the log -- empty, honestly, at 0.4.0.
 - **Portability is partly proved**: the checker reads its layout from the
   adapter, its own specs pass through a second adapter, and it has resolved and
   refused references in a TypeScript layout with only `sdd.toml` changed. No

@@ -12,7 +12,11 @@ you never fix. No checkpointer or interrupt exists yet: say so and stop.
 1. **State is a versioned, serialisable contract.** It holds raw messages,
    facts, references, structured outputs, action proposals, status and opaque
    ids -- never clients, connections, callables, model objects, file handles or
-   formatted prompt strings. Prompt assembly happens inside the node.
+   formatted prompt strings. Prompt assembly happens inside the node. Each
+   field is justified (a node reads it), serialisable, classified (does it
+   hold user content? a secret never), and owned. Long-term memory is a
+   separate store, with ownership, tenant scope, retention, deletion and
+   provenance of its own.
 2. **A schema version and a migration path** exist before durable checkpoints
    do, and a test resumes a supported old checkpoint.
 3. **Checkpointers by environment.** In-memory only for tests and local

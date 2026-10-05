@@ -20,5 +20,9 @@ context: |
   Tests: pytest under tests/{unit,integration,acceptance}; tests/architecture checks
   the checkers. No test calls a real model -- live tests are marked `live`.
   Orchestration ladder: one call -> create_agent tool loop -> hand-written StateGraph;
-  climb only when a requirement needs the control flow (docs/decisions/0003).
+  climb only when a requirement needs the control flow (docs/decisions/0003). On
+  the tool-loop or graph rung, the requirements name every observable route.
+  LangGraph runs on this machine only (docs/decisions/0004): no LangSmith, no
+  hosted Studio, no `langgraph up`; the development server starts only through
+  scripts/serve.sh.
   Commands are in sdd.toml [commands]; the full check is `bash scripts/check.sh`.

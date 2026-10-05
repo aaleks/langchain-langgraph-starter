@@ -32,17 +32,22 @@ by the change that first needs each one, never on day one:
 
 ```
 src/starter/
-  domain/agents/          routing, budgets, approvals, policies: pure, tested with ==
-  application/            use cases a node calls; output contracts; prompts
+  domain/agents/          approvals, budgets, routing, policies, state versions: pure, tested with ==
+  application/            agent_cases/ (use cases a node calls, output contracts), prompts/
   infrastructure/
     models.py             model builders: the only place a provider client is made
     agents/
       registry.py         the only names langgraph.json may use
       factory.py          composition: settings in, dependencies wired, graph out
       checkpointers.py    in-memory for tests and the local server; durable for anything real
-      tools/              each with a typed schema, a capability, an authorisation check
-      <graph>/            state.py, graph.py, nodes.py, routes.py -- thin adapters
+      middleware.py       budget, telemetry and policy-enforcement adapters
+      tools/              one per module, each with its capability manifest
+      graphs/<name>/      state.py, graph.py, routes.py, nodes/, subgraphs/ -- thin adapters
+      deepagents/         only if a requirement justifies a harness
 ```
+
+The full tree, and the test layout that mirrors it, is in
+`.claude/rules/langgraph/graphs.md`.
 
 Nodes read serialisable state, call a use case or a tool, and return a typed
 update. Conditional routes call a domain policy. The graphs run on this machine

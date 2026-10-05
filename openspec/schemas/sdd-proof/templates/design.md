@@ -35,10 +35,13 @@
 - **Observability:** <!-- run and thread ids in every record; what is logged,
   locally; what never is (secrets, raw user content) -->
 - **Runtime:** <!-- how it runs locally -- the entry points, the tests, the
-  development server -- and the durable store it needs, if any -->
+  development server -- and the durable store it needs, if any. If it will ever
+  run beyond this machine, how: an ADR decides that -->
 - **Test plan:** <!-- the tier for each claim: policies (unit), routes and
   topology with fakes (integration), durability with a real saver, the local
-  server smoke (live), generated text (/eval) -->
+  server smoke (live), generated text (/eval) -- and security (adversarial
+  cases: no unauthorised effect), operations, and migration (an old checkpoint
+  resumes) -->
 - **Graph id:** <!-- the registered id, and what changing it does to existing threads -->
 
 ## Risks

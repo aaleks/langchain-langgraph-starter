@@ -26,7 +26,10 @@ never fix. No graph exists yet (nothing under `infrastructure/agents/`, no
    registry module, never a node, a prompt or a notebook, and carries no `env`
    -- the server would load it over its own environment. Graph ids are
    deliberate, stable identifiers: every id resolves, and the registry and
-   `langgraph.json` agree.
+   `langgraph.json` agree -- and so does any checkpointer or store the file
+   configures, with the one the design names. No hidden graph factories: a
+   graph is compiled only by the factory and exported only by the registry, so
+   a `StateGraph(...)` or `.compile()` anywhere else is a finding.
 5. **Subgraphs** exist for an independent workflow with its own state contract,
    not to make a diagram look modular.
 6. **Topology tests** assert a maintained public contract -- node names,

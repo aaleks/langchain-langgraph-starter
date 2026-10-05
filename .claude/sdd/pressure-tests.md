@@ -7,7 +7,7 @@ demo, claim a green suite it did not run. Wording that has never been pushed on
 is wording nobody knows works. Superpowers treats an untested skill edit as a
 violation of the same Iron Law as untested code; this file is where that starts.
 
-**Status at 0.3.0: no pressure test has been run.** The scenarios below are the
+**Status at 0.4.0: no pressure test has been run.** The scenarios below are the
 plan, not a result.
 
 ## Protocol

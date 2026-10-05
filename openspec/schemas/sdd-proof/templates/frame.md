@@ -3,7 +3,9 @@
 ## Outcome
 
 <!-- Who benefits, and the observable signal that says it worked. Measurable
-     where it can be. Kept apart from the requirements, which state behaviour. -->
+     where it can be. Kept apart from the requirements, which state behaviour.
+     Then the non-goals: what this change deliberately does not do, so scope
+     cannot grow unnoticed. -->
 
 ## Existing options considered
 

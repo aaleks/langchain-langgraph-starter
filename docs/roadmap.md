@@ -19,7 +19,10 @@ suite free of services.
    - `config/` loads `.env` without overriding what is already set;
    - a local smoke run, `live`: `bash scripts/serve.sh`, then through the
      server's API -- the graph id is served, a fake-model run streams, an
-     interrupt resumes on the same thread;
+     interrupt resumes on the same thread, and a second process reads the
+     run's state;
+   - an architecture test that imports each registered export and fails when
+     one is not a compiled graph;
    - the connection probe in `.claude/rules/langgraph/runtime.md` re-run
      against the pinned versions, and its result recorded.
 2. **Correctness** (structural). A versioned state contract; routing and budget
@@ -29,12 +32,20 @@ suite free of services.
 3. **Durability** (structural). Interrupt and resume; a checkpointer chosen with
    build-or-adopt (`langgraph-checkpoint-sqlite`, `-postgres`); thread
    ownership, state-version and retention policy; encryption at rest. Proved
-   without `langgraph up`, which needs a LangSmith key: a run paused,
-   the graph rebuilt on the same store, the run resumed -- on SQLite in the
-   default suite, on Postgres as `live`.
+   without `langgraph up`, which needs a LangSmith key:
+   - a run paused, the graph rebuilt on the same store, and the run resumed;
+   - an old checkpoint resuming after a state-schema change;
+   - another tenant's thread refused.
+
+   On SQLite in the default suite, on Postgres as `live`.
 4. **Safety** (structural). Capability manifests, authorisation at the tool
    boundary, audit events, adversarial injection tests asserting no
-   unauthorised effect; the sandbox decision for Deep Agents.
+   unauthorised effect; the sandbox decision for Deep Agents. **Required:** a
+   fixture-proven architecture check that fails when a tool can be registered
+   without its capability manifest, or when a write-capable one lacks its
+   schemas, its authorisation boundary or its audit event. The manifest's
+   format is decided here, with the first real tool. The rule itself is
+   already in `.claude/rules/langgraph/graphs.md`.
 5. **Operations** (structural). Local tracing and log correlation --
    OpenTelemetry to a collector on this machine, never LangSmith -- runbooks,
    deployment and rollback, checkpoint migration.
