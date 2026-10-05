@@ -46,7 +46,7 @@
     },
     ".claude/hooks/guard-edits.sh": {
       "pack": "core",
-      "sha256": "82a75faf35039fe3abbf6ff87b47f97b494077f7f8f0c80fa11d83bde6968e6a"
+      "sha256": "41f1ba3e8b9ea1f486f4069a9c8aa0bb1310cd3925be76a18c2dad115d5d68e6"
     },
     ".claude/hooks/lib.sh": {
       "pack": "core",

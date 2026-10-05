@@ -74,9 +74,10 @@ case "$base" in
     refuse "$rel is generated. Change the manifest and regenerate it with its tool (uv sync, npm install, ...)." ;;
 esac
 
-# 4. Runtime data is written by the runtime (langgraph pack): the local server's
-#    threads and any data store a checkpointer writes. Hand-edited, a store
-#    corrupts the threads in it.
+# 4. Runtime data is written by the runtime. The LangGraph server's local state
+#    is the langgraph pack's; a data store -- a checkpointer's, a migration's,
+#    any program's -- is every project's. Hand-edited, a store corrupts what is
+#    in it.
 case "$rel" in
   .langgraph_api/* | */.langgraph_api/*)
     refuse "$rel is the LangGraph server's local runtime state. Delete .langgraph_api/ to reset it; never edit it by hand." ;;
@@ -106,7 +107,8 @@ esac
 # 7. The server's configuration carries no environment (langgraph pack): the
 #    server loads langgraph.json's "env" over the local-only environment that
 #    scripts/serve.sh starts it from. Inside the JSON payload the quotes are
-#    escaped, hence \". Only the new text is judged.
+#    escaped, hence \". Only the new text is judged. Textual, as serve.sh's check
+#    is: a graph id named "env" trips it too -- rename the graph.
 case "$base" in
   langgraph.json)
     if new_text | grep -Eq '\\"env\\"[[:space:]]*:'; then
