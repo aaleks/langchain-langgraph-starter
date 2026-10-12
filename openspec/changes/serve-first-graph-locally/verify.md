@@ -34,3 +34,27 @@
 - Placement, graph-architecture and durability lenses: the change adds tests
   only -- no production code, graph, registration or state.
 - The CI Linux `live` job: not run (on demand); POSIX behaviour read from code.
+
+## Pass 2 -- the fix diff `ba5eae8..2dfe19f`
+
+One fresh-context reviewer, proof and defects lenses together; four
+throwaway harness runs in the scratchpad, 127.0.0.1 only, no process left.
+
+- **Pass 1 resolved:** the BLOCKER (1) -- a `serve.sh` without its tracing-off
+  line now records 5 connects to `127.0.0.1:9`, without its LangSmith exports
+  14 lookups of the `.invalid` endpoint; nothing real is reachable. MAJORs 3
+  and 4 resolved; 2 partly (below). MINORs 5-11 resolved; 12-13 accepted.
+- **No BLOCKER, no MAJOR.** Seven MINOR:
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 14 | MINOR | proof | The analytics and version-check switches are not "spared": unset is their hostile state, so a regression would cost one real request each; and the method tests check the seed, not this project's `scripts/serve.sh` | `tests/localserver.py:9-12,57-59` | Keep both at their local values in the server's environment, and check `scripts/serve.sh`'s exports in the default suite |
+| 15 | MINOR | defects | A CTRL_BREAK that cannot be sent (no console) raises before the `taskkill` fallback: six server processes left running, measured | `tests/localserver.py:193-196` | Catch the signal's failure and go to the kill |
+| 16 | MINOR | proof | On Windows the "no connect to `127.0.0.1:9`" clause cannot see asyncio clients: a `serve.sh` that kept the credentials started the usage-report loop to `127.0.0.1:9` and the probe recorded nothing | traced-run scenario | The default-suite check of `serve.sh`'s exports catches that regression; the clause's Windows limit written |
+| 17 | MINOR | proof | SIGTERM/SIGBREAK is not a person's Ctrl+C: uvicorn re-raises the signal, and only SIGINT then runs Python's normal shutdown (atexit, langsmith's non-daemon flush) | `tests/localserver.py:183-190`; `design.md` | SIGINT on POSIX; on Windows (no group-targeted CTRL_C) the gap written |
+| 18 | MINOR | defects | Proxy variables reach the server; a local proxy would turn a regression into a 127.0.0.1 connect | `tests/localserver.py:128-133` | Strip them |
+| 19 | MINOR | proof | "Serve on 127.0.0.1" is not proved: a server bound to 0.0.0.0 answers on 127.0.0.1 too | spec; TestServesTheAssistant | Record binds; assert every one is on this machine |
+| 20 | MINOR | proof | Overclaiming text: the probe "re-runs at every upgrade" (it runs on demand); `scripts/serve.sh` still cites 0.4.32 / 0.15.1 as measured | `docs/roadmap.md`; `scripts/serve.sh:13-14` | Correct both |
+
+**Pass 2 verdict:** shippable. The MINORs are fixed before landing, in a
+separate commit, read in pass 3.
