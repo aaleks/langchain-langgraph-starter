@@ -108,7 +108,7 @@ openspec/               specs/ (living truth), changes/ (in flight), the sdd-pro
 sdd.toml                the method's adapter: where specs and tests live, the commands
 docs/decisions/         ADRs -- one per decision that is expensive to reverse
 docs/roadmap.md         the first changes, in order
-docs/ci/                the CI workflow, proposed; a person moves it into .github/
+docs/ci/                how CI is enabled and changed; a person moves a workflow into .github/
 docs/learnings.md       what went wrong, and what it left behind
 scripts/                check.sh (every check, one list); serve.sh (the local LangGraph server)
 ```

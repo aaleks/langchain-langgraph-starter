@@ -1,15 +1,20 @@
 # CI
 
-**Proposed, not yet enabled.** The workflow is `docs/ci/ci.yml`. To turn it on:
+**Enabled on 2026-10-12.** A person moved the proposed workflow into
+`.github/workflows/ci.yml`, unchanged:
 
 ```bash
 mkdir -p .github/workflows && git mv docs/ci/ci.yml .github/workflows/ci.yml
 ```
 
-Then, in the repository settings, **protect `main`**: require a pull request,
-require the `checks` job to pass, and do not allow bypassing. Those two settings
-are the real boundary of this method -- the edit hooks guard an agent's Edit and
-Write tools, and a shell command goes around them.
+**Not yet done: protect `main`.** In the repository settings: require a pull
+request, require the `checks` job to pass, and do not allow bypassing. Those two
+settings are the real boundary of this method -- the edit hooks guard an agent's
+Edit and Write tools, and a shell command goes around them. On a private
+repository GitHub offers branch protection only on a paid plan (`gh api
+.../branches/main/protection` answered 403, "Upgrade to GitHub Pro or make this
+repository public"), so until the plan or the visibility changes, CI is a
+witness on every pull request, not a gate.
 
 ## Why an agent did not put it there
 
