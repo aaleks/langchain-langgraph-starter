@@ -58,6 +58,7 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model calls, a d
 - **GIVEN** a process in which every outbound socket connection is refused
 - **WHEN** the registered graph runs on the human message `hello`
 - **THEN** the run completes, and the transcript's message types are `human, ai` with no tool call
+- **AND** no outbound connection was attempted
 
 #### Scenario: Counter-example -- a graph the factory compiles for a test is not registered
 - **GIVEN** the factory compiling an assistant from a scripted model and a recording tool
