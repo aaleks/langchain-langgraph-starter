@@ -26,7 +26,7 @@ The local server is how a person runs the starter's graphs on their own machine:
 
 #### Scenario: Counter-example -- a graph id that is not registered is not served
 - **WHEN** a client searches the assistants for the graph id `agent`
-- **THEN** none is found
+- **THEN** the server refuses it as not found (HTTP 404), naming `assistant` as the only graph it serves
 
 ### Requirement: LOCAL-SERVER-STAYS-LOCAL
 Started through `scripts/serve.sh` from a shell that exports a LangSmith key and switches tracing on, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and SHALL attempt no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`).
