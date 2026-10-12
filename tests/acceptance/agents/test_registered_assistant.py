@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import socket
 import sys
 import uuid
 from pathlib import Path
@@ -19,6 +18,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.pregel import Pregel
 
 from tests.fakes import answer
+from tests.openwebui_stub import STUB_ANSWER, openwebui_stub
 
 REPO = Path(__file__).resolve().parents[3]
 CONFIG = REPO / "langgraph.json"
@@ -53,22 +53,6 @@ def build_assistant():
     return build_assistant
 
 
-@pytest.fixture
-def no_network(monkeypatch):
-    """Refuse every outbound connection, and record each attempt."""
-    attempts: list[object] = []
-
-    def refuse(*args, **kwargs):
-        attempts.append(args[1:] or kwargs)
-        raise ConnectionRefusedError("the network is refused in this test")
-
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket.socket, "connect_ex", refuse)
-    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: refuse(None, *a))
-    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: refuse(None, *a))
-    return attempts
-
-
 def types(messages: list) -> list[str]:
     return [m.type for m in messages]
 
@@ -89,6 +73,35 @@ class TestAssistantIsRegistered:
         assert isinstance(loaded, Pregel)
         bound = {name for name, value in vars(module).items() if isinstance(value, Pregel)}
         assert bound == {"assistant"}
+
+    def test_with_nothing_configured_the_registered_graph_answers_offline(self, registry):
+        from starter.config.settings import Settings
+        from starter.infrastructure.models import OFFLINE_ANSWER
+
+        graph = registry.registered_assistant(Settings("", "", ""))
+        messages = graph.invoke({"messages": [HumanMessage("hello")]})["messages"]
+
+        assert types(messages) == ["human", "ai"]
+        assert messages[-1].content == OFFLINE_ANSWER
+
+    def test_with_open_webui_configured_the_registered_graph_asks_it(self, registry):
+        from starter.config.settings import Settings
+
+        with openwebui_stub() as stub:
+            settings = Settings(
+                openwebui_url=stub.url + "/",
+                openwebui_api_key="sk-local",
+                openwebui_model="llama3.1:8b",
+            )
+            graph = registry.registered_assistant(settings)
+            messages = graph.invoke({"messages": [HumanMessage("hello")]})["messages"]
+
+        assert types(messages) == ["human", "ai"]
+        assert messages[-1].content == STUB_ANSWER
+        assert [(r["path"], r["authorization"]) for r in stub.requests] == [
+            ("/api/chat/completions", "Bearer sk-local")
+        ]
+        assert stub.requests[0]["body"]["model"] == "llama3.1:8b"
 
     def test_the_registered_graph_is_the_factorys_with_its_budget(
         self, registry, build_assistant, fake_llm

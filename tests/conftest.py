@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 from pathlib import Path
 
 import pytest
@@ -109,3 +110,19 @@ def add_tool():
     from tests.fakes import recording_add
 
     return recording_add()
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    """Refuse every outbound connection, and record each attempt."""
+    attempts: list[object] = []
+
+    def refuse(*args, **kwargs):
+        attempts.append(args[1:] or kwargs)
+        raise ConnectionRefusedError("the network is refused in this test")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket.socket, "connect_ex", refuse)
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: refuse(None, *a))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: refuse(None, *a))
+    return attempts

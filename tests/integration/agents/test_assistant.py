@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import itertools
 
+import httpx
+import openai
 import pytest
 from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
 from langchain_core.messages import HumanMessage
@@ -16,7 +18,9 @@ from langchain_core.tools import tool
 from langgraph.errors import GraphRecursionError
 
 from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN
+from starter.domain.agents.retries import MODEL_RETRIES
 from starter.infrastructure.agents.factory import build_assistant
+from starter.infrastructure.models import is_transient_failure
 from tests.fakes import answer, propose
 
 
@@ -163,13 +167,15 @@ class TestErrorsPropagate:
         assert model.calls == 1
 
     def test_the_models_exception_reaches_the_caller_unchanged(self, fake_llm, add_tool):
-        failure = TimeoutError("model timed out")
+        failure = RuntimeError("model broke")
         model = fake_llm([failure])
+        graph = build_assistant(model, [add_tool.tool], transient=is_transient_failure)
 
-        with pytest.raises(TimeoutError) as raised:
-            run(build_assistant(model, [add_tool.tool]), "hello")
+        with pytest.raises(RuntimeError) as raised:
+            run(graph, "hello")
 
         assert raised.value is failure
+        assert model.calls == 1
         assert add_tool.calls == []
 
     def test_counter_example_a_tool_that_returns_an_error_text_has_not_raised(self, fake_llm):
@@ -240,3 +246,54 @@ class TestModelCallBudget:
                 "keep adding",
                 recursion_limit=recursion_limit,
             )
+
+
+REQUEST = httpx.Request("POST", "http://127.0.0.1:9/api/chat/completions")
+
+
+def status_failure(code: int) -> openai.APIStatusError:
+    """What the openai client raises for an HTTP error from Open WebUI."""
+    return openai.APIStatusError(
+        f"HTTP {code}", response=httpx.Response(code, request=REQUEST), body=None
+    )
+
+
+def retrying(model) -> object:
+    """The assistant with the registry's retry policy, without waiting between tries."""
+    return build_assistant(model, [], transient=is_transient_failure, initial_delay=0)
+
+
+class TestTransientRetry:
+    """ASSISTANT-TRANSIENT-RETRY: A model failure that the domain classifies as
+    transient -- a timeout, a failed connection, or HTTP 408, 429, 500, 502, 503
+    or 504 -- SHALL be retried, at most `MODEL_RETRIES` times (2); when the
+    retries are spent the run SHALL end with that failure, never with a message
+    that reads like an answer. Any other failure SHALL NOT be retried."""
+
+    def test_a_timeout_is_retried_and_the_answer_completes_the_run(self, fake_llm):
+        model = fake_llm([openai.APITimeoutError(request=REQUEST), answer()])
+
+        messages = run(retrying(model), "hello")
+
+        assert [m.type for m in messages] == ["human", "ai"]
+        assert model.calls == 2
+
+    def test_transient_failures_past_the_retries_end_the_run_with_the_failure(self, fake_llm):
+        model = fake_llm(status_failure(503) for _ in itertools.count())
+
+        with pytest.raises(openai.APIStatusError) as raised:
+            run(retrying(model), "hello")
+
+        assert raised.value.status_code == 503
+        assert MODEL_RETRIES == 2
+        assert model.calls == 1 + MODEL_RETRIES
+
+    @pytest.mark.parametrize("code", [401, 400])
+    def test_counter_example_a_failure_that_is_not_transient_is_not_retried(self, fake_llm, code):
+        model = fake_llm([status_failure(code), answer()])
+
+        with pytest.raises(openai.APIStatusError) as raised:
+            run(retrying(model), "hello")
+
+        assert raised.value.status_code == code
+        assert model.calls == 1
