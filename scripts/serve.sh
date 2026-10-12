@@ -10,7 +10,8 @@
 #   - bound to 127.0.0.1, and no browser: Studio is LangSmith's web app, and
 #     `langgraph dev` opens it by default;
 #   - started from the local-only environment below, whatever this shell
-#     exports. Measured with langgraph-cli 0.4.32 / langgraph-api 0.15.1:
+#     exports. Measured with langgraph-cli 0.4.32 / langgraph-api 0.15.1 (this
+#     wrapper re-proved on 0.4.33 / 0.16.0 by tests/acceptance/agents/test_local_server.py):
 #     with any LangSmith key present the server reports usage to
 #     api.smith.langchain.com even with tracing off, and tracing switched on
 #     sends every run there even with no key at all;
