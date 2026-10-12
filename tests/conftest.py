@@ -1,26 +1,44 @@
-"""Shared fixtures.
+"""Shared fixtures, and the environment every test runs in.
 
 Deliberately small. Domain functions take the environment as an explicit
 argument, so most tests need no fixture at all -- hiding that behind one would
 obscure the point of the layering.
 
 No test may call a real model (.claude/rules/sdd/tests.md): `fake_llm` scripts
-one, and `add_tool` records what a tool loop asked of its only tool.
+one, and `add_tool` records what a tool loop asked of its only tool. Both live
+in tests/fakes.py, imported only by the tests that use them.
 """
 
 from __future__ import annotations
 
-import itertools
+import os
 import re
-from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
-from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
-from langchain_core.tools import BaseTool, tool
+
+# The suite is local-only, whatever the shell that starts it exports
+# (docs/decisions/0004). langsmith reads these on first use and caches them, so
+# they are set here, before any test module imports langchain_core; the
+# langsmith pytest plugin, which loads before this file, is off in addopts.
+# Held equal to .claude/settings.json's env by tests/architecture/test_local_only.py.
+# Without it, a shell with LANGSMITH_TRACING=true uploads every graph run --
+# measured in register-first-graph (verify.md, finding 1).
+LOCAL_ONLY = {
+    "LANGSMITH_TRACING": "false",
+    "LANGSMITH_TRACING_V2": "false",
+    "LANGCHAIN_TRACING_V2": "false",
+    "LANGCHAIN_TRACING": "false",
+    "LANGSMITH_API_KEY": "",
+    "LANGCHAIN_API_KEY": "",
+    "LANGSMITH_CONTROL_PLANE_API_KEY": "",
+    "LANGGRAPH_CLOUD_LICENSE_KEY": "",
+    "LANGSMITH_ENDPOINT": "http://127.0.0.1:9",
+    "LANGCHAIN_ENDPOINT": "http://127.0.0.1:9",
+    "LANGGRAPH_CLI_NO_ANALYTICS": "1",
+    "LANGGRAPH_NO_VERSION_CHECK": "true",
+}
+os.environ.update(LOCAL_ONLY)
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
@@ -68,70 +86,18 @@ def clean_env(monkeypatch):
 
 # -- models and tools ----------------------------------------------------------
 
-_call_ids = itertools.count(1)
-
-
-def propose(*calls: tuple[str, dict[str, Any]]) -> AIMessage:
-    """An AI message proposing these tool calls, each under a fresh id."""
-    return AIMessage(
-        content="",
-        tool_calls=[
-            {"name": name, "args": args, "id": f"call_{next(_call_ids)}", "type": "tool_call"}
-            for name, args in calls
-        ],
-    )
-
-
-def answer(text: str = "done") -> AIMessage:
-    """An AI message proposing no tool call. Its text is never asserted."""
-    return AIMessage(content=text)
-
-
-class ScriptedChatModel(GenericFakeChatModel):
-    """`GenericFakeChatModel`, one scripted message per call, that accepts tools.
-
-    Every fake in langchain_core inherits `bind_tools` from `BaseChatModel`,
-    which raises NotImplementedError, so `create_agent` cannot bind tools to a
-    stock fake. Binding changes nothing here: the script decides what the model
-    proposes. `calls` counts the model calls a run made.
-    """
-
-    calls: int = 0
-
-    def bind_tools(self, tools: Any, *, tool_choice: Any = None, **kwargs: Any) -> Any:
-        return self
-
-    def _generate(self, *args: Any, **kwargs: Any) -> Any:
-        self.calls += 1
-        return super()._generate(*args, **kwargs)
-
 
 @pytest.fixture
 def fake_llm():
-    """Build a scripted model. Each message is copied as it is served, so a
-    script may repeat one, or run forever: `(propose(...) for _ in count())`."""
+    """Build a scripted model: `fake_llm([propose(...), answer()])`."""
+    from tests.fakes import scripted_model
 
-    def build(script: Iterable[AIMessage]) -> ScriptedChatModel:
-        return ScriptedChatModel(messages=(m.model_copy(deep=True) for m in script))
-
-    return build
-
-
-@dataclass
-class RecordingTool:
-    tool: BaseTool
-    calls: list[dict[str, int]]
+    return scripted_model
 
 
 @pytest.fixture
-def add_tool() -> RecordingTool:
+def add_tool():
     """A fake `add(a, b)` tool that records each call's arguments."""
-    calls: list[dict[str, int]] = []
+    from tests.fakes import recording_add
 
-    @tool
-    def add(a: int, b: int) -> int:
-        """Add two integers."""
-        calls.append({"a": a, "b": b})
-        return a + b
-
-    return RecordingTool(tool=add, calls=calls)
+    return recording_add()

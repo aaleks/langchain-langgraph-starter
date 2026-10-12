@@ -10,31 +10,36 @@ from __future__ import annotations
 import importlib.util
 import json
 import socket
+import uuid
 from pathlib import Path
 
 import pytest
 from langchain_core.messages import HumanMessage
-from langgraph.graph.state import CompiledStateGraph
+from langgraph.pregel import Pregel
 
-from tests.conftest import answer
+from tests.fakes import answer
 
 REPO = Path(__file__).resolve().parents[3]
 CONFIG = REPO / "langgraph.json"
 
 
-def load_graph_spec(spec: str, name: str):
-    """Load `./path/to/file.py:attr` as a standalone file, as the server does."""
+def load_registered(graph_id: str):
+    """Load the graph `langgraph.json` names, as a standalone file -- as the server
+    does -- under a fresh module name, so it is built again, here."""
+    spec = json.loads(CONFIG.read_text(encoding="utf-8"))["graphs"][graph_id]
     path, _, attr = spec.rpartition(":")
-    module_spec = importlib.util.spec_from_file_location(name, REPO / path)
+    module_spec = importlib.util.spec_from_file_location(
+        f"registered_{graph_id}_{uuid.uuid4().hex[:8]}", REPO / path
+    )
     module = importlib.util.module_from_spec(module_spec)
     module_spec.loader.exec_module(module)
-    return getattr(module, attr)
+    return getattr(module, attr), module
 
 
 @pytest.fixture
 def registry():
-    """Imported per test, not at collection: this story test stays red across
-    every cycle of the change, and must not stop the rest of the suite."""
+    """Imported per test, not at collection: a story test that is red must not
+    stop the rest of the suite."""
     from starter.infrastructure.agents import registry
 
     return registry
@@ -63,37 +68,59 @@ def no_network(monkeypatch):
     return attempts
 
 
+def types(messages: list) -> list[str]:
+    return [m.type for m in messages]
+
+
 class TestAssistantIsRegistered:
     """ASSISTANT-REGISTERED: `langgraph.json` SHALL register exactly one graph,
     under the id `assistant`, bound to the `assistant` export of
-    `src/starter/infrastructure/agents/registry.py`. That export SHALL be a
-    compiled graph that completes a run with every outbound network connection
-    refused, because until a requirement names a provider its model is offline."""
+    `src/starter/infrastructure/agents/registry.py`. That export SHALL be the
+    graph the factory compiles -- so it carries the budget -- with the offline
+    model and no tools, and it SHALL complete runs with every outbound network
+    connection refused."""
 
     def test_langgraph_json_registers_the_assistant_and_nothing_else(self):
         graphs = json.loads(CONFIG.read_text(encoding="utf-8"))["graphs"]
 
         assert graphs == {"assistant": "./src/starter/infrastructure/agents/registry.py:assistant"}
-        loaded = load_graph_spec(graphs["assistant"], "registered_assistant_under_test")
-        assert isinstance(loaded, CompiledStateGraph)
+        loaded, module = load_registered("assistant")
+        assert isinstance(loaded, Pregel)
+        bound = {name for name, value in vars(module).items() if isinstance(value, Pregel)}
+        assert bound == {"assistant"}
+
+    def test_the_registered_graph_is_the_factorys_with_its_budget(
+        self, registry, build_assistant, fake_llm
+    ):
+        built = build_assistant(fake_llm([answer()]), [])
+
+        assert set(registry.assistant.nodes) == set(built.nodes)
+        assert any(node.startswith("ModelCallLimitMiddleware") for node in built.nodes)
 
     def test_the_registered_graph_completes_a_run_with_the_network_refused(
-        self, registry, clean_env, no_network
+        self, no_network, clean_env
     ):
-        result = registry.assistant.invoke({"messages": [HumanMessage("hello")]})
+        registered, _ = load_registered("assistant")
 
-        messages = result["messages"]
-        assert [m.type for m in messages] == ["human", "ai"]
+        messages = registered.invoke({"messages": [HumanMessage("hello")]})["messages"]
+
+        assert types(messages) == ["human", "ai"]
         assert messages[-1].tool_calls == []
         assert no_network == []
 
-    def test_counter_example_a_graph_the_factory_compiles_for_a_test_is_not_registered(
+    def test_a_second_turn_follows_the_first_instead_of_replacing_it(self, registry):
+        first = registry.assistant.invoke({"messages": [HumanMessage("hello")]})["messages"]
+        second = registry.assistant.invoke({"messages": [*first, HumanMessage("hello again")]})[
+            "messages"
+        ]
+
+        assert types(second) == ["human", "ai", "human", "ai"]
+        assert second[1].id != second[3].id
+
+    def test_counter_example_the_factorys_graph_offers_a_tool_the_registered_one_offers_none(
         self, registry, build_assistant, fake_llm, add_tool
     ):
         built = build_assistant(fake_llm([answer()]), [add_tool.tool])
 
-        exported = {
-            name for name, value in vars(registry).items() if isinstance(value, CompiledStateGraph)
-        }
-        assert exported == {"assistant"}
-        assert built is not registry.assistant
+        assert "tools" in built.nodes
+        assert "tools" not in registry.assistant.nodes

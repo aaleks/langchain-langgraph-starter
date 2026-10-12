@@ -326,6 +326,80 @@ def langgraph_validate(config: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+FACTORY = "infrastructure/agents/factory.py"
+GRAPH_RUNTIMES = ("langgraph", "deepagents", "langchain.agents")
+
+
+def _imported_modules(tree: ast.AST) -> list[str]:
+    modules = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules += [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            modules.append(node.module)
+    return modules
+
+
+def _is_graph_runtime(module: str) -> bool:
+    return any(module == r or module.startswith(r + ".") for r in GRAPH_RUNTIMES)
+
+
+def graphs_compiled_outside_factory(source: Path) -> list[str]:
+    """`create_agent` and its kin, or `.compile()` in a module that imports a graph
+    runtime, anywhere in the package but the factory. A graph compiled elsewhere is
+    a graph the tests never ran -- the registry could export one without its
+    budget and every test would stay green (register-first-graph, verify.md)."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel == FACTORY:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        uses_runtime = any(_is_graph_runtime(m) for m in _imported_modules(tree))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name in AGENT_FACTORIES or (name == "compile" and uses_runtime):
+                found.append(f"{rel}:{node.lineno} {name}()")
+    return found
+
+
+def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
+    """`langchain.agents` imported outside infrastructure/agents/. `create_agent`
+    compiles a graph (ADR 0003), and grimp records only the top-level `langchain`,
+    which models.py may need for a provider -- so the submodule is checked here."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel.startswith("infrastructure/agents/"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        found += [
+            f"{rel} imports {m}"
+            for m in _imported_modules(tree)
+            if m.startswith("langchain.agents")
+        ]
+    return found
+
+
+def local_only_drift(suite: dict[str, str], settings_env: dict[str, str]) -> list[str]:
+    """Where the suite's local-only environment and the agent's settings disagree,
+    on every LangSmith, LangChain and LangGraph variable either one sets."""
+    prefixes = ("LANGSMITH_", "LANGCHAIN_", "LANGGRAPH_")
+    expected = {k: v for k, v in settings_env.items() if k.startswith(prefixes)}
+    problems = [
+        f"{k}: the suite sets {suite.get(k)!r}, the settings {v!r}"
+        for k, v in sorted(expected.items())
+        if suite.get(k) != v
+    ]
+    problems += [
+        f"{k}: set by the suite, not by the settings" for k in sorted(set(suite) - set(expected))
+    ]
+    return problems
+
+
 def build_package(base: Path, name: str, files: dict[str, str]) -> Path:
     """Write a throwaway package: {"domain/routing.py": "import langgraph"} and the __init__s."""
     root = base / name

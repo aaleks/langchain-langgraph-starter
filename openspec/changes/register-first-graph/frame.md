@@ -93,7 +93,7 @@ wording is resolved by ADR 0003's ladder, which outranks a roadmap proposal.
 | Behaviour -- every rule falsifiable, each with a counter-example | Clear | three requirements, each with a counter-example; the budget's is the off-by-one |
 | Determinism -- honestly tagged; every evaluated rule split once more | Clear | all deterministic: the routes, counts and types are asserted; no generated text is |
 | Data -- provenance, freshness, what happens when a source is withdrawn | N-A | the graph reads no data it did not create |
-| Untrusted input -- anything ingested that this project did not write | Partial | a user message reaches a model -- but the registered model is offline and fixed, and the only tool is a test fake. The data-never-instruction requirement and its adversarial case arrive with the first real model or tool (safety slice) |
+| Untrusted input -- anything ingested that this project did not write | Partial | a user message reaches a model -- but the registered model is offline and fixed, and the only tool is a test fake. The data-never-instruction requirement and its adversarial case are a precondition of the first change that installs a provider or registers a real tool (open question 4) |
 | Interfaces -- a flag, env var, output schema, embedding, default or graph id | Clear | a graph id, `assistant` -- ADR 0005. No env var: nothing is read yet. Node names are not yet an interface |
 | Failure -- what the user sees when a dependency is down | N-A | no external dependency at run time: the model is offline, the tool is local |
 | Cost -- tokens, time, money and storage per run | Clear | no model call costs anything yet; the budget caps model calls per run at 10 for when one does |
@@ -109,3 +109,5 @@ N-A
 |---|---|---|---|
 | 1 | Is 10 model calls per run the right budget? | OPEN -- needs a real model's runs to measure | A starting policy (ADR 0005). Revisited by the first change that installs a provider, against measured runs |
 | 2 | Does `langgraph-api 0.16.0` still make the outbound connections the pack measured on 0.15.1? | OPEN -- needs the probe | `serve-first-graph-locally` re-runs the probe; nothing here starts the server |
+| 3 | A model's `invalid_tool_calls` -- arguments emitted unparseably -- end the run like an answer today. Terminal error, or handed back to the model as a model-recoverable error? | OPEN -- needs a real model's malformed outputs to decide against | Owner: the project owner. Decided by the first change that installs a provider, before it lands (`docs/roadmap.md`, "Before the first provider") |
+| 4 | When does untrusted input need its data-never-instruction requirement and adversarial case? | Answered: not here -- the registered model is offline and fixed, and no tool can cause an effect | A precondition of the first change that installs a provider or registers a real tool, whichever comes first (`docs/roadmap.md`, "Before the first provider") |

@@ -67,3 +67,33 @@
   `3 passed`, `langgraph.json` loaded as the server loads a file path
 - [x] 4.2 The full check passes (`[commands].check` in sdd.toml) -- `bash scripts/check.sh`:
   "all checks passed", exit 0 (architecture 38, method 117 OK, suite 46)
+
+## 5. Verify pass 1 -- the fixes (`verify.md`, reviewed at `a9b2a8f`)
+
+- [x] 5.1 The suite is local-only (finding 1): `LOCAL_ONLY` applied in
+  `tests/conftest.py` before langchain_core is imported, `-p no:langsmith_plugin`
+  in addopts, `tests/architecture/test_local_only.py` holding it equal to the
+  settings. With `LANGSMITH_TRACING=true` exported: `3 passed`; with the seal
+  removed: `test_the_suite_runs_with_that_environment_and_tracing_off` FAILED
+- [x] 5.2 ASSISTANT-TOOL-LOOP scoped to valid calls to offered tools, and its
+  hand-back asserted on the model's input (findings 2, 4, 9). New requirements
+  ASSISTANT-TOOL-ERROR and ASSISTANT-ERRORS-PROPAGATE (findings 2, 6). Their
+  tests passed at once -- the behaviour is `create_agent`'s, pinned here rather
+  than trusted -- so each was proved by mutation: tool results stripped from the
+  model's input fails TestToolLoop's first test; tool exceptions swallowed into
+  a success message fails TestErrorsPropagate's first test
+- [x] 5.3 The registered graph is the factory's, budget included (finding 3):
+  a scenario comparing nodes, and `graphs_compiled_outside_factory` /
+  `agent_runtime_imports_outside_agents`, each proved on a fixture. Mutated
+  registry compiling its own graph: the scenario and the architecture check fail
+- [x] 5.4 The offline run loads through `langgraph.json` under a refused network
+  (finding 5); a second turn follows the first (finding 12) -- a reused
+  `AIMessage` in the offline model fails it; REGISTERED's counter-example now
+  compares the `tools` node, exports filtered on `Pregel` (finding 13)
+- [x] 5.5 `MODEL_CALLS_PER_RUN` asserted (finding 10); the step floor of 41
+  pinned by a counter-example, 40 -> `GraphRecursionError` (finding 11);
+  `langgraph_validate` pinned to `LANGGRAPH_CLI_NO_ANALYTICS == "1"` (finding 14)
+- [x] 5.6 Fakes moved to `tests/fakes.py`, recording input and bound tools,
+  streaming limit named (findings 16, 18); design, frame and roadmap corrected,
+  the route table written, and the items for 1b and for the first provider
+  recorded (findings 7, 8, 11, 12, 15, 17, 19, 20)
