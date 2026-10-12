@@ -1,15 +1,16 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 1. First fix: start the server from a shell
-  that is actually hostile -- the suite's sealed variables removed, LangSmith's
-  endpoint pointed at a `.invalid` name -- so the test can catch `serve.sh`
-  dropping its protections (finding 1).
-- **Reviewed at:** `c8f8401`.
-- **Evidence:** `bash scripts/check.sh live` at `c8f8401`: all checks passed --
-  architecture 46, method 117 OK, suite 66, live 6. Three mutations turned their
-  tests red (tasks.md). Two fresh-context lenses over `main..c8f8401`: proof
-  (`spec-compliance`) and defects (`code-reviewer`); both re-ran the live tests
-  (6 passed) and left no server running.
+- **Verdict:** SHIP -- after three passes. Pass 1: DO NOT SHIP (one BLOCKER,
+  four MAJOR). Pass 2: no BLOCKER, no MAJOR. Pass 3: the MINOR fixes, nothing new.
+- **Reviewed at:** `edba5f3` -- pass 3. Pass 1 reviewed `c8f8401`; pass 2 the
+  fix diff `ba5eae8..2dfe19f`.
+- **Evidence (pass 3):** `bash scripts/check.sh live` at `edba5f3`: all checks
+  passed -- architecture 48, `openspec validate --all --strict` 2 passed,
+  `sdd check` OK, method 117 OK, suite 69, live 7. **Evidence (pass 1):** at
+  `c8f8401`, all checks passed -- architecture 46, method 117 OK, suite 66,
+  live 6; three mutations red (tasks.md). Two fresh-context lenses over
+  `main..c8f8401`: proof (`spec-compliance`) and defects (`code-reviewer`); both
+  re-ran the live tests (6 passed) and left no server running.
 
 ## Findings
 
@@ -58,3 +59,25 @@ throwaway harness runs in the scratchpad, 127.0.0.1 only, no process left.
 
 **Pass 2 verdict:** shippable. The MINORs are fixed before landing, in a
 separate commit, read in pass 3.
+
+## Pass 3 -- the fix diff `5f0119b..edba5f3`
+
+Read by the agent that wrote the fixes; not fresh-context. Every pass-2
+finding, 14 to 20, is fixed: the default suite checks `scripts/serve.sh`'s
+exports (a dropped export caught on a fixture); the two third-party switches
+spared, the licence key and proxies removed; the stop's fallback taken when the
+signal cannot be sent; SIGINT on POSIX; binds recorded and asserted on
+loopback, a bind to every interface caught on a pure counter-example; the
+Windows limits and the overclaiming text corrected. Nothing new found.
+
+## Not checked -- all passes
+
+- Placement, graph-architecture and durability lenses: the change adds tests
+  only -- no production code, graph, registration or state.
+- The POSIX stop (SIGINT to the session, the exit phase recorded) and the CI
+  `live` job: not run -- this machine is Windows, and the job is on demand.
+  Read from code; the first `live` run on Linux is its proof.
+- A live mutation binding the server to every interface: not run -- it would
+  expose the server and, on Windows, raise a firewall prompt. The pure
+  counter-example proves the classification.
+- Pass 3 is not fresh-context.
