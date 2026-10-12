@@ -58,8 +58,9 @@ early contracts harder to stabilise.
 
 ## Method
 
-- **Turn on CI and branch protection.** `docs/ci/README.md` -- one command and
-  two settings, done by a person.
+- **Protect `main`.** CI is on (2026-10-12); `docs/ci/README.md` has the two
+  settings, done by a person -- which GitHub offers a private repository only on
+  a paid plan.
 - **Pressure-test the discipline skills** (`.claude/sdd/pressure-tests.md`):
   `/accept`, `/tdd`, `/eval`, `/verify` first.
 - **Prove portability**: install the method into a project in another language
