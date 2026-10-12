@@ -59,3 +59,38 @@ roadmap calls 1a "landed" while it is in flight -- true on merge.
 - The local server: not started. That is 1b.
 - Async runs (`ainvoke`, streaming): not exercised. The server runs graphs
   async -- 1b's smoke run.
+
+## Pass 2 -- the fix diff `a9b2a8f..cf4a2e1`
+
+Three fresh-context lenses: proof (`spec-compliance`), defects
+(`code-reviewer`), and `graph-eval-auditor`. The first launch of all three
+stopped on a session limit before reporting; they were re-run in full.
+
+- **Pass 1 resolved:** every MAJOR (1-6) and every MINOR the lenses rechecked
+  (7-13, 16, 17). The seal was probed from a hostile shell (tracing on, a key
+  exported): `uv run pytest` gave 64 passed and 0 connect attempts, while the
+  same graph run outside pytest made 16.
+- **No BLOCKER, no MAJOR.** Fifteen MINOR findings, merged here:
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 21 | MINOR | graph-eval, proof | TOOL-ERROR's refused-arguments route (a different library path from an unknown tool) is not asserted to hand the error to the model's next call, or to carry on: a middleware ending the run there kept all four tests green | `test_assistant.py:105-113` | Assert the transcript shape and `model.seen[1][-1]` |
+| 22 | MINOR | proof | With two results, nothing checks that both reach the model: a middleware keeping only the last one kept the suite green | `test_assistant.py:56-72` | Assert the model's last two inputs |
+| 23 | MINOR | proof | The registered export could lower its own step ceiling (`.with_config(recursion_limit=5)`) and stay green, and nothing pins the 9,999 the budget statement cites | `registry.py:14`; acceptance | Compare the step ceilings; pin 9,999 |
+| 24 | MINOR | proof | The offline test's guard misses network access at import of modules already cached by earlier tests: a `models.py` connecting at import was caught only when the test ran alone | `test_registered_assistant.py:100-109` | Drop the cached `starter.infrastructure` modules before loading |
+| 25 | MINOR | defects | The seal check cannot fail in an agent session, whose settings already set every variable: removing the seal keeps it green there | `test_local_only.py:25-30` | Prove the seal in a subprocess with tracing switched on |
+| 26 | MINOR | defects | `graphs_compiled_outside_factory` misses `create_agent as make` | `contract.py` | Track the local names factories are imported under |
+| 27 | MINOR | defects | It misses `builder.compile()` in a module that imports the builder rather than a runtime -- the usual shape of a hand-written graph | `contract.py` | Flag `.compile()` anywhere under `infrastructure/agents/`, with an exempt-receiver list |
+| 28 | MINOR | defects | It flags `re.compile` in a module that also imports a graph runtime -- the first tool module with a regex would fail the build | `contract.py` | The same exempt-receiver list |
+| 29 | MINOR | defects | `agent_runtime_imports_outside_agents` misses `from langchain import agents` | `contract.py` | Yield `module.name` for each `ImportFrom` alias |
+| 30 | MINOR | graph-eval, proof | TOOL-LOOP's wording settles the OPEN `invalid_tool_calls` question by default ("answers without proposing a tool call"); the OPEN items carry no Review by date | spec; `frame.md` | Scope the clause; owners and dates |
+| 31 | MINOR | graph-eval | The timeout row says N-A though a model's `TimeoutError` is proved to propagate, and no deadline exists; the first-provider list has retry but no timeout; refusal names no owning slice | `design.md`; `docs/roadmap.md` | Correct the rows; add the timeout |
+| 32 | MINOR | graph-eval | The fake's streaming limit is mis-stated: for a proposal with no text, a stream raises (`No generation chunks were returned`) rather than turning it into an answer | `tests/fakes.py`; roadmap | State the measured behaviour |
+
+Also noted, not counted: `-p no:langsmith_plugin` is extra protection, not the
+seal -- with the plugin forced on, langsmith 0.14.7 still read no switch at
+load (pyproject's comment overstates it); TOOL-ERROR's counter-example keys
+tool messages by id, which its scenario does not ask to count.
+
+**Pass 2 verdict:** shippable -- no BLOCKER, no MAJOR. The MINORs are fixed
+before landing, in a separate commit, and that diff is read in pass 3.
