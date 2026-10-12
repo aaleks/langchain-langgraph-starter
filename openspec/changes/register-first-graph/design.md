@@ -39,12 +39,14 @@ check.
   is `domain/agents/budgets.py`'s; `ModelCallLimitMiddleware` only counts.
   `exit_behavior="error"` makes exhaustion `ModelCallLimitExceededError` --
   the default, `"end"`, injects an AI message that reads like an answer.
-- **The step ceiling stays above the budget.** Each model call is preceded by
-  the middleware's `before_model` step and followed by a tools step, so ten
-  calls take about thirty supersteps. If LangGraph's default recursion limit
-  is reached first, the run ends in `GraphRecursionError` -- the inherited
-  lesson. The factory sets the compiled graph's `recursion_limit` from the
-  budget, and ASSISTANT-MODEL-CALL-BUDGET's first scenario fails if it does not.
+- **The budget, not the step ceiling, ends a runaway loop.** Measured while
+  ASSISTANT-MODEL-CALL-BUDGET was red: with no budget, a model that never stops
+  proposing calls ran to `GraphRecursionError: Recursion limit of 9999 reached`
+  -- `langgraph 1.2.14`'s default ceiling, thousands of model calls away. That
+  is the inherited lesson in its live form. Ten calls take about thirty
+  supersteps, far below the ceiling, so the factory sets no `recursion_limit`;
+  the budget's first scenario asserts `ModelCallLimitExceededError` and fails
+  on `GraphRecursionError`, so a lowered default would be caught.
 
 ## Orchestration design
 
@@ -80,9 +82,10 @@ topology. What the requirements fix about it:
 
 ## Risks
 
-- [LangGraph's step ceiling ends a long loop before the budget does] ->
-  the factory sets `recursion_limit` from the budget; the budget's test asserts
-  `ModelCallLimitExceededError`, not `GraphRecursionError`.
+- [LangGraph's step ceiling ends a loop before the budget does] -> the default
+  is 9999 supersteps (measured), the budget about 30; the budget's test asserts
+  `ModelCallLimitExceededError`, not `GraphRecursionError`, so a ceiling below
+  the budget fails it.
 - [A middleware default changes in a minor release] -> dependencies bounded to
   the checked minor; the ladder's table is re-checked on a bump.
 - [`langgraph-api` 0.16.0 makes a connection 0.15.1 did not] -> nothing in this
