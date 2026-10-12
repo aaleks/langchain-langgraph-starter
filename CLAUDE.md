@@ -6,8 +6,10 @@ A LangChain / LangGraph starter, developed spec-first with proof.
 their contracts and checks, and one graph: `assistant`, a `create_agent` tool
 loop registered in `langgraph.json`, running an offline fixed-answer model and
 no tools until a requirement names a provider or a tool
-(`docs/decisions/0005-the-assistant-graph.md`). The next changes are the
-slices in `docs/roadmap.md` -- each through the loop like everything else.
+(`docs/decisions/0005-the-assistant-graph.md`). It is becoming an
+**approval-gated task assistant** over a local task list, its model served by
+the owner's local Open WebUI -- the slices in `docs/roadmap.md`, each through
+the loop like everything else.
 
 ## The method
 

@@ -5,81 +5,70 @@ approved plan: the class, the requirements and the design are decided when the
 change starts, with the owner, through the loop. Each slice leaves the default
 suite free of services.
 
-## Product: LangGraph, a slice at a time
+## Product: an approval-gated task assistant
 
-1. **Foundation** (structural), split in two at intake.
-   - **1a, `register-first-graph` -- landed.** Dependencies pinned to the
-     checked minor; a `fake_llm` fixture; the `assistant` graph, a
-     `create_agent` tool loop bounded by a domain budget, run end to end with a
-     fake model and a fake tool; `infrastructure/agents/registry.py` and a root
-     `langgraph.json` with no `env`; architecture checks that every registered
-     export is a compiled graph and that `langgraph validate` accepts the
-     config (ADR 0005).
-   - **1b, `serve-first-graph-locally` -- landed.** `live` tests serve
-     `assistant` through `scripts/serve.sh` -- the graph id served, a run
-     streaming and completing, a second process reading the thread -- from a
-     shell that switches LangSmith on, under a connection probe that records
-     nothing beyond 127.0.0.1 (`langgraph-api` 0.16.0, measured). Of the five
-     items planned:
-     - the server's entry point starting from the local-only environment --
-       proved end to end on the running server; the suite's own seal landed in
-       1a. The project ships no other entry point yet: a CLI brings its own;
-     - the local smoke run -- landed, without its interrupt: **an interrupt
-       resumed on the same thread moves to Durability (3)**, where interrupts
-       are designed -- the registered graph has none to resume;
-     - the connection probe -- landed as a test to re-run at every upgrade,
-       `bash scripts/check.sh live` (on demand: nothing triggers it yet);
-     - **`.env` loading in `config/` moves to "Before the first provider"**:
-       nothing reads a setting yet;
-     - teaching the fake model to stream tool calls -- not needed: the served
-       graph runs the offline model, whose answer streams as text. It returns
-       with the first streamed tool call.
-   - **Before the first provider** -- the first change that installs a model
-     provider or registers a real tool, whichever slice it belongs to, brings
-     these with it (register-first-graph, `verify.md`):
-     - a requirement that untrusted text -- user input, tool output, retrieved
-       content -- is data, never instruction, and an adversarial case asserting
-       no unauthorised effect;
-     - a decision on `invalid_tool_calls`: a terminal error, or handed back;
-     - a tool-call budget beside the model-call budget,
-       `ModelRetryMiddleware(..., on_failure="error")` for transient failures,
-       and a deadline on the provider call;
-     - `config/` loading `.env` without overriding what is already set
-       (python-dotenv's default) -- the first setting read needs it; the model
-       chosen in a factory function the registry calls, not at import;
-     - `MODEL_CALLS_PER_RUN` re-measured against real runs;
-     - the "only `infrastructure/models.py` builds a model" check extended to
-       every module, the provider imported inside its builder.
-2. **Correctness** (structural). A versioned state contract; routing and budget
-   policies in `domain/`; topology tests on node names, transitions, interrupt
-   points and terminal outcomes; scenario fixtures for every route; architecture
-   tests for nodes (no environment reads, no exits, no inline clients).
-3. **Durability** (structural). Interrupt and resume; a checkpointer chosen with
-   build-or-adopt (`langgraph-checkpoint-sqlite`, `-postgres`); thread
-   ownership, state-version and retention policy; encryption at rest. Proved
-   without `langgraph up`, which needs a LangSmith key:
-   - a run paused, the graph rebuilt on the same store, and the run resumed;
-   - an old checkpoint resuming after a state-schema change;
-   - another tenant's thread refused.
+Chosen by the owner on 2026-10-12. The `assistant` manages a **local task
+list**: it reads and searches it freely, and **every write -- create, close,
+reassign -- pauses for the person's approval** and resumes on the same thread.
+Its model is served by the owner's **local Open WebUI**, through its
+OpenAI-compatible API, configured in `.env` (written by the owner, never an
+agent). Each slice below exists because this product needs it; what the
+original plan listed without a product (versioned state, routing policy,
+durability, safety) arrives in the slice whose requirement asks for it.
 
-   On SQLite in the default suite, on Postgres as `live`.
-4. **Safety** (structural). Capability manifests, authorisation at the tool
-   boundary, audit events, adversarial injection tests asserting no
-   unauthorised effect; the sandbox decision for Deep Agents. **Required:** a
-   fixture-proven architecture check that fails when a tool can be registered
-   without its capability manifest, or when a write-capable one lacks its
-   schemas, its authorisation boundary or its audit event. The manifest's
-   format is decided here, with the first real tool. The rule itself is
-   already in `.claude/rules/langgraph/graphs.md`.
-5. **Operations** (structural). Local tracing and log correlation --
-   OpenTelemetry to a collector on this machine, never LangSmith -- runbooks,
-   deployment and rollback, checkpoint migration.
-6. **Deep Agents** (structural), only if a requirement justifies it: one
-   constrained harness, sandboxed, with reviewed profiles and its own evaluations.
+1. **Foundation** -- landed, in two changes.
+   - **1a, `register-first-graph`** (#4): dependencies pinned to the checked
+     minor; a `fake_llm` fixture; `assistant`, a `create_agent` tool loop
+     bounded by a domain budget, run end to end with fakes; the registry and a
+     root `langgraph.json` with no `env`; architecture checks on registration,
+     compiling and the suite's local-only environment (ADR 0005).
+   - **1b, `serve-first-graph-locally`** (#6): `live` tests serve `assistant`
+     through `scripts/serve.sh` from a hostile shell, under a connection probe
+     that records nothing beyond 127.0.0.1 (`langgraph-api` 0.16.0, measured;
+     CI's `live` job green on Linux). Its interrupt moved to slice 4, its
+     `.env` loading to slice 2: neither had a requirement yet.
+2. **The model: Open WebUI** (structural). The first real model, and with it
+   what the first provider must bring (register-first-graph, `verify.md`):
+   - `config/` loads `.env` without overriding what is already set
+     (python-dotenv's default); the Open WebUI URL, key and model are
+     documented in `.env.example` and read only there;
+   - `infrastructure/models.py` builds the model -- `ChatOpenAI` against Open
+     WebUI's OpenAI-compatible endpoint -- the provider imported inside its
+     builder; the registry chooses it in a factory function, the offline model
+     when nothing is configured;
+   - transient failures retried by `ModelRetryMiddleware(...,
+     on_failure="error")` on a domain predicate, a deadline on each call, and
+     a decision on `invalid_tool_calls`;
+   - a `live` test of a real run through Open WebUI, and `MODEL_CALLS_PER_RUN`
+     re-measured against real runs;
+   - the "only `models.py` builds a model" check extended to every module.
+3. **The task store, read only** (structural). A local SQLite task list -- its
+   schema an ADR -- and the first real tools: list and search. With them:
+   - the capability-manifest format, decided with the first real tool, and the
+     fixture-proven check that no tool registers without one (the old Safety
+     slice's requirement);
+   - a tool-call budget beside the model-call budget;
+   - task text and tool output as **untrusted data, never instruction**, with
+     an adversarial case asserting no unauthorised effect.
+4. **Approval-gated writes** (structural). Create, close and reassign, each
+   proposed by the model and executed only after the person approves:
+   `interrupt()` with the proposal as payload, `Command(resume=...)` on the
+   same thread, and a rejection that ends without an effect. The rung is
+   decided here -- `create_agent` with human-in-the-loop middleware, or a
+   hand-written `StateGraph` -- and with a hand-written graph come the old
+   Correctness slice's parts: a versioned state contract, routing policy in
+   `domain/`, topology tests. Writes are idempotent per thread and step, and
+   audited.
+5. **Durability** (structural). The approval may wait: a durable checkpointer
+   chosen with build-or-adopt (`langgraph-checkpoint-sqlite`); a run paused,
+   the graph rebuilt on the same store, and resumed; thread ownership; an old
+   checkpoint resuming after a state change; retention.
+6. **Operations** (structural). Local tracing and log correlation --
+   OpenTelemetry to a collector on this machine, never LangSmith -- and a
+   runbook.
 
-Not before their slice: multi-agent delegation, long-term memory, a general
-shell, production persistence. Each multiplies the attack surface and makes
-early contracts harder to stabilise.
+Not planned: Deep Agents, multi-agent delegation, long-term memory, a general
+shell. Each would need a requirement this product does not have.
 
 ## Method
 
