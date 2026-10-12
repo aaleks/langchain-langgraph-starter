@@ -1,10 +1,12 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 1. Seal the default suite from LangSmith
-  first (finding 1).
-- **Reviewed at:** `a9b2a8f` -- the staged tree the lenses read, committed
-  unchanged after they reported.
-- **Evidence:** run fresh in this session, on the reviewed tree.
+- **Verdict:** SHIP -- after three passes. Pass 1: DO NOT SHIP (six MAJOR).
+  Pass 2: no BLOCKER, no MAJOR. Pass 3: the MINOR fixes, nothing new.
+- **Reviewed at:** `fa51dd7` -- pass 3. Pass 1 reviewed `a9b2a8f`, the
+  staged tree the lenses read, committed unchanged after they reported; pass 2
+  the fix diff `a9b2a8f..cf4a2e1`.
+- **Evidence (pass 3):** run fresh at `fa51dd7`, below. **Evidence (pass 1):**
+  on the tree it reviewed.
   - `bash scripts/check.sh`: `all checks passed`, exit 0. Architecture: 38
     passed, none skipped. `openspec validate --all --strict`: 1 passed.
     `sdd check`: OK, 3 requirements, 2 test files, both claimed. The method's
@@ -94,3 +96,38 @@ tool messages by id, which its scenario does not ask to count.
 
 **Pass 2 verdict:** shippable -- no BLOCKER, no MAJOR. The MINORs are fixed
 before landing, in a separate commit, and that diff is read in pass 3.
+
+## Pass 3 -- the fix diff `4a8507d..fa51dd7`
+
+Read by the agent that wrote the fixes, as the second pass of the previous
+change was; not fresh-context (see Not checked). Every pass-2 finding, 21 to
+32, is fixed. The diff touches tests, the spec's scenarios, the frame, the
+design, the roadmap and one pyproject comment -- no production code:
+`git diff 4a8507d fa51dd7 -- src/ langgraph.json` is empty.
+
+- `bash scripts/check.sh` at `fa51dd7`: `all checks passed`, exit 0.
+  Architecture: 46 passed. `openspec validate --all --strict`: 1 passed.
+  `sdd check`: OK, 5 requirements, 2 test files, both claimed. The method's
+  tests: 117 OK; the manifest matches. The suite: 65 passed.
+- Each new assertion watched red, in a full-suite run, on its finding's own
+  mutation: a middleware ending the run after refused arguments (21); one
+  keeping only the last tool result (22); `.with_config(recursion_limit=5)` on
+  the export (23); a `models.py` connecting at import (24). The seal removed:
+  the subprocess check fails inside the agent session (25). The compile and
+  import checks' new fixture cases -- an aliased factory, an imported builder,
+  `re.compile` beside a runtime, `from langchain import agents` -- are the
+  probes the defects lens reported missed (26-29).
+- Nothing new found. The pass-2 notes stand as recorded: the plugin flag is a
+  second line, and TOOL-ERROR's counter-example keys tool messages by id.
+
+Open, by owner and date, and not blocking: frame questions 1-3 (the budget's
+number, the 0.16.0 probe, `invalid_tool_calls`); "Before the first provider"
+and 1b's carried items in `docs/roadmap.md`.
+
+## Not checked -- passes 2 and 3
+
+- Pass 2 ran three lenses, not five: placement (`architecture-guardian`) and
+  `graph-architecture-guardian` were not re-run on the fix diff, which changed
+  no production code, no registration and no graph.
+- Pass 3 is not fresh-context: its diff is the MINOR fixes to tests and
+  documents, each proved by the mutation its finding described.
