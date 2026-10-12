@@ -10,9 +10,13 @@ here is proved twice: it holds for `starter`, and it fails for a fixture.
 from __future__ import annotations
 
 import ast
+import importlib
+import importlib.util
 import io
 import json
+import os
 import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Iterable
@@ -265,6 +269,61 @@ def registration_problems(config: Path, source: Path, package: str) -> list[str]
         elif name not in exported:
             problems.append(f"graph {graph_id!r}: {REGISTRY} binds no {name!r}")
     return problems
+
+
+def uncompiled_registrations(config: Path) -> list[str]:
+    """Each graph langgraph.json names that, loaded the way the server loads it, is
+    not a compiled graph -- a factory, an uncompiled `StateGraph`, anything else.
+
+    The server would accept a factory, or compile a `StateGraph` itself. The rule
+    here is narrower (graphs.md, "Registration"): the registry exports what the
+    factory compiled, so the graph served is the graph the tests ran.
+    """
+    from langgraph.pregel import Pregel  # here, not at the top: only once a graph exists
+
+    problems = []
+    for graph_id, spec in (
+        json.loads(config.read_text(encoding="utf-8")).get("graphs") or {}
+    ).items():
+        target = str(spec.get("path") if isinstance(spec, dict) else spec)
+        location, _, name = target.rpartition(":")
+        if location.endswith(".py"):
+            module_spec = importlib.util.spec_from_file_location(
+                f"_registered_{graph_id}", config.parent / location
+            )
+            module = importlib.util.module_from_spec(module_spec)
+            module_spec.loader.exec_module(module)
+        else:
+            module = importlib.import_module(location)
+        value = getattr(module, name, None)
+        if not isinstance(value, Pregel):
+            problems.append(
+                f"graph {graph_id!r}: {target} is a {type(value).__name__}, not a compiled graph"
+            )
+    return problems
+
+
+def langgraph_validate(config: Path) -> subprocess.CompletedProcess[str]:
+    """`langgraph validate` on a config: its schema -- JSON, a non-empty `graphs`,
+    `python_version`, `dependencies`. It never loads a graph: a path to a file that
+    does not exist passes it, which is why `uncompiled_registrations` exists.
+
+    LANGGRAPH_CLI_NO_ANALYTICS must be exactly "1": anything else, "true"
+    included, and the command POSTs analytics to Supabase -- measured with
+    langgraph-cli 0.4.33 (register-first-graph, frame.md). PYTHONUTF8=1 because on
+    Windows the CLI's emoji output crashes under cp1252.
+    """
+    env = {**os.environ, "LANGGRAPH_CLI_NO_ANALYTICS": "1", "PYTHONUTF8": "1"}
+    return subprocess.run(
+        [sys.executable, "-m", "langgraph_cli", "validate", "-c", str(config)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        cwd=config.parent,
+        timeout=120,
+    )
 
 
 def build_package(base: Path, name: str, files: dict[str, str]) -> Path:

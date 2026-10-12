@@ -13,7 +13,7 @@ from __future__ import annotations
 import itertools
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -120,19 +120,18 @@ def fake_llm():
 @dataclass
 class RecordingTool:
     tool: BaseTool
-    calls: list[dict[str, int]] = field(default_factory=list)
+    calls: list[dict[str, int]]
 
 
 @pytest.fixture
 def add_tool() -> RecordingTool:
     """A fake `add(a, b)` tool that records each call's arguments."""
-    recording = RecordingTool(tool=None)  # type: ignore[arg-type]
+    calls: list[dict[str, int]] = []
 
     @tool
     def add(a: int, b: int) -> int:
         """Add two integers."""
-        recording.calls.append({"a": a, "b": b})
+        calls.append({"a": a, "b": b})
         return a + b
 
-    recording.tool = add
-    return recording
+    return RecordingTool(tool=add, calls=calls)

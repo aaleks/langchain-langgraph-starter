@@ -22,7 +22,8 @@
 - [x] 0.2 `fake_llm` fixture in `tests/conftest.py`: a scripted, tool-calling
   fake built on `langchain_core`'s `GenericFakeChatModel`, counting its calls --
   drives TestToolLoop green: `3 passed`
-- [ ] 0.3 The default suite still needs no service: `uv run pytest -q` green
+- [x] 0.3 The default suite still needs no service: `uv run pytest -q` green --
+  `46 passed`, no `live` test, the network refused in the offline scenario
 
 ## 1. ASSISTANT-TOOL-LOOP
 
@@ -46,16 +47,23 @@
 - [x] 3.1 /accept ASSISTANT-REGISTERED -- the test is red, for the right reason:
   written first, as the story test. 1 failed, 2 errors: `FileNotFoundError` for
   `langgraph.json`, `ModuleNotFoundError` for `starter.infrastructure.agents`
-- [ ] 3.2 /tdd -- every scenario of ASSISTANT-REGISTERED, counter-example included, asserted and green
-- [ ] 3.3 The three skipped checks in `tests/architecture/test_graphs.py` run and pass
-- [ ] 3.4 An architecture check that imports each registered export and fails
-  when one is not a compiled graph, proved red on a fixture
-- [ ] 3.5 An architecture check that runs `langgraph validate` on
+- [x] 3.2 /tdd -- every scenario of ASSISTANT-REGISTERED, counter-example included, asserted and green:
+  `3 passed` once `models.py`, `registry.py` and `langgraph.json` existed. The network
+  guard proved able to fail: an `httpx` request under it was recorded and refused
+- [x] 3.3 The three skipped checks in `tests/architecture/test_graphs.py` run and pass --
+  `38 passed`, none skipped
+- [x] 3.4 An architecture check that imports each registered export and fails
+  when one is not a compiled graph, proved red on a fixture --
+  `uncompiled_registrations`: an uncompiled `StateGraph`, a factory and `None` each
+  caught; a compiled graph accepted by file and by module
+- [x] 3.5 An architecture check that runs `langgraph validate` on
   `langgraph.json` -- `LANGGRAPH_CLI_NO_ANALYTICS=1`, `PYTHONUTF8=1` -- and is
   proved red on a fixture with no graphs. A schema check only: it never loads a
-  graph (`frame.md`)
+  graph (`frame.md`) -- exit 0 on `langgraph.json`; exit 1, "No graphs found", on the fixture
 
 ## 4. Wiring
 
-- [ ] 4.1 The story test is green through the real entry point
-- [ ] 4.2 The full check passes (`[commands].check` in sdd.toml)
+- [x] 4.1 The story test is green through the real entry point -- TestAssistantIsRegistered,
+  `3 passed`, `langgraph.json` loaded as the server loads a file path
+- [x] 4.2 The full check passes (`[commands].check` in sdd.toml) -- `bash scripts/check.sh`:
+  "all checks passed", exit 0 (architecture 38, method 117 OK, suite 46)
