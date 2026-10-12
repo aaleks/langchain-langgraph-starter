@@ -59,3 +59,17 @@
   gaps written (7); no connect to `127.0.0.1:9` (8); the roadmap records 1b's
   five items (9); group kill and `taskkill`'s exit code (10); no proxy on `/ok`
   (11); 12 and 13 accepted, in the design
+
+## 5. Verify pass 2 -- the MINOR fixes (`verify.md`, findings 14-20)
+
+- [x] 5.1 `scripts/serve.sh`'s exports checked against `LOCAL_ONLY` in the default
+  suite, a dropped export caught on a fixture; analytics and the version check
+  spared at their local values in the server's environment, the licence key
+  and proxies removed (14, 16, 18)
+- [x] 5.2 The stop: SIGINT on POSIX, CTRL_BREAK on Windows, a signal that cannot
+  be sent falls back to the kill (15, 17); the Windows limits written in the
+  spec, the design and the harness
+- [x] 5.3 Binds recorded; the server's own port on 127.0.0.1 among them and none
+  beyond loopback, live; a bind to every interface caught on a pure
+  counter-example (19)
+- [x] 5.4 The roadmap's "re-runs" and `serve.sh`'s measurement note corrected (20)

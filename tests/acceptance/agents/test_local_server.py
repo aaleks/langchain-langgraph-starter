@@ -22,6 +22,8 @@ from tests.localserver import local_server
 
 # This machine. `None` is a lookup of no host at all -- an address to bind.
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", None}
+# What a socket may bind to: loopback only -- "" or "0.0.0.0" is every interface.
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 # Where serve.sh points LangSmith: a connection here means tracing came back on.
 DEAD_ENDPOINT = ["127.0.0.1", 9]
 HELLO = {"messages": [{"role": "human", "content": "hello"}]}
@@ -47,6 +49,16 @@ def beyond_this_machine(records: list[dict]) -> list[dict]:
         if host not in LOCAL_HOSTS:
             found.append(record)
     return found
+
+
+def binds_beyond_loopback(records: list[dict]) -> list[dict]:
+    """The probe records of a socket bound to anything but loopback."""
+    return [
+        r
+        for r in records
+        if r["kind"] == "bind"
+        and not (isinstance(r["detail"], list) and r["detail"][0] in LOOPBACK)
+    ]
 
 
 def message_types(values: dict) -> list[str]:
@@ -94,6 +106,7 @@ def session(tmp_path_factory):
         seen["traced_runs"] = [run["status"] for run in client.runs.list(traced)]
     seen["records"] = server.records()
     seen["stopped_gracefully"] = server.stopped_gracefully
+    seen["port"] = int(server.url.rsplit(":", 1)[1])
     return seen
 
 
@@ -117,6 +130,13 @@ class TestServesTheAssistant:
         assert [assistant["graph_id"] for assistant in session["found"]] == ["assistant"]
 
     @pytest.mark.live
+    def test_it_is_bound_to_this_machine_only(self, session):
+        binds = [r["detail"] for r in session["records"] if r["kind"] == "bind"]
+
+        assert ["127.0.0.1", session["port"]] in binds, binds
+        assert binds_beyond_loopback(session["records"]) == []
+
+    @pytest.mark.live
     def test_a_run_streams_its_state_and_completes(self, session):
         assert {"values", "updates"} <= set(session["events"])
         assert message_types(session["last"]) == ["human", "ai"]
@@ -128,6 +148,19 @@ class TestServesTheAssistant:
 
         assert second.returncode == 0, second.stderr
         assert json.loads(second.stdout) == ["human", "ai"]
+
+    def test_counter_example_a_bind_to_every_interface_is_not_this_machine_only(self):
+        everywhere = {"pid": 1, "kind": "bind", "detail": ["0.0.0.0", 2024]}
+        unnamed = {"pid": 1, "kind": "bind", "detail": ["", 2024]}
+        records = [
+            {"pid": 1, "kind": "bind", "detail": ["127.0.0.1", 0]},
+            {"pid": 1, "kind": "bind", "detail": ["::1", 2024, 0, 0]},
+            everywhere,
+            unnamed,
+            {"pid": 1, "kind": "connect", "detail": ["0.0.0.0", 9]},
+        ]
+
+        assert binds_beyond_loopback(records) == [everywhere, unnamed]
 
     @pytest.mark.live
     def test_counter_example_a_graph_id_that_is_not_registered_is_not_served(self, session):

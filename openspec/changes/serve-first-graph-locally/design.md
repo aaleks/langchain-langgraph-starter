@@ -26,10 +26,15 @@ asynchronously, with an in-memory checkpointer.
   keys set, and both endpoints at `http://langsmith-hostile.invalid`. Every one
   of those, `serve.sh` must override. The endpoint is a `.invalid` name (RFC
   6761): a `serve.sh` that stopped overriding it is caught by the probe at the
-  lookup -- measured, 14 lookups -- and can deliver nothing. The CLI's analytics
-  and the version check are left unset, not hostile: their only target is a
-  real third party, so the probe could catch a regression only by letting one
-  request out; the method's tests prove `serve.sh` exports them.
+  lookup -- measured, 14 lookups -- and can deliver nothing. Two switches keep
+  their local values, the CLI's analytics and the version check: their only
+  target is a real third party, so the probe could catch a regression only by
+  letting one request out. The default suite checks instead that this
+  project's `scripts/serve.sh` exports the whole local-only environment
+  (`test_local_only.py`) -- the method's tests check only the seed it came
+  from. The licence key is removed and not set (a fake one would send the
+  server to a licence check); proxy variables are removed (a local proxy would
+  turn a LangSmith request into a 127.0.0.1 connect) -- verify pass 2.
 - **One server, in a throwaway working copy** (finding 4). `scripts/serve.sh`,
   `langgraph.json` and `src/` are copied into a temporary directory, and
   `UV_PROJECT` points `uv` at this repository's environment. The in-memory
@@ -39,13 +44,16 @@ asynchronously, with an in-memory checkpointer.
 - **Git for Windows' bash** (finding 3), found beside `git` -- never WSL's,
   which `System32` puts first on a PowerShell `PATH` and which would run
   `serve.sh` in Linux, without the probe's variables.
-- **Stopped as a person stops it** (finding 2). Windows: `CTRL_BREAK_EVENT` to
-  the server's new process group; POSIX: `SIGTERM` to its session. Measured on
-  Windows: the server runs its lifespan shutdown ("Stopping dev persistence
-  flush loop") and the port frees. It then exits by re-raising the signal, so
-  `atexit` handlers do not run -- for a person's Ctrl+C either. Only a server
-  that will not stop is killed (`taskkill /T /F`, `SIGKILL` to the group), and
-  the test fails on it: the record would be incomplete.
+- **Stopped by a signal** (findings 2, 17). POSIX: `SIGINT` to the session --
+  a person's Ctrl+C: uvicorn's lifespan shutdown, then Python's own, atexit
+  handlers and langsmith's flush included. Windows: `CTRL_BREAK_EVENT` to the
+  process group, the only console event that can target one: the lifespan
+  shutdown runs (measured: "Stopping dev persistence flush loop") and the port
+  frees, but uvicorn re-raises `SIGBREAK` and the process ends without its
+  atexit handlers -- that phase is recorded on POSIX (CI's `live` job) only.
+  A signal that cannot be sent (no console) or does not stop the server falls
+  back to `taskkill /T /F` or `SIGKILL` to the group, and the test fails: the
+  record would be incomplete.
 - **The probe rides on `PYTHONPATH`,** which `serve.sh` passes on, and records
   its own `start` with the argv: the test proves it was loaded in the process
   running `langgraph dev`. A probe that never loaded records nothing -- and
@@ -55,7 +63,14 @@ asynchronously, with an in-memory checkpointer.
   `127.0.0.1`, `::1`, `localhost` or none. Its counter-example is in the default
   suite. A connect to `127.0.0.1:9` -- `serve.sh`'s closed LangSmith endpoint --
   is local, but it means tracing came back on: the traced-run scenario asserts
-  there is none.
+  there is none -- observable on POSIX only, since on Windows an asyncio
+  client's connect to a literal IP raises no event; there the export check
+  covers it.
+- **Bound to loopback only** (finding 19): the probe records every
+  `socket.bind`; the server's own port on `127.0.0.1` must be among them, and
+  none may be beyond loopback. Proved on a pure counter-example rather than by
+  binding the real server to every interface -- which would expose it, and on
+  Windows raise a firewall prompt.
 - **What the probe cannot see,** written in the probe and here: an asyncio
   connect to a literal IP (Windows' Proactor loop raises no event); native code
   opening its own sockets (grpcio's C core); processes that are not Python

@@ -2,14 +2,17 @@
 `scripts/serve.sh` -- for a `live` test, and stop it again.
 
 The server starts from a shell a person might have, and not from the suite's
-sealed one: every local-only variable removed, then LangSmith switched on with
+sealed one: the local-only variables removed, then LangSmith switched on with
 keys and an endpoint. `serve.sh` must undo all of it; the tests prove it did.
 The endpoint is a `.invalid` name (RFC 6761), so a `serve.sh` that stopped
 overriding it would be caught by the probe at its lookup, and could deliver
-nothing. Two switches are left unset rather than hostile -- the CLI's analytics
-and the version check: their only target is a real third party, so the probe
-would catch a regression only by letting one request out. The method's own
-tests prove `serve.sh` exports them.
+nothing. Two switches keep their local values -- the CLI's analytics and the
+version check: their only target is a real third party, so a regression would
+be caught here only by letting a request out. The default suite checks that
+`serve.sh` exports them (tests/architecture/test_local_only.py). The licence
+key is removed and not set: a fake one would send the server to a licence check.
+Proxy variables are removed too: a local proxy would turn a request for a
+LangSmith host into a connection to 127.0.0.1.
 
 The server runs in a throwaway working copy -- `scripts/serve.sh`,
 `langgraph.json` and `src/` -- with `UV_PROJECT` pointing `uv` at this
@@ -54,9 +57,16 @@ HOSTILE = {
 }
 
 
+# Kept at their local values: a regression in either reaches a real third party.
+SPARED = ("LANGGRAPH_CLI_NO_ANALYTICS", "LANGGRAPH_NO_VERSION_CHECK")
+PROXIES = {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}
+
+
 def hostile_environment(base: dict[str, str]) -> dict[str, str]:
-    """`base` without one local-only variable, then LangSmith switched on."""
-    return {**{k: v for k, v in base.items() if k not in LOCAL_ONLY}, **HOSTILE}
+    """`base` without the local-only variables or a proxy, then LangSmith
+    switched on; the two spared switches at their local values."""
+    kept = {k: v for k, v in base.items() if k not in LOCAL_ONLY and k.upper() not in PROXIES}
+    return {**kept, **HOSTILE, **{name: LOCAL_ONLY[name] for name in SPARED}}
 
 
 @dataclass
@@ -181,24 +191,27 @@ def _await_ok(server: LocalServer, process: subprocess.Popen, timeout: float) ->
 
 
 def _stop(process: subprocess.Popen, grace: float = 30) -> bool:
-    """Stop the whole tree -- bash, uv and the server's Python -- the way a
-    person's Ctrl+C does, and say whether that was enough. Windows: CTRL_BREAK to
-    the new process group (uvicorn handles SIGBREAK); POSIX: SIGTERM to the
-    session. The server then runs its lifespan shutdown -- measured: "Stopping
-    dev persistence flush loop" -- and exits by re-raising the signal, so atexit
-    handlers do not run, here or for a person. Only if it will not go: `taskkill
-    /T /F` or SIGKILL, and False."""
+    """Stop the whole tree -- bash, uv and the server's Python -- with a signal,
+    and say whether that was enough. POSIX: SIGINT to the session, as a person's
+    Ctrl+C: uvicorn's lifespan shutdown, then Python's own -- atexit handlers and
+    langsmith's flush included. Windows: CTRL_BREAK to the process group, the
+    only console event that can target one: the lifespan shutdown runs (measured:
+    "Stopping dev persistence flush loop"), but uvicorn re-raises SIGBREAK and
+    the process ends without its atexit handlers -- that phase is recorded on
+    POSIX only. If the signal cannot be sent (no console) or does not stop it:
+    `taskkill /T /F` or SIGKILL to the group, and False."""
     if process.poll() is not None:
         return False
-    if WINDOWS:
-        os.kill(process.pid, signal.CTRL_BREAK_EVENT)
-    else:
-        os.killpg(process.pid, signal.SIGTERM)
     try:
+        if WINDOWS:
+            os.kill(process.pid, signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(process.pid, signal.SIGINT)
         process.wait(timeout=grace)
         return True
-    except subprocess.TimeoutExpired:
-        pass
+    except (OSError, subprocess.TimeoutExpired):
+        if process.poll() is not None:
+            return False
     if WINDOWS:
         killed = subprocess.run(
             ["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, text=True
@@ -206,6 +219,9 @@ def _stop(process: subprocess.Popen, grace: float = 30) -> bool:
         if killed.returncode != 0 and process.poll() is None:
             raise RuntimeError(f"taskkill could not stop the server: {killed.stderr.strip()}")
     else:
-        os.killpg(process.pid, signal.SIGKILL)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     process.wait(timeout=grace)
     return False

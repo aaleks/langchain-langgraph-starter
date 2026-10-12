@@ -27,7 +27,8 @@ suite free of services.
      - the local smoke run -- landed, without its interrupt: **an interrupt
        resumed on the same thread moves to Durability (3)**, where interrupts
        are designed -- the registered graph has none to resume;
-     - the connection probe -- landed as a test that re-runs at every upgrade;
+     - the connection probe -- landed as a test to re-run at every upgrade,
+       `bash scripts/check.sh live` (on demand: nothing triggers it yet);
      - **`.env` loading in `config/` moves to "Before the first provider"**:
        nothing reads a setting yet;
      - teaching the fake model to stream tool calls -- not needed: the served

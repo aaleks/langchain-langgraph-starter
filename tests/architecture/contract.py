@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -408,6 +409,17 @@ def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
             if hit:
                 found.append(f"{rel} imports {hit}")
     return found
+
+
+def shell_exports(script: str) -> dict[str, str]:
+    """The variables a shell script's `export NAME=value ...` lines set."""
+    exported = {}
+    for line in script.splitlines():
+        if line.startswith("export "):
+            for word in shlex.split(line[len("export ") :]):
+                name, _, value = word.partition("=")
+                exported[name] = value
+    return exported
 
 
 def local_only_drift(suite: dict[str, str], settings_env: dict[str, str]) -> list[str]:

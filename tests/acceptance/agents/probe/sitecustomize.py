@@ -3,8 +3,8 @@
 `tests/localserver.py` puts this directory on PYTHONPATH and names a log file in
 PROBE_LOG; `scripts/serve.sh` passes both on. Python imports `sitecustomize`
 at start-up, and this one installs an audit hook (PEP 578) that appends, per
-process: a `start` record with its argv, then every connect, name lookup and
-datagram send the `socket` module makes.
+process: a `start` record with its argv, then every bind, connect, name lookup
+and datagram send the `socket` module makes.
 
 What it cannot see, and why that is acceptable here:
 - An asyncio connect to a *literal IP* raises no `socket.connect` event on
@@ -51,6 +51,8 @@ def _host(value: object) -> object:
 def _hook(event: str, args: tuple) -> None:
     if event == "socket.connect":
         _record("connect", _host(args[1]))
+    elif event == "socket.bind":
+        _record("bind", _host(args[1]))
     elif event in _LOOKUPS:
         # getnameinfo's first argument is a (host, port) address; the rest, a host.
         target = args[0][0] if event == "socket.getnameinfo" else args[0]
