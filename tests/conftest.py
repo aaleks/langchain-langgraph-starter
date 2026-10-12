@@ -40,6 +40,12 @@ LOCAL_ONLY = {
 }
 os.environ.update(LOCAL_ONLY)
 
+# The owner's .env may configure a real model. The environment wins over .env
+# (SETTINGS-ENVIRONMENT-WINS), so these empty values keep every default test --
+# and the live server tests, which inherit them -- on the offline model.
+MODEL_UNSET = {"OPENWEBUI_URL": "", "OPENWEBUI_API_KEY": "", "OPENWEBUI_MODEL": ""}
+os.environ.update(MODEL_UNSET)
+
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
 # `NAME=value` or `# NAME=value`: a documented variable, set or not.
@@ -74,13 +80,15 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """A process environment with every documented variable removed.
+    """A process environment with every documented variable set empty.
 
     Without this, whatever is in the developer's real .env leaks into a test,
-    and it passes or fails depending on whose machine runs it.
+    and it passes or fails depending on whose machine runs it. Empty, not
+    removed: the environment wins over .env (SETTINGS-ENVIRONMENT-WINS), so a
+    removed variable would be filled from the developer's .env again.
     """
     for name in documented_variables():
-        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(name, "")
     return monkeypatch
 
 
