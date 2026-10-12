@@ -8,10 +8,15 @@ authors = [
     { name = "Aleksandar Antonijevic", email = "aaleks@users.noreply.github.com" }
 ]
 requires-python = ">=3.13"
-# Empty on purpose. Runtime dependencies arrive with the first change whose
-# requirements need them -- see docs/roadmap.md. Installing LangGraph before a
-# spec asks for a graph is carrying an unused rung (docs/decisions/0003).
-dependencies = []
+# Each arrived with the requirement that needs it (register-first-graph,
+# docs/decisions/0005). Bounded to the minor release they were checked against:
+# the middleware defaults the tool loop depends on are re-checked before a minor
+# bump (.claude/skills/discover/references/orchestration-ladder.md).
+dependencies = [
+    "langchain>=1.4.4,<1.5",        # create_agent and its middleware: ASSISTANT-TOOL-LOOP, -MODEL-CALL-BUDGET
+    "langchain-core>=1.6.9,<1.7",   # messages, tools, and the fake chat models every test uses
+    "langgraph>=1.2.14,<1.3",       # the compiled graph the registry exports: ASSISTANT-REGISTERED
+]
 
 # uv's dev group: installed by `uv sync`, absent from the built package.
 [dependency-groups]
@@ -19,6 +24,10 @@ dev = [
     "pytest>=8.4",
     "ruff>=0.13",
     "import-linter>=2.5",   # architecture contracts run as a test; brings grimp
+    # The local server (scripts/serve.sh) and `langgraph validate`. Development
+    # only; local only (docs/decisions/0004). Re-probe its outbound connections
+    # on any bump -- serve-first-graph-locally records the probe.
+    "langgraph-cli[inmem]>=0.4.33,<0.5",
 ]
 
 [build-system]
@@ -38,7 +47,10 @@ module-name = "starter"
 # hack: tests import `starter` exactly as an Agent Server will.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers -m 'not live'"
+# -p no:langsmith_plugin: langsmith's pytest plugin loads before conftest.py
+# makes the suite local-only. langsmith 0.14.7's reads no tracing switch when
+# it loads -- measured -- so this is a second line, not the seal; conftest is.
+addopts = "--strict-markers -m 'not live' -p no:langsmith_plugin"
 markers = [
     "live: needs a running service, a real model or paid quota (excluded by default)",
 ]

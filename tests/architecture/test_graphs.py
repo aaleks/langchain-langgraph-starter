@@ -9,21 +9,27 @@ fails when it should, so the day a graph arrives the checks are already true.
 from __future__ import annotations
 
 import json
+import subprocess
 import uuid
 
 import pytest
 
+from . import contract
 from .contract import (
     AGENTS_ALLOWED_EXTERNALS,
     AGENTS_SUBPACKAGE,
     REGISTRY,
     REPO,
+    agent_runtime_imports_outside_agents,
     agents_dir,
     build_package,
+    graphs_compiled_outside_factory,
     imports_outside,
+    langgraph_validate,
     models_built_inline,
     registration_problems,
     root_package,
+    uncompiled_registrations,
 )
 
 SOURCE = REPO / "src" / root_package()
@@ -34,6 +40,26 @@ def test_langgraph_json_registers_only_what_the_registry_exports():
     if not CONFIG.is_file():
         pytest.skip("no langgraph.json yet -- the foundation slice registers the first graph")
     assert registration_problems(CONFIG, SOURCE, root_package()) == []
+
+
+def test_every_registered_graph_is_a_compiled_graph():
+    if not CONFIG.is_file():
+        pytest.skip("no langgraph.json yet -- the foundation slice registers the first graph")
+    assert uncompiled_registrations(CONFIG) == []
+
+
+def test_langgraph_validate_accepts_the_config():
+    if not CONFIG.is_file():
+        pytest.skip("no langgraph.json yet -- the foundation slice registers the first graph")
+    result = langgraph_validate(CONFIG)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_graphs_are_compiled_only_by_the_factory():
+    if not agents_dir(SOURCE).is_dir():
+        pytest.skip("no infrastructure/agents/ yet -- the first graph creates it")
+    assert graphs_compiled_outside_factory(SOURCE) == []
+    assert agent_runtime_imports_outside_agents(SOURCE) == []
 
 
 def test_the_agents_adapter_builds_no_client_of_its_own():
@@ -104,6 +130,45 @@ def test_counter_example_every_form_of_a_registry_export_is_accepted(tmp_path):
     assert registration_problems(config, source, "pkg") == []
 
 
+COMPILED_GRAPH = (
+    "from langgraph.graph import END, START, MessagesState, StateGraph\n"
+    "builder = StateGraph(MessagesState)\n"
+    "builder.add_node('noop', lambda state: {})\n"
+    "builder.add_edge(START, 'noop')\n"
+    "builder.add_edge('noop', END)\n"
+    "ok = builder.compile()\n"
+)
+
+
+def test_each_registration_that_is_not_a_compiled_graph_is_caught(tmp_path):
+    here = f"./src/pkg/{REGISTRY}"
+    config, _ = registry_project(
+        tmp_path,
+        COMPILED_GRAPH + "raw = builder\ndef factory(config):\n    return ok\nother = None\n",
+        {
+            "graphs": {
+                "ok": f"{here}:ok",
+                "raw": f"{here}:raw",
+                "factory": {"path": f"{here}:factory"},
+                "other": f"{here}:other",
+            }
+        },
+    )
+    problems = uncompiled_registrations(config)
+    assert len(problems) == 3, problems
+    assert "'raw'" in problems[0] and "StateGraph" in problems[0]
+    assert "'factory'" in problems[1] and "function" in problems[1]
+    assert "'other'" in problems[2] and "NoneType" in problems[2]
+
+
+def test_langgraph_validate_refuses_a_config_with_no_graphs(tmp_path):
+    config = tmp_path / "langgraph.json"
+    config.write_text(json.dumps({"dependencies": ["."], "graphs": {}}), encoding="utf-8")
+    result = langgraph_validate(config)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "No graphs found" in result.stdout + result.stderr
+
+
 @pytest.fixture
 def fixture_package(tmp_path, monkeypatch):
     def build(files: dict[str, str]) -> str:
@@ -171,3 +236,96 @@ def test_counter_example_a_model_passed_in_is_not_built_inline(tmp_path):
         },
     )
     assert models_built_inline(source) == []
+
+
+def test_counter_example_a_compiled_graph_is_accepted_by_file_or_by_module(
+    tmp_path, fixture_package
+):
+    name = fixture_package({"infrastructure/agents/registry.py": COMPILED_GRAPH})
+    config = tmp_path / "langgraph.json"
+    config.write_text(
+        json.dumps(
+            {
+                "graphs": {
+                    "by-file": f"./{name}/infrastructure/agents/registry.py:ok",
+                    "by_module": f"{name}.infrastructure.agents.registry:ok",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert uncompiled_registrations(config) == []
+
+
+def test_each_graph_compiled_outside_the_factory_is_caught(tmp_path):
+    source = build_package(
+        tmp_path,
+        "compilefix",
+        {
+            "infrastructure/agents/factory.py": (
+                "from langchain.agents import create_agent\n"
+                "def build(model):\n    return create_agent(model=model)\n"
+            ),
+            # the factory under another name
+            "infrastructure/agents/registry.py": (
+                "from langchain.agents import create_agent as make\n"
+                "assistant = make(model=object(), tools=[])\n"
+            ),
+            "infrastructure/agents/graphs/chat.py": (
+                "from langgraph.graph import StateGraph\n"
+                "builder = StateGraph(dict)\n"
+                "graph = builder.compile()\n"
+            ),
+            # a builder that arrived by import: no runtime imported here
+            "infrastructure/agents/graphs/review.py": (
+                "from .chat import builder\nreview = builder.compile()\n"
+            ),
+            # counter-examples: a regex, beside a runtime and outside the adapter
+            "infrastructure/agents/tools.py": (
+                "import re\nfrom langgraph.types import Command\nPATTERN = re.compile('x')\n"
+            ),
+            "cli/main.py": "import re\npattern = re.compile('x')\n",
+        },
+    )
+    found = graphs_compiled_outside_factory(source)
+    assert [f.split(":")[0] for f in found] == [
+        "infrastructure/agents/graphs/chat.py",
+        "infrastructure/agents/graphs/review.py",
+        "infrastructure/agents/registry.py",
+    ], found
+
+
+def test_langchain_agents_imported_outside_the_agents_adapter_is_caught(tmp_path):
+    source = build_package(
+        tmp_path,
+        "agentsimportfix",
+        {
+            "infrastructure/agents/factory.py": "from langchain.agents import create_agent\n",
+            "infrastructure/models.py": (
+                "import langchain.agents\nfrom langchain.chat_models import init_chat_model\n"
+            ),
+            "cli/main.py": "from langchain.agents.middleware import ModelCallLimitMiddleware\n",
+            "cli/other.py": "from langchain import agents\n",
+            "config/settings.py": "import langchain_agents_lookalike\n",
+        },
+    )
+    assert agent_runtime_imports_outside_agents(source) == [
+        "cli/main.py imports langchain.agents.middleware",
+        "cli/other.py imports langchain.agents",
+        "infrastructure/models.py imports langchain.agents",
+    ]
+
+
+def test_langgraph_validate_is_run_with_cli_analytics_off(tmp_path, monkeypatch):
+    """The CLI POSTs analytics unless LANGGRAPH_CLI_NO_ANALYTICS is exactly "1"
+    -- "true" does not count. A shell may set neither."""
+    monkeypatch.delenv("LANGGRAPH_CLI_NO_ANALYTICS", raising=False)
+    handed: dict = {}
+
+    def run(args, **kwargs):
+        handed.update(kwargs)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(contract.subprocess, "run", run)
+    contract.langgraph_validate(tmp_path / "langgraph.json")
+    assert handed["env"]["LANGGRAPH_CLI_NO_ANALYTICS"] == "1"

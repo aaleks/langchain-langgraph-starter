@@ -10,9 +10,13 @@ here is proved twice: it holds for `starter`, and it fails for a fixture.
 from __future__ import annotations
 
 import ast
+import importlib
+import importlib.util
 import io
 import json
+import os
 import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Iterable
@@ -264,6 +268,161 @@ def registration_problems(config: Path, source: Path, package: str) -> list[str]
             problems.append(f"graph {graph_id!r}: {target} is not in {REGISTRY}")
         elif name not in exported:
             problems.append(f"graph {graph_id!r}: {REGISTRY} binds no {name!r}")
+    return problems
+
+
+def uncompiled_registrations(config: Path) -> list[str]:
+    """Each graph langgraph.json names that, loaded the way the server loads it, is
+    not a compiled graph -- a factory, an uncompiled `StateGraph`, anything else.
+
+    The server would accept a factory, or compile a `StateGraph` itself. The rule
+    here is narrower (graphs.md, "Registration"): the registry exports what the
+    factory compiled, so the graph served is the graph the tests ran.
+    """
+    from langgraph.pregel import Pregel  # here, not at the top: only once a graph exists
+
+    problems = []
+    for graph_id, spec in (
+        json.loads(config.read_text(encoding="utf-8")).get("graphs") or {}
+    ).items():
+        target = str(spec.get("path") if isinstance(spec, dict) else spec)
+        location, _, name = target.rpartition(":")
+        if location.endswith(".py"):
+            module_spec = importlib.util.spec_from_file_location(
+                f"_registered_{graph_id}", config.parent / location
+            )
+            module = importlib.util.module_from_spec(module_spec)
+            module_spec.loader.exec_module(module)
+        else:
+            module = importlib.import_module(location)
+        value = getattr(module, name, None)
+        if not isinstance(value, Pregel):
+            problems.append(
+                f"graph {graph_id!r}: {target} is a {type(value).__name__}, not a compiled graph"
+            )
+    return problems
+
+
+def langgraph_validate(config: Path) -> subprocess.CompletedProcess[str]:
+    """`langgraph validate` on a config: its schema -- JSON, a non-empty `graphs`,
+    `python_version`, `dependencies`. It never loads a graph: a path to a file that
+    does not exist passes it, which is why `uncompiled_registrations` exists.
+
+    LANGGRAPH_CLI_NO_ANALYTICS must be exactly "1": anything else, "true"
+    included, and the command POSTs analytics to Supabase -- measured with
+    langgraph-cli 0.4.33 (register-first-graph, frame.md). PYTHONUTF8=1 because on
+    Windows the CLI's emoji output crashes under cp1252.
+    """
+    env = {**os.environ, "LANGGRAPH_CLI_NO_ANALYTICS": "1", "PYTHONUTF8": "1"}
+    return subprocess.run(
+        [sys.executable, "-m", "langgraph_cli", "validate", "-c", str(config)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        cwd=config.parent,
+        timeout=120,
+    )
+
+
+FACTORY = "infrastructure/agents/factory.py"
+AGENTS_PREFIX = "infrastructure/agents/"
+GRAPH_RUNTIMES = ("langgraph", "deepagents", "langchain.agents")
+# `.compile()` on these is not a graph -- a regex, most often.
+NOT_GRAPH_COMPILERS = frozenset({"re", "regex"})
+
+
+def _import_names(node: ast.AST) -> list[str]:
+    """What one import statement brings in, as dotted names. `from a import b`
+    gives both `a` and `a.b`: `b` may itself be a module (`from langchain import
+    agents`). Relative imports name this package, never a runtime: none."""
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if isinstance(node, ast.ImportFrom) and node.module and not node.level:
+        return [node.module, *(f"{node.module}.{alias.name}" for alias in node.names)]
+    return []
+
+
+def _within(name: str, package: str) -> bool:
+    return name == package or name.startswith(package + ".")
+
+
+def graphs_compiled_outside_factory(source: Path) -> list[str]:
+    """`create_agent` and its kin -- under any name they were imported as -- or a
+    `.compile()` that may be a graph's, anywhere in the package but the factory.
+    A `.compile()` counts anywhere under infrastructure/agents/, where a builder
+    can arrive by import, and in any module importing a graph runtime; never on
+    a regex. A graph compiled elsewhere is a graph the tests never ran -- the
+    registry could export one without its budget and every test would stay green
+    (register-first-graph, verify.md)."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel == FACTORY:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+        factories = set(AGENT_FACTORIES) | {
+            alias.asname or alias.name
+            for node in imports
+            if node.module and any(_within(node.module, r) for r in GRAPH_RUNTIMES)
+            for alias in node.names
+            if alias.name in AGENT_FACTORIES
+        }
+        uses_runtime = any(
+            _within(name, runtime)
+            for node in ast.walk(tree)
+            for name in _import_names(node)
+            for runtime in GRAPH_RUNTIMES
+        )
+        may_compile = rel.startswith(AGENTS_PREFIX) or uses_runtime
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Attribute):
+                name = func.attr
+                receiver = func.value.id if isinstance(func.value, ast.Name) else None
+            else:
+                name, receiver = getattr(func, "id", None), None
+            compiles = name == "compile" and may_compile and receiver not in NOT_GRAPH_COMPILERS
+            if name in factories or compiles:
+                found.append(f"{rel}:{node.lineno} {name}()")
+    return found
+
+
+def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
+    """`langchain.agents` imported outside infrastructure/agents/, in any spelling.
+    `create_agent` compiles a graph (ADR 0003), and grimp records only the
+    top-level `langchain`, which models.py may need for a provider -- so the
+    submodule is checked here, once per import statement."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel.startswith(AGENTS_PREFIX):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            hit = next((n for n in _import_names(node) if _within(n, "langchain.agents")), None)
+            if hit:
+                found.append(f"{rel} imports {hit}")
+    return found
+
+
+def local_only_drift(suite: dict[str, str], settings_env: dict[str, str]) -> list[str]:
+    """Where the suite's local-only environment and the agent's settings disagree,
+    on every LangSmith, LangChain and LangGraph variable either one sets."""
+    prefixes = ("LANGSMITH_", "LANGCHAIN_", "LANGGRAPH_")
+    expected = {k: v for k, v in settings_env.items() if k.startswith(prefixes)}
+    problems = [
+        f"{k}: the suite sets {suite.get(k)!r}, the settings {v!r}"
+        for k, v in sorted(expected.items())
+        if suite.get(k) != v
+    ]
+    problems += [
+        f"{k}: set by the suite, not by the settings" for k in sorted(set(suite) - set(expected))
+    ]
     return problems
 
 

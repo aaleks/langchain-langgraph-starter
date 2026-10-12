@@ -7,24 +7,43 @@ suite free of services.
 
 ## Product: LangGraph, a slice at a time
 
-1. **Foundation** (structural). Dependencies: `langchain-core`, `langchain`,
-   `langgraph`, and `langgraph-cli[inmem]` in the dev group -- each pinned, each
-   justified by a requirement. A `fake_llm` fixture. One `StateGraph` run end to
-   end with a fake model and a fake tool. `infrastructure/agents/registry.py`
-   and a root `langgraph.json` naming only its exports, with no `env` (the
-   architecture checks are waiting for it), validated by `langgraph validate`
-   for its schema. **Local only** (ADR 0004):
-   - a requirement that every entry point the project ships starts from the
-     local-only environment that `scripts/serve.sh` uses;
-   - `config/` loads `.env` without overriding what is already set;
-   - a local smoke run, `live`: `bash scripts/serve.sh`, then through the
-     server's API -- the graph id is served, a fake-model run streams, an
-     interrupt resumes on the same thread, and a second process reads the
-     run's state;
-   - an architecture test that imports each registered export and fails when
-     one is not a compiled graph;
-   - the connection probe in `.claude/rules/langgraph/runtime.md` re-run
-     against the pinned versions, and its result recorded.
+1. **Foundation** (structural), split in two at intake.
+   - **1a, `register-first-graph` -- landed.** Dependencies pinned to the
+     checked minor; a `fake_llm` fixture; the `assistant` graph, a
+     `create_agent` tool loop bounded by a domain budget, run end to end with a
+     fake model and a fake tool; `infrastructure/agents/registry.py` and a root
+     `langgraph.json` with no `env`; architecture checks that every registered
+     export is a compiled graph and that `langgraph validate` accepts the
+     config (ADR 0005).
+   - **1b, `serve-first-graph-locally` -- next.** **Local only** (ADR 0004):
+     - a requirement that every entry point the project ships starts from the
+       local-only environment that `scripts/serve.sh` uses;
+     - `config/` loads `.env` without overriding what is already set;
+     - a local smoke run, `live`: `bash scripts/serve.sh`, then through the
+       server's API -- the graph id is served, a fake-model run streams, an
+       interrupt resumes on the same thread, and a second process reads the
+       run's state;
+     - the connection probe in `.claude/rules/langgraph/runtime.md` re-run
+       against the pinned versions (`langgraph-api` moved 0.15.1 -> 0.16.0),
+       and its result recorded;
+     - carried from 1a's review: the fake model taught to stream tool calls
+       before a streamed run is asserted (its inherited `_stream` raises on a
+       proposal with no text, and drops the calls from one with text);
+       a model chosen by a setting is chosen in a factory function the
+       registry calls, never in the registry's import-time body.
+   - **Before the first provider** -- the first change that installs a model
+     provider or registers a real tool, whichever slice it belongs to, brings
+     these with it (register-first-graph, `verify.md`):
+     - a requirement that untrusted text -- user input, tool output, retrieved
+       content -- is data, never instruction, and an adversarial case asserting
+       no unauthorised effect;
+     - a decision on `invalid_tool_calls`: a terminal error, or handed back;
+     - a tool-call budget beside the model-call budget,
+       `ModelRetryMiddleware(..., on_failure="error")` for transient failures,
+       and a deadline on the provider call;
+     - `MODEL_CALLS_PER_RUN` re-measured against real runs;
+     - the "only `infrastructure/models.py` builds a model" check extended to
+       every module, the provider imported inside its builder.
 2. **Correctness** (structural). A versioned state contract; routing and budget
    policies in `domain/`; topology tests on node names, transitions, interrupt
    points and terminal outcomes; scenario fixtures for every route; architecture

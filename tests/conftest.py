@@ -1,20 +1,44 @@
-"""Shared fixtures.
+"""Shared fixtures, and the environment every test runs in.
 
 Deliberately small. Domain functions take the environment as an explicit
 argument, so most tests need no fixture at all -- hiding that behind one would
 obscure the point of the layering.
 
-A `fake_llm` fixture arrives with the first change that adds langchain-core
-(docs/roadmap.md, slice 1). No test may call a real model; see
-.claude/rules/sdd/tests.md.
+No test may call a real model (.claude/rules/sdd/tests.md): `fake_llm` scripts
+one, and `add_tool` records what a tool loop asked of its only tool. Both live
+in tests/fakes.py, imported only by the tests that use them.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 import pytest
+
+# The suite is local-only, whatever the shell that starts it exports
+# (docs/decisions/0004). langsmith reads these on first use and caches them, so
+# they are set here, before any test module imports langchain_core; the
+# langsmith pytest plugin, which loads before this file, is off in addopts.
+# Held equal to .claude/settings.json's env by tests/architecture/test_local_only.py.
+# Without it, a shell with LANGSMITH_TRACING=true uploads every graph run --
+# measured in register-first-graph (verify.md, finding 1).
+LOCAL_ONLY = {
+    "LANGSMITH_TRACING": "false",
+    "LANGSMITH_TRACING_V2": "false",
+    "LANGCHAIN_TRACING_V2": "false",
+    "LANGCHAIN_TRACING": "false",
+    "LANGSMITH_API_KEY": "",
+    "LANGCHAIN_API_KEY": "",
+    "LANGSMITH_CONTROL_PLANE_API_KEY": "",
+    "LANGGRAPH_CLOUD_LICENSE_KEY": "",
+    "LANGSMITH_ENDPOINT": "http://127.0.0.1:9",
+    "LANGCHAIN_ENDPOINT": "http://127.0.0.1:9",
+    "LANGGRAPH_CLI_NO_ANALYTICS": "1",
+    "LANGGRAPH_NO_VERSION_CHECK": "true",
+}
+os.environ.update(LOCAL_ONLY)
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
@@ -58,3 +82,22 @@ def clean_env(monkeypatch):
     for name in documented_variables():
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
+
+
+# -- models and tools ----------------------------------------------------------
+
+
+@pytest.fixture
+def fake_llm():
+    """Build a scripted model: `fake_llm([propose(...), answer()])`."""
+    from tests.fakes import scripted_model
+
+    return scripted_model
+
+
+@pytest.fixture
+def add_tool():
+    """A fake `add(a, b)` tool that records each call's arguments."""
+    from tests.fakes import recording_add
+
+    return recording_add()

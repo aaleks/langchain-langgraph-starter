@@ -2,10 +2,12 @@
 
 A LangChain / LangGraph starter, developed spec-first with proof.
 
-**Nothing product-shaped is built yet, on purpose.** What exists is the method
-and a walking skeleton that already enforces it: five empty layers, their
-contracts, and the checks. The first product change is the LangGraph foundation
-slice in `docs/roadmap.md` -- and it goes through the loop like everything else.
+**A walking skeleton, on purpose.** What exists is the method, five layers with
+their contracts and checks, and one graph: `assistant`, a `create_agent` tool
+loop registered in `langgraph.json`, running an offline fixed-answer model and
+no tools until a requirement names a provider or a tool
+(`docs/decisions/0005-the-assistant-graph.md`). The next changes are the
+slices in `docs/roadmap.md` -- each through the loop like everything else.
 
 ## The method
 
@@ -20,9 +22,10 @@ change is `.claude/sdd/GUIDE.md`.
 - **pytest, ruff, import-linter** (with grimp) -- the dev group in `pyproject.toml`.
 - **OpenSpec 1.14** for the spec lifecycle, pinned and run through
   `bash .claude/sdd/sdd.sh openspec <args>`. Needs Node 20.19+.
-- **LangChain and LangGraph** arrive with the first change whose requirements
-  need them. None is installed yet. They run on this machine only -- never
-  through LangSmith (below).
+- **LangChain 1.4, langchain-core 1.6, LangGraph 1.2** -- runtime dependencies,
+  each bounded to the minor it was checked against; `langgraph-cli[inmem]` in
+  the dev group. No model provider is installed yet. They run on this machine
+  only -- never through LangSmith (below).
 
 ## Commands
 
@@ -100,7 +103,7 @@ The full plan, in slices: `docs/roadmap.md`. The decisions:
 ## Where things are
 
 ```
-src/starter/            the package -- five layers, empty, each with its contract
+src/starter/            the package -- five layers, each with its contract; graphs in infrastructure/agents/
 tests/                  unit, integration, acceptance; architecture checks the checkers
 tests/evals/golden/     evaluation ground truth -- written by a human only
 openspec/               specs/ (living truth), changes/ (in flight), the sdd-proof schema
