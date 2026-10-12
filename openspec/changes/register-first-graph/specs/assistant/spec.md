@@ -5,7 +5,7 @@ The assistant is the starter's first LangGraph graph: a tool loop, run end to en
 ## ADDED Requirements
 
 ### Requirement: ASSISTANT-TOOL-LOOP
-The assistant SHALL execute every call the model proposes to a tool it was given, with arguments that tool's schema accepts -- exactly once, with the model's arguments -- hand each result to the model's next call as a tool message answering that call, and end the run when the model answers without proposing a tool call.
+The assistant SHALL execute every call the model proposes to a tool it was given, with arguments that tool's schema accepts -- exactly once, with the model's arguments -- hand each result to the model's next call as a tool message answering that call, and end the run when the model answers without proposing a tool call. A reply carrying only `invalid_tool_calls` is outside this rule: its route is OPEN (frame.md, question 3).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant.py::TestToolLoop`
@@ -22,7 +22,7 @@ The assistant SHALL execute every call the model proposes to a tool it was given
 - **WHEN** the assistant runs on the human message `add 1 and 2, and 3 and 4`
 - **THEN** the tool is called twice, with `{"a": 1, "b": 2}` and `{"a": 3, "b": 4}`
 - **AND** the transcript's message types are `human, ai, tool, tool, ai`: two tool messages, `3` and `7`, each answering its own call's id
-- **AND** the model was called 2 times
+- **AND** both tool messages are the last inputs of the model's second call, and the model was called 2 times
 
 #### Scenario: Counter-example -- the model answers at once
 - **GIVEN** a scripted model that answers without proposing a tool call
@@ -44,7 +44,8 @@ A call the model proposes to a tool it was not given, or with arguments that too
 #### Scenario: Arguments the tool's schema refuses
 - **GIVEN** a scripted model that proposes `add(a="two", b=3)`, then answers
 - **WHEN** the assistant runs on the human message `what is two plus 3?`
-- **THEN** no tool is called, and the tool message has status `error` and answers the proposed call's id
+- **THEN** no tool is called, and the transcript's message types are `human, ai, tool, ai`
+- **AND** the tool message has status `error`, answers the proposed call's id, and is the last input of the model's second call
 
 #### Scenario: Refused calls still spend the budget
 - **GIVEN** a scripted model that proposes `multiply(a=2, b=3)` on every call
@@ -88,7 +89,7 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model calls, a d
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
 - **WHEN** the assistant runs on the human message `keep adding`
 - **THEN** the run raises `ModelCallLimitExceededError`, not `GraphRecursionError`
-- **AND** `MODEL_CALLS_PER_RUN` is 10, the model was called exactly `MODEL_CALLS_PER_RUN` times and the tool as many
+- **AND** the graph's step ceiling is 9,999, `MODEL_CALLS_PER_RUN` is 10, and the model was called exactly `MODEL_CALLS_PER_RUN` times and the tool as many
 
 #### Scenario: Counter-example -- an answer on the last call within budget completes
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on calls 1 to 9 and answers on call 10
@@ -114,7 +115,7 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model calls, a d
 
 #### Scenario: Compiled by the factory, budget included
 - **GIVEN** the registered graph, and a graph the factory compiles from a scripted model and no tools
-- **THEN** their nodes are the same, the budget's middleware among them
+- **THEN** their nodes are the same, the budget's middleware among them, and so are their step ceilings
 
 #### Scenario: An offline run of the registered graph
 - **GIVEN** a process in which every outbound socket connection is refused before the graph is loaded

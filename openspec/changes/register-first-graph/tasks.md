@@ -97,3 +97,23 @@
   streaming limit named (findings 16, 18); design, frame and roadmap corrected,
   the route table written, and the items for 1b and for the first provider
   recorded (findings 7, 8, 11, 12, 15, 17, 19, 20)
+
+## 6. Verify pass 2 -- the MINOR fixes (`verify.md`, findings 21-32)
+
+- [x] 6.1 Assertions the scenarios now name: the refused-arguments route hands
+  back and goes on (21), both results reach the model (22), the export's step
+  ceiling equals the factory's and 9,999 is pinned (23), the offline run builds
+  every `starter.infrastructure` module under the guard (24). Each proved by
+  mutation in a full-suite run: a middleware ending the run after refused
+  arguments, one keeping only the last result, `.with_config(recursion_limit=5)`
+  on the export, and a `models.py` connecting at import -- each turned its test red
+- [x] 6.2 The seal proved in a subprocess from a hostile environment (25): with
+  the seal removed, `test_the_seal_holds_in_a_shell_that_switches_tracing_on`
+  FAILED inside the agent session too
+- [x] 6.3 `graphs_compiled_outside_factory`: aliased factories, `.compile()` under
+  `infrastructure/agents/` without a runtime import, never on a regex (26-28);
+  `agent_runtime_imports_outside_agents`: `from langchain import agents` (29) --
+  each case in the fixtures, 45 architecture checks passing
+- [x] 6.4 TOOL-LOOP excludes `invalid_tool_calls` explicitly; every OPEN item has
+  an owner and a Review by date (30); the timeout and refusal rows, the deadline
+  for the first provider (31); the fake's streaming limit as measured (32)

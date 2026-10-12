@@ -266,12 +266,23 @@ def test_each_graph_compiled_outside_the_factory_is_caught(tmp_path):
                 "from langchain.agents import create_agent\n"
                 "def build(model):\n    return create_agent(model=model)\n"
             ),
+            # the factory under another name
             "infrastructure/agents/registry.py": (
-                "from langchain.agents import create_agent\n"
-                "assistant = create_agent(model=object(), tools=[])\n"
+                "from langchain.agents import create_agent as make\n"
+                "assistant = make(model=object(), tools=[])\n"
             ),
             "infrastructure/agents/graphs/chat.py": (
-                "from langgraph.graph import StateGraph\ngraph = StateGraph(dict).compile()\n"
+                "from langgraph.graph import StateGraph\n"
+                "builder = StateGraph(dict)\n"
+                "graph = builder.compile()\n"
+            ),
+            # a builder that arrived by import: no runtime imported here
+            "infrastructure/agents/graphs/review.py": (
+                "from .chat import builder\nreview = builder.compile()\n"
+            ),
+            # counter-examples: a regex, beside a runtime and outside the adapter
+            "infrastructure/agents/tools.py": (
+                "import re\nfrom langgraph.types import Command\nPATTERN = re.compile('x')\n"
             ),
             "cli/main.py": "import re\npattern = re.compile('x')\n",
         },
@@ -279,6 +290,7 @@ def test_each_graph_compiled_outside_the_factory_is_caught(tmp_path):
     found = graphs_compiled_outside_factory(source)
     assert [f.split(":")[0] for f in found] == [
         "infrastructure/agents/graphs/chat.py",
+        "infrastructure/agents/graphs/review.py",
         "infrastructure/agents/registry.py",
     ], found
 
@@ -293,10 +305,13 @@ def test_langchain_agents_imported_outside_the_agents_adapter_is_caught(tmp_path
                 "import langchain.agents\nfrom langchain.chat_models import init_chat_model\n"
             ),
             "cli/main.py": "from langchain.agents.middleware import ModelCallLimitMiddleware\n",
+            "cli/other.py": "from langchain import agents\n",
+            "config/settings.py": "import langchain_agents_lookalike\n",
         },
     )
     assert agent_runtime_imports_outside_agents(source) == [
         "cli/main.py imports langchain.agents.middleware",
+        "cli/other.py imports langchain.agents",
         "infrastructure/models.py imports langchain.agents",
     ]
 

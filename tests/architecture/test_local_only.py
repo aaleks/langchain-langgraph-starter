@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 
 from tests.conftest import LOCAL_ONLY
 
@@ -16,17 +18,46 @@ from .contract import REPO, local_only_drift
 
 SETTINGS = REPO / ".claude" / "settings.json"
 
+# What a person's shell might export -- the environment the seal must beat.
+HOSTILE = {
+    "LANGSMITH_TRACING": "true",
+    "LANGSMITH_TRACING_V2": "true",
+    "LANGCHAIN_TRACING_V2": "true",
+    "LANGSMITH_API_KEY": "lsv2_pt_not_a_real_key",
+}
+# Imports conftest the way pytest does -- before any test module -- then asks
+# langsmith what it would do. Exits 1 if it would trace.
+PROBE = (
+    "import tests.conftest\n"
+    "from langsmith.utils import tracing_is_enabled\n"
+    "raise SystemExit(1 if tracing_is_enabled() else 0)\n"
+)
+
 
 def test_the_suite_sets_the_same_local_only_environment_as_the_settings():
     settings_env = json.loads(SETTINGS.read_text(encoding="utf-8"))["env"]
     assert local_only_drift(LOCAL_ONLY, settings_env) == []
 
 
-def test_the_suite_runs_with_that_environment_and_tracing_off(pytestconfig):
-    from langsmith.utils import tracing_is_enabled
+def test_the_seal_holds_in_a_shell_that_switches_tracing_on():
+    """In a fresh process, from a hostile environment: an agent session already
+    carries every local-only variable, so an in-process check could not fail
+    there (verify.md, finding 25)."""
+    control = subprocess.run(
+        [sys.executable, "-c", PROBE.replace("import tests.conftest\n", "")],
+        cwd=REPO,
+        env={**os.environ, **HOSTILE},
+        timeout=120,
+    )
+    sealed = subprocess.run(
+        [sys.executable, "-c", PROBE], cwd=REPO, env={**os.environ, **HOSTILE}, timeout=120
+    )
 
-    assert {name: os.environ.get(name) for name in LOCAL_ONLY} == LOCAL_ONLY
-    assert not tracing_is_enabled()
+    assert control.returncode == 1, "the hostile environment did not switch tracing on"
+    assert sealed.returncode == 0, "tests/conftest.py did not switch tracing off"
+
+
+def test_the_langsmith_pytest_plugin_is_not_loaded(pytestconfig):
     assert not pytestconfig.pluginmanager.has_plugin("langsmith_plugin")
 
 

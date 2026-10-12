@@ -47,8 +47,9 @@ module-name = "starter"
 # hack: tests import `starter` exactly as an Agent Server will.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# -p no:langsmith_plugin: langsmith's pytest plugin loads before conftest.py can
-# make the suite local-only, and reads the tracing switches when it does.
+# -p no:langsmith_plugin: langsmith's pytest plugin loads before conftest.py
+# makes the suite local-only. langsmith 0.14.7's reads no tracing switch when
+# it loads -- measured -- so this is a second line, not the seal; conftest is.
 addopts = "--strict-markers -m 'not live' -p no:langsmith_plugin"
 markers = [
     "live: needs a running service, a real model or paid quota (excluded by default)",

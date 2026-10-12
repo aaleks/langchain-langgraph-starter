@@ -47,9 +47,11 @@ class ScriptedChatModel(GenericFakeChatModel):
     `calls`, and its input recorded in `seen`. A scripted exception is raised by
     the call that reaches it.
 
-    Trustworthy on `invoke` only: the inherited `_stream` drops `tool_calls`, so a
-    streamed run would turn a proposal into an answer. Streaming arrives with the
-    local server (serve-first-graph-locally), and needs the fake taught first.
+    Trustworthy on `invoke` only: the inherited `_stream` cannot stream a
+    proposal -- with no text it raises ("No generation chunks were returned"),
+    with text it drops the `tool_calls` and the proposal reads as an answer.
+    Streaming arrives with the local server (serve-first-graph-locally), and
+    needs the fake taught first.
     """
 
     calls: int = 0

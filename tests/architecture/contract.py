@@ -327,60 +327,86 @@ def langgraph_validate(config: Path) -> subprocess.CompletedProcess[str]:
 
 
 FACTORY = "infrastructure/agents/factory.py"
+AGENTS_PREFIX = "infrastructure/agents/"
 GRAPH_RUNTIMES = ("langgraph", "deepagents", "langchain.agents")
+# `.compile()` on these is not a graph -- a regex, most often.
+NOT_GRAPH_COMPILERS = frozenset({"re", "regex"})
 
 
-def _imported_modules(tree: ast.AST) -> list[str]:
-    modules = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules += [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-            modules.append(node.module)
-    return modules
+def _import_names(node: ast.AST) -> list[str]:
+    """What one import statement brings in, as dotted names. `from a import b`
+    gives both `a` and `a.b`: `b` may itself be a module (`from langchain import
+    agents`). Relative imports name this package, never a runtime: none."""
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if isinstance(node, ast.ImportFrom) and node.module and not node.level:
+        return [node.module, *(f"{node.module}.{alias.name}" for alias in node.names)]
+    return []
 
 
-def _is_graph_runtime(module: str) -> bool:
-    return any(module == r or module.startswith(r + ".") for r in GRAPH_RUNTIMES)
+def _within(name: str, package: str) -> bool:
+    return name == package or name.startswith(package + ".")
 
 
 def graphs_compiled_outside_factory(source: Path) -> list[str]:
-    """`create_agent` and its kin, or `.compile()` in a module that imports a graph
-    runtime, anywhere in the package but the factory. A graph compiled elsewhere is
-    a graph the tests never ran -- the registry could export one without its
-    budget and every test would stay green (register-first-graph, verify.md)."""
+    """`create_agent` and its kin -- under any name they were imported as -- or a
+    `.compile()` that may be a graph's, anywhere in the package but the factory.
+    A `.compile()` counts anywhere under infrastructure/agents/, where a builder
+    can arrive by import, and in any module importing a graph runtime; never on
+    a regex. A graph compiled elsewhere is a graph the tests never ran -- the
+    registry could export one without its budget and every test would stay green
+    (register-first-graph, verify.md)."""
     found = []
     for path in sorted(source.rglob("*.py")):
         rel = path.relative_to(source).as_posix()
         if rel == FACTORY:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        uses_runtime = any(_is_graph_runtime(m) for m in _imported_modules(tree))
+        imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+        factories = set(AGENT_FACTORIES) | {
+            alias.asname or alias.name
+            for node in imports
+            if node.module and any(_within(node.module, r) for r in GRAPH_RUNTIMES)
+            for alias in node.names
+            if alias.name in AGENT_FACTORIES
+        }
+        uses_runtime = any(
+            _within(name, runtime)
+            for node in ast.walk(tree)
+            for name in _import_names(node)
+            for runtime in GRAPH_RUNTIMES
+        )
+        may_compile = rel.startswith(AGENTS_PREFIX) or uses_runtime
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
-            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-            if name in AGENT_FACTORIES or (name == "compile" and uses_runtime):
+            if isinstance(func, ast.Attribute):
+                name = func.attr
+                receiver = func.value.id if isinstance(func.value, ast.Name) else None
+            else:
+                name, receiver = getattr(func, "id", None), None
+            compiles = name == "compile" and may_compile and receiver not in NOT_GRAPH_COMPILERS
+            if name in factories or compiles:
                 found.append(f"{rel}:{node.lineno} {name}()")
     return found
 
 
 def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
-    """`langchain.agents` imported outside infrastructure/agents/. `create_agent`
-    compiles a graph (ADR 0003), and grimp records only the top-level `langchain`,
-    which models.py may need for a provider -- so the submodule is checked here."""
+    """`langchain.agents` imported outside infrastructure/agents/, in any spelling.
+    `create_agent` compiles a graph (ADR 0003), and grimp records only the
+    top-level `langchain`, which models.py may need for a provider -- so the
+    submodule is checked here, once per import statement."""
     found = []
     for path in sorted(source.rglob("*.py")):
         rel = path.relative_to(source).as_posix()
-        if rel.startswith("infrastructure/agents/"):
+        if rel.startswith(AGENTS_PREFIX):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        found += [
-            f"{rel} imports {m}"
-            for m in _imported_modules(tree)
-            if m.startswith("langchain.agents")
-        ]
+        for node in ast.walk(tree):
+            hit = next((n for n in _import_names(node) if _within(n, "langchain.agents")), None)
+            if hit:
+                found.append(f"{rel} imports {hit}")
     return found
 
 

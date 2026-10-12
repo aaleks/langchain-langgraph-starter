@@ -34,7 +34,8 @@ class TestToolLoop:
     proposes to a tool it was given, with arguments that tool's schema accepts --
     exactly once, with the model's arguments -- hand each result to the model's
     next call as a tool message answering that call, and end the run when the
-    model answers without proposing a tool call."""
+    model answers without proposing a tool call. A reply carrying only
+    `invalid_tool_calls` is outside this rule: its route is OPEN."""
 
     def test_a_proposed_call_runs_once_and_its_result_goes_to_the_models_next_call(
         self, fake_llm, add_tool
@@ -69,6 +70,8 @@ class TestToolLoop:
         ids = [call["id"] for call in proposal.tool_calls]
         answered = sorted((m.tool_call_id, m.content) for m in messages if m.type == "tool")
         assert answered == sorted([(ids[0], "3"), (ids[1], "7")])
+        given = sorted((m.type, m.tool_call_id, m.content) for m in model.seen[1][-2:])
+        assert given == sorted([("tool", ids[0], "3"), ("tool", ids[1], "7")])
         assert model.calls == 2
 
     def test_counter_example_a_model_that_answers_at_once_runs_no_tool(self, fake_llm, add_tool):
@@ -109,8 +112,12 @@ class TestToolError:
         messages = run(build_assistant(model, [add_tool.tool]), "what is two plus 3?")
 
         assert add_tool.calls == []
+        # Another path through the tool node than an unknown tool's: the
+        # hand-back and the run going on are asserted here too.
+        assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
         refused = messages[2]
         assert (refused.status, refused.tool_call_id) == ("error", proposal.tool_calls[0]["id"])
+        assert model.seen[1][-1].tool_call_id == refused.tool_call_id
 
     def test_refused_calls_still_spend_the_budget(self, fake_llm, add_tool):
         model = fake_llm(propose(("multiply", {"a": 2, "b": 3})) for _ in itertools.count())
@@ -194,11 +201,13 @@ class TestModelCallBudget:
         self, fake_llm, add_tool
     ):
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
+        graph = build_assistant(model, [add_tool.tool])
 
         # Not GraphRecursionError: the budget, not the runtime's step ceiling, ends the run.
         with pytest.raises(ModelCallLimitExceededError):
-            run(build_assistant(model, [add_tool.tool]), "keep adding")
+            run(graph, "keep adding")
 
+        assert graph.config["recursion_limit"] == 9_999
         assert MODEL_CALLS_PER_RUN == 10
         assert model.calls == MODEL_CALLS_PER_RUN
         assert len(add_tool.calls) == MODEL_CALLS_PER_RUN

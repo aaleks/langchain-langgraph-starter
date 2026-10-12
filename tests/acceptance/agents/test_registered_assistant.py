@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import socket
+import sys
 import uuid
 from pathlib import Path
 
@@ -96,10 +97,17 @@ class TestAssistantIsRegistered:
 
         assert set(registry.assistant.nodes) == set(built.nodes)
         assert any(node.startswith("ModelCallLimitMiddleware") for node in built.nodes)
+        # The budget needs 41 supersteps: an export with its own lower ceiling
+        # would end a runaway loop there first.
+        assert registry.assistant.config["recursion_limit"] == built.config["recursion_limit"]
 
     def test_the_registered_graph_completes_a_run_with_the_network_refused(
-        self, no_network, clean_env
+        self, no_network, monkeypatch
     ):
+        # Built from scratch under the guard: modules earlier tests imported
+        # would otherwise come from the cache, their import-time code unguarded.
+        for name in [m for m in sys.modules if m.startswith("starter.infrastructure")]:
+            monkeypatch.delitem(sys.modules, name)
         registered, _ = load_registered("assistant")
 
         messages = registered.invoke({"messages": [HumanMessage("hello")]})["messages"]

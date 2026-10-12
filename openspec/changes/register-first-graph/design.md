@@ -93,7 +93,7 @@ owns the topology. What the requirements fix about it:
   | policy | the model-call budget spent | `ModelCallLimitExceededError`, never retried | ASSISTANT-MODEL-CALL-BUDGET |
   | unexpected | a tool or the model raises | propagates unchanged -- `langgraph-prebuilt`'s default re-raises, now pinned by a test rather than trusted | ASSISTANT-ERRORS-PROPAGATE |
   | malformed output | `invalid_tool_calls` -- arguments the model emitted unparseably | **OPEN:** today the run ends like an answer. Decided by the first change that installs a provider (`frame.md`, question 3) | -- |
-  | transient | a 429, a timeout | N-A: no provider. With one, `ModelRetryMiddleware(retry_on=<domain predicate>, on_failure="error")` | -- |
+  | transient | a 429, a timeout | N-A: no provider. With one, `ModelRetryMiddleware(retry_on=<domain predicate>, on_failure="error")` and a deadline on the call | -- |
   | contract | structured output invalid | N-A: no structured output | -- |
 
 - **Routes** -- the ladder's checklist, one row each:
@@ -101,22 +101,23 @@ owns the topology. What the requirements fix about it:
   | Route | Here |
   |---|---|
   | completion | ASSISTANT-TOOL-LOOP: the run ends when the model answers without a tool call |
-  | refusal | N-A: no request policy declines anything yet |
+  | refusal | N-A: no request policy declines anything yet -- the safety slice, with authorisation at the tool boundary |
   | approval, rejection | N-A: no `interrupt()` -- the durability slice |
   | interruption and resume | N-A here; 1b's smoke run resumes an interrupt through the server |
   | retry exhaustion | N-A: no retry policy without a provider (transient, above) |
   | limit exhaustion | ASSISTANT-MODEL-CALL-BUDGET, and refused calls spending it (ASSISTANT-TOOL-ERROR) |
   | tool denial | ASSISTANT-TOOL-ERROR covers a tool the model was not given; authorisation-based denial is the safety slice |
   | malformed model output | ASSISTANT-TOOL-ERROR for refused arguments; `invalid_tool_calls` OPEN |
-  | retrieval failure, timeout | N-A: no retrieval, no external dependency |
+  | retrieval failure, timeout | Retrieval: N-A, none. Timeout: a model's `TimeoutError` propagates (ASSISTANT-ERRORS-PROPAGATE), but no deadline is enforced -- a call that hangs hangs the run. A deadline on the provider call arrives with the first provider (`docs/roadmap.md`) |
   | forbidden access | N-A: no threads persist -- the durability slice |
 
 - **Interrupts:** none -- 1b and the durability slice.
 - **Tools:** none registered. Tests inject a recording fake `add(a: int, b: int) -> int`
   and, for the error routes, `explode` (raises) and `explain` (returns an error
   text); read-only, no side effect, no manifest (a test fake never ships).
-- **Streaming:** not exercised. The fake's inherited `_stream` drops
-  `tool_calls`; 1b teaches it before a streamed run is asserted.
+- **Streaming:** not exercised. The fake's inherited `_stream` cannot stream a
+  proposal: with no text it raises (`No generation chunks were returned`), with
+  text it drops the `tool_calls`. 1b teaches it before a streamed run is asserted.
 - **Persistence:** none. The registered graph has no checkpointer; the local
   server supplies its in-memory one in 1b, which is never evidence of durability.
 - **Observability:** N-A until there is an entry point (1b). No LangSmith,

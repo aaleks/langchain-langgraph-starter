@@ -27,7 +27,8 @@ suite free of services.
        against the pinned versions (`langgraph-api` moved 0.15.1 -> 0.16.0),
        and its result recorded;
      - carried from 1a's review: the fake model taught to stream tool calls
-       before a streamed run is asserted (its inherited `_stream` drops them);
+       before a streamed run is asserted (its inherited `_stream` raises on a
+       proposal with no text, and drops the calls from one with text);
        a model chosen by a setting is chosen in a factory function the
        registry calls, never in the registry's import-time body.
    - **Before the first provider** -- the first change that installs a model
@@ -37,8 +38,9 @@ suite free of services.
        content -- is data, never instruction, and an adversarial case asserting
        no unauthorised effect;
      - a decision on `invalid_tool_calls`: a terminal error, or handed back;
-     - a tool-call budget beside the model-call budget, and
-       `ModelRetryMiddleware(..., on_failure="error")` for transient failures;
+     - a tool-call budget beside the model-call budget,
+       `ModelRetryMiddleware(..., on_failure="error")` for transient failures,
+       and a deadline on the provider call;
      - `MODEL_CALLS_PER_RUN` re-measured against real runs;
      - the "only `infrastructure/models.py` builds a model" check extended to
        every module, the provider imported inside its builder.
