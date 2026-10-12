@@ -1,9 +1,13 @@
 """The registered graph, served by `scripts/serve.sh`, driven through the server's
 API -- and nothing leaving the machine while it runs.
 
-`live`: each test needs a running server. `bash scripts/check.sh live` runs
-them; the default suite runs only the pure counter-example below. The server is
-started from a shell that switches LangSmith tracing on (tests/localserver.py).
+`live`: one server serves the whole module, from a hostile shell and under the
+connection probe (tests/localserver.py). Every request is made during its
+lifetime; every assertion reads what was recorded after the server was stopped
+the way a person stops it -- a signal, then its lifespan shutdown -- so whatever
+it would send while shutting down is in the record too.
+`bash scripts/check.sh live` runs them; the default suite runs only the pure
+counter-example at the end.
 """
 
 from __future__ import annotations
@@ -16,8 +20,17 @@ import pytest
 
 from tests.localserver import local_server
 
+# This machine. `None` is a lookup of no host at all -- an address to bind.
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", None}
+# Where serve.sh points LangSmith: a connection here means tracing came back on.
+DEAD_ENDPOINT = ["127.0.0.1", 9]
 HELLO = {"messages": [{"role": "human", "content": "hello"}]}
+READ_THREAD = (
+    "import json, sys\n"
+    "from langgraph_sdk import get_sync_client\n"
+    "state = get_sync_client(url=sys.argv[1]).threads.get_state(sys.argv[2])\n"
+    "print(json.dumps([m['type'] for m in state['values']['messages']]))\n"
+)
 
 
 def beyond_this_machine(records: list[dict]) -> list[dict]:
@@ -51,40 +64,46 @@ def stream(client, thread_id: str, **options) -> tuple[list[str], dict]:
 
 
 @pytest.fixture(scope="module")
-def served(tmp_path_factory):
+def session(tmp_path_factory):
+    """One server lifetime: started, every request the tests ask about, stopped."""
     from langgraph_sdk import get_sync_client
+    from langgraph_sdk.errors import NotFoundError
 
-    with local_server(tmp_path_factory.mktemp("serves")) as server:
+    seen: dict = {}
+    with local_server(tmp_path_factory.mktemp("local-server")) as server:
         client = get_sync_client(url=server.url)
-        thread_id = client.threads.create()["thread_id"]
-        events, last = stream(client, thread_id, stream_mode=["values", "updates"])
-        yield {
-            "server": server,
-            "client": client,
-            "thread": thread_id,
-            "events": events,
-            "last": last,
-        }
+        seen["found"] = client.assistants.search(graph_id="assistant")
+        try:
+            client.assistants.search(graph_id="agent")
+            seen["unknown"] = None
+        except NotFoundError as refused:
+            seen["unknown"] = refused
 
+        thread = client.threads.create()["thread_id"]
+        seen["events"], seen["last"] = stream(client, thread, stream_mode=["values", "updates"])
+        seen["runs"] = [run["status"] for run in client.runs.list(thread)]
+        seen["second"] = subprocess.run(
+            [sys.executable, "-c", READ_THREAD, server.url, thread],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
-@pytest.fixture(scope="module")
-def watched(tmp_path_factory):
-    """A whole server lifetime under the probe -- started, an ordinary run, a run
-    asking for tracing, stopped -- read only after the stop, so whatever the
-    server would send at exit is recorded too."""
-    from langgraph_sdk import get_sync_client
-
-    with local_server(tmp_path_factory.mktemp("watched")) as server:
-        client = get_sync_client(url=server.url)
-        ordinary = client.threads.create()["thread_id"]
-        stream(client, ordinary)
         traced = client.threads.create()["thread_id"]
-        _, traced_last = stream(client, traced, langsmith_tracing={"project_name": "probe"})
-        statuses = {
-            "ordinary": [run["status"] for run in client.runs.list(ordinary)],
-            "traced": [run["status"] for run in client.runs.list(traced)],
-        }
-    return {"records": server.records(), "statuses": statuses, "traced_last": traced_last}
+        _, seen["traced_last"] = stream(client, traced, langsmith_tracing={"project_name": "probe"})
+        seen["traced_runs"] = [run["status"] for run in client.runs.list(traced)]
+    seen["records"] = server.records()
+    seen["stopped_gracefully"] = server.stopped_gracefully
+    return seen
+
+
+def probe_was_in_the_server(records: list[dict]) -> bool:
+    """Whether the probe recorded the server's own process starting: a probe that
+    never loaded records nothing, and nothing would read like a pass."""
+    return any(
+        r["kind"] == "start" and "dev" in r["detail"] and "langgraph" in " ".join(r["detail"])
+        for r in records
+    )
 
 
 class TestServesTheAssistant:
@@ -94,79 +113,70 @@ class TestServesTheAssistant:
     process SHALL read that thread's state."""
 
     @pytest.mark.live
-    def test_the_graph_id_is_served(self, served):
-        found = served["client"].assistants.search(graph_id="assistant")
-
-        assert [assistant["graph_id"] for assistant in found] == ["assistant"]
+    def test_the_graph_id_is_served(self, session):
+        assert [assistant["graph_id"] for assistant in session["found"]] == ["assistant"]
 
     @pytest.mark.live
-    def test_a_run_streams_its_state_and_completes(self, served):
-        assert {"values", "updates"} <= set(served["events"])
-        assert message_types(served["last"]) == ["human", "ai"]
-        runs = served["client"].runs.list(served["thread"])
-        assert [run["status"] for run in runs] == ["success"]
+    def test_a_run_streams_its_state_and_completes(self, session):
+        assert {"values", "updates"} <= set(session["events"])
+        assert message_types(session["last"]) == ["human", "ai"]
+        assert session["runs"] == ["success"]
 
     @pytest.mark.live
-    def test_a_second_process_reads_the_thread(self, served):
-        read = (
-            "import json, sys\n"
-            "from langgraph_sdk import get_sync_client\n"
-            "state = get_sync_client(url=sys.argv[1]).threads.get_state(sys.argv[2])\n"
-            "print(json.dumps([m['type'] for m in state['values']['messages']]))\n"
-        )
-        second = subprocess.run(
-            [sys.executable, "-c", read, served["server"].url, served["thread"]],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+    def test_a_second_process_reads_the_thread(self, session):
+        second = session["second"]
 
         assert second.returncode == 0, second.stderr
         assert json.loads(second.stdout) == ["human", "ai"]
 
     @pytest.mark.live
-    def test_counter_example_a_graph_id_that_is_not_registered_is_not_served(self, served):
-        from langgraph_sdk.errors import NotFoundError
+    def test_counter_example_a_graph_id_that_is_not_registered_is_not_served(self, session):
+        refused = session["unknown"]
 
-        with pytest.raises(NotFoundError) as refused:
-            served["client"].assistants.search(graph_id="agent")
-
-        assert refused.value.status_code == 404
-        assert "['assistant']" in str(refused.value)
+        assert refused is not None, "the server answered a search for an unregistered id"
+        assert refused.status_code == 404
+        assert "['assistant']" in str(refused)
 
 
 class TestStaysLocal:
     """LOCAL-SERVER-STAYS-LOCAL: Started through `scripts/serve.sh` from a shell
-    that exports a LangSmith key and switches tracing on, the server SHALL start,
-    serve runs -- including one whose request asks for LangSmith tracing -- and
-    SHALL attempt no connection and no name lookup beyond this machine
-    (`127.0.0.1`, `::1`, `localhost`)."""
+    that exports LangSmith keys, switches tracing on and points LangSmith's
+    endpoint elsewhere, the server SHALL start, serve runs -- including one whose
+    request asks for LangSmith tracing -- and stop, attempting no connection and
+    no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no
+    host at all)."""
 
     @pytest.mark.live
-    def test_nothing_beyond_this_machine_from_a_hostile_shell(self, watched):
-        records = watched["records"]
+    def test_nothing_beyond_this_machine_from_a_hostile_shell(self, session):
+        records = session["records"]
 
-        assert watched["statuses"]["ordinary"] == ["success"]
+        assert probe_was_in_the_server(records), records[:5]
+        assert session["stopped_gracefully"] is True
+        assert session["runs"] == ["success"]
         assert beyond_this_machine(records) == []
-        # The probe was loaded where it matters: a probe that never loaded
-        # records nothing, and nothing would read like a pass.
-        started = [r["detail"] for r in records if r["kind"] == "start"]
-        assert any("langgraph" in " ".join(argv) and "dev" in argv for argv in started), started
 
     @pytest.mark.live
-    def test_a_run_that_asks_for_langsmith_tracing_still_stays_local(self, watched):
-        assert watched["statuses"]["traced"] == ["success"]
-        assert message_types(watched["traced_last"]) == ["human", "ai"]
-        assert beyond_this_machine(watched["records"]) == []
+    def test_a_run_that_asks_for_langsmith_tracing_still_stays_local(self, session):
+        records = session["records"]
+
+        assert probe_was_in_the_server(records), records[:5]
+        assert session["stopped_gracefully"] is True
+        assert session["traced_runs"] == ["success"]
+        assert message_types(session["traced_last"]) == ["human", "ai"]
+        assert beyond_this_machine(records) == []
+        assert [r for r in records if r["detail"] == DEAD_ENDPOINT] == []
 
     def test_counter_example_connections_on_this_machine_are_not_counted(self):
-        smith = {"pid": 3, "kind": "lookup", "detail": "api.smith.langchain.com"}
+        far_connect = {"pid": 2, "kind": "connect", "detail": ["203.0.113.7", 443]}
+        far_lookup = {"pid": 3, "kind": "lookup", "detail": "api.smith.langchain.com"}
         records = [
             {"pid": 1, "kind": "start", "detail": ["langgraph", "dev"]},
             {"pid": 1, "kind": "connect", "detail": ["127.0.0.1", 53231]},
             {"pid": 1, "kind": "lookup", "detail": "localhost"},
+            {"pid": 1, "kind": "lookup", "detail": None},
             {"pid": 2, "kind": "lookup", "detail": "::1"},
-            smith,
+            far_connect,
+            far_lookup,
         ]
 
-        assert beyond_this_machine(records) == [smith]
+        assert beyond_this_machine(records) == [far_connect, far_lookup]

@@ -15,22 +15,24 @@ suite free of services.
      `langgraph.json` with no `env`; architecture checks that every registered
      export is a compiled graph and that `langgraph validate` accepts the
      config (ADR 0005).
-   - **1b, `serve-first-graph-locally` -- next.** **Local only** (ADR 0004):
-     - a requirement that every entry point the project ships starts from the
-       local-only environment that `scripts/serve.sh` uses;
-     - `config/` loads `.env` without overriding what is already set;
-     - a local smoke run, `live`: `bash scripts/serve.sh`, then through the
-       server's API -- the graph id is served, a fake-model run streams, an
-       interrupt resumes on the same thread, and a second process reads the
-       run's state;
-     - the connection probe in `.claude/rules/langgraph/runtime.md` re-run
-       against the pinned versions (`langgraph-api` moved 0.15.1 -> 0.16.0),
-       and its result recorded;
-     - carried from 1a's review: the fake model taught to stream tool calls
-       before a streamed run is asserted (its inherited `_stream` raises on a
-       proposal with no text, and drops the calls from one with text);
-       a model chosen by a setting is chosen in a factory function the
-       registry calls, never in the registry's import-time body.
+   - **1b, `serve-first-graph-locally` -- landed.** `live` tests serve
+     `assistant` through `scripts/serve.sh` -- the graph id served, a run
+     streaming and completing, a second process reading the thread -- from a
+     shell that switches LangSmith on, under a connection probe that records
+     nothing beyond 127.0.0.1 (`langgraph-api` 0.16.0, measured). Of the five
+     items planned:
+     - the server's entry point starting from the local-only environment --
+       proved end to end on the running server; the suite's own seal landed in
+       1a. The project ships no other entry point yet: a CLI brings its own;
+     - the local smoke run -- landed, without its interrupt: **an interrupt
+       resumed on the same thread moves to Durability (3)**, where interrupts
+       are designed -- the registered graph has none to resume;
+     - the connection probe -- landed as a test that re-runs at every upgrade;
+     - **`.env` loading in `config/` moves to "Before the first provider"**:
+       nothing reads a setting yet;
+     - teaching the fake model to stream tool calls -- not needed: the served
+       graph runs the offline model, whose answer streams as text. It returns
+       with the first streamed tool call.
    - **Before the first provider** -- the first change that installs a model
      provider or registers a real tool, whichever slice it belongs to, brings
      these with it (register-first-graph, `verify.md`):
@@ -41,6 +43,9 @@ suite free of services.
      - a tool-call budget beside the model-call budget,
        `ModelRetryMiddleware(..., on_failure="error")` for transient failures,
        and a deadline on the provider call;
+     - `config/` loading `.env` without overriding what is already set
+       (python-dotenv's default) -- the first setting read needs it; the model
+       chosen in a factory function the registry calls, not at import;
      - `MODEL_CALLS_PER_RUN` re-measured against real runs;
      - the "only `infrastructure/models.py` builds a model" check extended to
        every module, the provider imported inside its builder.

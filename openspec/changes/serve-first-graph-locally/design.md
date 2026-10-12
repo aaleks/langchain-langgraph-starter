@@ -16,34 +16,55 @@ asynchronously, with an in-memory checkpointer.
 
 | File | Holds |
 |---|---|
-| `tests/acceptance/agents/test_local_server.py` | `TestServesTheAssistant`, `TestStaysLocal` -- `live`; one server for both, module-scoped |
-| `tests/acceptance/agents/probe/sitecustomize.py` | the connection probe: an audit hook appending `socket.connect` and `socket.getaddrinfo` records, and one `start` record with the process's argv, to the file named by `PROBE_LOG` |
-| `tests/localserver.py` | the harness: a free port on 127.0.0.1, `bash scripts/serve.sh` started in its own process group, `/ok` awaited, the process tree stopped and the port seen free |
+| `tests/acceptance/agents/test_local_server.py` | `TestServesTheAssistant`, `TestStaysLocal` -- `live`; one server for the module, every request made in its lifetime, every assertion read after it stops |
+| `tests/acceptance/agents/probe/sitecustomize.py` | the connection probe: an audit hook appending a `start` record with the argv, then every `socket` connect, lookup and datagram send, to the file named by `PROBE_LOG` |
+| `tests/localserver.py` | the harness: a hostile environment, a throwaway working copy, Git for Windows' bash, a free port, `/ok` awaited without a proxy, a graceful stop |
 
-- **One server, from a hostile shell.** The fixture starts the server with
-  `LANGSMITH_TRACING=true`, `LANGCHAIN_TRACING_V2=true` and a fake
-  `LANGSMITH_API_KEY` exported over the suite's sealed environment -- the shell
-  a person might have. Both requirements run against it: serving correctly and
-  staying local are one run, not two.
-- **The probe rides on `PYTHONPATH`.** `serve.sh` exports its variables and
-  passes the rest of the environment on, so a `sitecustomize` on `PYTHONPATH`
-  loads into `uv run`'s Python and any process it spawns. The probe records its
-  own `start` with the argv, so the test can prove it was loaded in the
-  process running `langgraph` -- a probe that never loaded would report
-  nothing, and nothing reads like a pass.
-- **"Beyond this machine"** is decided by one pure function in the test module,
+- **A shell that is actually hostile** (verify pass 1, finding 1). The server's
+  environment is the test process's with every `LOCAL_ONLY` variable removed,
+  then all four tracing switches `true`, the LangSmith API and control-plane
+  keys set, and both endpoints at `http://langsmith-hostile.invalid`. Every one
+  of those, `serve.sh` must override. The endpoint is a `.invalid` name (RFC
+  6761): a `serve.sh` that stopped overriding it is caught by the probe at the
+  lookup -- measured, 14 lookups -- and can deliver nothing. The CLI's analytics
+  and the version check are left unset, not hostile: their only target is a
+  real third party, so the probe could catch a regression only by letting one
+  request out; the method's tests prove `serve.sh` exports them.
+- **One server, in a throwaway working copy** (finding 4). `scripts/serve.sh`,
+  `langgraph.json` and `src/` are copied into a temporary directory, and
+  `UV_PROJECT` points `uv` at this repository's environment. The in-memory
+  store, `.langgraph_api/`, is written there -- never into the developer's own,
+  which a test thread would pollute and a developer's own assistant would make
+  "exactly one" false. One module-scoped server serves both requirements.
+- **Git for Windows' bash** (finding 3), found beside `git` -- never WSL's,
+  which `System32` puts first on a PowerShell `PATH` and which would run
+  `serve.sh` in Linux, without the probe's variables.
+- **Stopped as a person stops it** (finding 2). Windows: `CTRL_BREAK_EVENT` to
+  the server's new process group; POSIX: `SIGTERM` to its session. Measured on
+  Windows: the server runs its lifespan shutdown ("Stopping dev persistence
+  flush loop") and the port frees. It then exits by re-raising the signal, so
+  `atexit` handlers do not run -- for a person's Ctrl+C either. Only a server
+  that will not stop is killed (`taskkill /T /F`, `SIGKILL` to the group), and
+  the test fails on it: the record would be incomplete.
+- **The probe rides on `PYTHONPATH`,** which `serve.sh` passes on, and records
+  its own `start` with the argv: the test proves it was loaded in the process
+  running `langgraph dev`. A probe that never loaded records nothing -- and
+  nothing reads like a pass.
+- **"Beyond this machine"** is one pure function in the test module,
   `beyond_this_machine(records)`: a connect or lookup whose host is not
-  `127.0.0.1`, `::1` or `localhost`. Its counter-example is a scenario.
-- **The probe's blind spot is a rule, not a hope.** An asyncio connect to a
-  literal IP is invisible to the hook on Windows (frame.md, measured); every
-  target the local-only environment guards against is a hostname, caught at
-  its lookup. The design says so here, and the probe's docstring says so.
-- **Stopping the server is part of the proof.** Windows: `taskkill /T /F` on
-  the `bash` process's tree; POSIX: `killpg` on its session. Then the port is
-  checked free -- a test that leaves a server running poisons the next one.
-- **The second process is a real one:** `sys.executable -c` with
-  `langgraph_sdk`, reading `threads.get_state` -- not a second client object in
-  the same process.
+  `127.0.0.1`, `::1`, `localhost` or none. Its counter-example is in the default
+  suite. A connect to `127.0.0.1:9` -- `serve.sh`'s closed LangSmith endpoint --
+  is local, but it means tracing came back on: the traced-run scenario asserts
+  there is none.
+- **What the probe cannot see,** written in the probe and here: an asyncio
+  connect to a literal IP (Windows' Proactor loop raises no event); native code
+  opening its own sockets (grpcio's C core); processes that are not Python
+  (`uv`). Every target the local-only environment guards against is a hostname
+  reached from Python, recorded at its lookup. `strace` on Linux sees
+  everything, and stays runtime.md's tool for that.
+- **Accepted, not fixed:** a hard kill of pytest itself can orphan the server
+  (no job object); the free port is released a moment before the server binds
+  it -- a loud, rare flake, never a false pass.
 
 ## Orchestration design
 

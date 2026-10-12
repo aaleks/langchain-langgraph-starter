@@ -1,9 +1,20 @@
 """Start the local LangGraph server the one way this project allows -- through
 `scripts/serve.sh` -- for a `live` test, and stop it again.
 
-The server is started from a shell a person might have: LangSmith tracing
-switched on and a key exported, over the suite's sealed environment. It is
-`scripts/serve.sh`'s job to make that harmless; the tests prove it did.
+The server starts from a shell a person might have, and not from the suite's
+sealed one: every local-only variable removed, then LangSmith switched on with
+keys and an endpoint. `serve.sh` must undo all of it; the tests prove it did.
+The endpoint is a `.invalid` name (RFC 6761), so a `serve.sh` that stopped
+overriding it would be caught by the probe at its lookup, and could deliver
+nothing. Two switches are left unset rather than hostile -- the CLI's analytics
+and the version check: their only target is a real third party, so the probe
+would catch a regression only by letting one request out. The method's own
+tests prove `serve.sh` exports them.
+
+The server runs in a throwaway working copy -- `scripts/serve.sh`,
+`langgraph.json` and `src/` -- with `UV_PROJECT` pointing `uv` at this
+repository's environment, so its in-memory store (`.langgraph_api/`) is never
+the developer's own.
 """
 
 from __future__ import annotations
@@ -22,16 +33,30 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from tests.conftest import LOCAL_ONLY
+
 REPO = Path(__file__).resolve().parents[1]
 PROBE = Path(__file__).resolve().parent / "acceptance" / "agents" / "probe"
+WINDOWS = sys.platform == "win32"
 
-# What a person's shell might export -- the environment serve.sh must beat.
+HOSTILE_ENDPOINT = "http://langsmith-hostile.invalid"
 HOSTILE = {
     "LANGSMITH_TRACING": "true",
+    "LANGSMITH_TRACING_V2": "true",
     "LANGCHAIN_TRACING_V2": "true",
+    "LANGCHAIN_TRACING": "true",
     "LANGSMITH_API_KEY": "lsv2_pt_not_a_real_key",
+    "LANGCHAIN_API_KEY": "lsv2_pt_not_a_real_key",
+    # Switches the server's usage report on when it is not emptied.
+    "LANGSMITH_CONTROL_PLANE_API_KEY": "lsv2_pt_not_a_real_key",
+    "LANGSMITH_ENDPOINT": HOSTILE_ENDPOINT,
+    "LANGCHAIN_ENDPOINT": HOSTILE_ENDPOINT,
 }
-WINDOWS = sys.platform == "win32"
+
+
+def hostile_environment(base: dict[str, str]) -> dict[str, str]:
+    """`base` without one local-only variable, then LangSmith switched on."""
+    return {**{k: v for k, v in base.items() if k not in LOCAL_ONLY}, **HOSTILE}
 
 
 @dataclass
@@ -39,6 +64,8 @@ class LocalServer:
     url: str
     probe_log: Path
     output: Path
+    # Set when stopped: True if the signal stopped it, False if it had to be killed.
+    stopped_gracefully: bool | None = None
 
     def records(self) -> list[dict]:
         """What the probe recorded, in every process the server started."""
@@ -46,6 +73,27 @@ class LocalServer:
             return []
         lines = self.probe_log.read_text(encoding="utf-8").splitlines()
         return [json.loads(line) for line in lines if line.strip()]
+
+
+def bash() -> str:
+    """Git for Windows' bash on Windows -- never WSL's, which `System32` puts
+    first on a PowerShell PATH and which would run serve.sh in Linux, without
+    the probe. Anywhere else, the `bash` on PATH."""
+    if not WINDOWS:
+        found = shutil.which("bash")
+        if found is None:
+            raise RuntimeError("bash not found: scripts/serve.sh needs it")
+        return found
+    git = shutil.which("git")
+    if git is not None:
+        for parent in Path(git).parents:
+            candidate = parent / "bin" / "bash.exe"
+            if candidate.is_file():
+                return str(candidate)
+    raise RuntimeError(
+        "Git for Windows' bash not found beside git: scripts/serve.sh needs it, "
+        "and WSL's bash (System32) would run it outside this environment"
+    )
 
 
 def free_port() -> int:
@@ -59,11 +107,18 @@ def port_in_use(port: int) -> bool:
         return probe.connect_ex(("127.0.0.1", port)) == 0
 
 
+def working_copy(destination: Path) -> Path:
+    """What serve.sh serves: itself, langgraph.json, and the graph's source."""
+    (destination / "scripts").mkdir(parents=True)
+    shutil.copy2(REPO / "scripts" / "serve.sh", destination / "scripts" / "serve.sh")
+    shutil.copy2(REPO / "langgraph.json", destination / "langgraph.json")
+    shutil.copytree(REPO / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    return destination
+
+
 @contextmanager
 def local_server(workdir: Path, *, start_timeout: float = 180) -> Iterator[LocalServer]:
-    bash = shutil.which("bash")
-    if bash is None:
-        raise RuntimeError("bash not found: scripts/serve.sh needs it")
+    copy = working_copy(workdir / "project")
     port = free_port()
     server = LocalServer(
         url=f"http://127.0.0.1:{port}",
@@ -71,15 +126,15 @@ def local_server(workdir: Path, *, start_timeout: float = 180) -> Iterator[Local
         output=workdir / "server.log",
     )
     env = {
-        **os.environ,
-        **HOSTILE,
+        **hostile_environment(dict(os.environ)),
+        "UV_PROJECT": str(REPO),
         "PROBE_LOG": str(server.probe_log),
         "PYTHONPATH": os.pathsep.join(filter(None, [str(PROBE), os.environ.get("PYTHONPATH")])),
     }
     with server.output.open("w", encoding="utf-8") as output:
         process = subprocess.Popen(
-            [bash, "scripts/serve.sh", "--port", str(port), "--no-reload"],
-            cwd=REPO,
+            [bash(), "scripts/serve.sh", "--port", str(port), "--no-reload"],
+            cwd=copy,
             env=env,
             stdout=output,
             stderr=subprocess.STDOUT,
@@ -93,12 +148,16 @@ def local_server(workdir: Path, *, start_timeout: float = 180) -> Iterator[Local
             _await_ok(server, process, start_timeout)
             yield server
         finally:
-            _stop(process)
+            server.stopped_gracefully = _stop(process)
     deadline = time.monotonic() + 15
     while port_in_use(port):
         if time.monotonic() > deadline:
             raise RuntimeError(f"the server still holds port {port} after it was stopped")
         time.sleep(0.5)
+
+
+# No proxy: a configured one would carry a request for 127.0.0.1 off the machine.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def _await_ok(server: LocalServer, process: subprocess.Popen, timeout: float) -> None:
@@ -110,7 +169,7 @@ def _await_ok(server: LocalServer, process: subprocess.Popen, timeout: float) ->
                 + server.output.read_text(encoding="utf-8", errors="replace")[-3000:]
             )
         try:
-            with urllib.request.urlopen(server.url + "/ok", timeout=2) as answer:
+            with _DIRECT.open(server.url + "/ok", timeout=2) as answer:
                 if answer.status == 200:
                     return
         except OSError:
@@ -121,21 +180,32 @@ def _await_ok(server: LocalServer, process: subprocess.Popen, timeout: float) ->
     )
 
 
-def _stop(process: subprocess.Popen) -> None:
-    """Stop the whole tree: bash, uv, and the server's Python."""
+def _stop(process: subprocess.Popen, grace: float = 30) -> bool:
+    """Stop the whole tree -- bash, uv and the server's Python -- the way a
+    person's Ctrl+C does, and say whether that was enough. Windows: CTRL_BREAK to
+    the new process group (uvicorn handles SIGBREAK); POSIX: SIGTERM to the
+    session. The server then runs its lifespan shutdown -- measured: "Stopping
+    dev persistence flush loop" -- and exits by re-raising the signal, so atexit
+    handlers do not run, here or for a person. Only if it will not go: `taskkill
+    /T /F` or SIGKILL, and False."""
+    if process.poll() is not None:
+        return False
     if WINDOWS:
-        subprocess.run(
-            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-            capture_output=True,
-            check=False,
-        )
+        os.kill(process.pid, signal.CTRL_BREAK_EVENT)
     else:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        os.killpg(process.pid, signal.SIGTERM)
     try:
-        process.wait(timeout=30)
+        process.wait(timeout=grace)
+        return True
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=30)
+        pass
+    if WINDOWS:
+        killed = subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, text=True
+        )
+        if killed.returncode != 0 and process.poll() is None:
+            raise RuntimeError(f"taskkill could not stop the server: {killed.stderr.strip()}")
+    else:
+        os.killpg(process.pid, signal.SIGKILL)
+    process.wait(timeout=grace)
+    return False

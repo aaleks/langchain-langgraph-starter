@@ -29,21 +29,21 @@ The local server is how a person runs the starter's graphs on their own machine:
 - **THEN** the server refuses it as not found (HTTP 404), naming `assistant` as the only graph it serves
 
 ### Requirement: LOCAL-SERVER-STAYS-LOCAL
-Started through `scripts/serve.sh` from a shell that exports a LangSmith key and switches tracing on, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and SHALL attempt no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`).
+Started through `scripts/serve.sh` from a shell that exports LangSmith keys, switches tracing on and points LangSmith's endpoint elsewhere, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and stop, attempting no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no host at all).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/acceptance/agents/test_local_server.py::TestStaysLocal`
 
 #### Scenario: Nothing beyond this machine, from a hostile shell
-- **GIVEN** a shell exporting `LANGSMITH_TRACING=true`, `LANGCHAIN_TRACING_V2=true` and a `LANGSMITH_API_KEY`, and a connection probe loaded into every Python process the server starts
-- **WHEN** the server starts and serves the runs of LOCAL-SERVER-SERVES-ASSISTANT
+- **GIVEN** a shell holding none of the suite's local-only variables, exporting all four tracing switches as `true`, a LangSmith API key and control-plane key, and LangSmith's endpoint at `http://langsmith-hostile.invalid`; and a connection probe loaded into every Python process the server starts
+- **WHEN** the server starts, serves the runs of LOCAL-SERVER-SERVES-ASSISTANT, and is stopped as a person stops it -- by a signal
 - **THEN** the probe recorded no connection and no name lookup beyond this machine
-- **AND** it was loaded in the server's own process: it recorded that process starting
+- **AND** it recorded the server's own process starting, and the signal alone stopped the server
 
 #### Scenario: A run that asks for LangSmith tracing
 - **WHEN** a client streams a run of `assistant` whose request sets `langsmith_tracing` to `{"project_name": "probe"}`
-- **THEN** the run completes, and the probe still recorded nothing beyond this machine
+- **THEN** the run completes, the probe recorded nothing beyond this machine, and no connection to `serve.sh`'s closed LangSmith endpoint, `127.0.0.1:9`
 
 #### Scenario: Counter-example -- connections on this machine are not counted
-- **GIVEN** probe records of a connection to `127.0.0.1` and lookups of `localhost` and `::1`, beside one lookup of `api.smith.langchain.com`
-- **THEN** only the lookup of `api.smith.langchain.com` is reported as beyond this machine
+- **GIVEN** probe records of a connection to `127.0.0.1` and lookups of `localhost`, `::1` and no host, beside a connection to `203.0.113.7` and a lookup of `api.smith.langchain.com`
+- **THEN** only the connection to `203.0.113.7` and the lookup of `api.smith.langchain.com` are reported as beyond this machine

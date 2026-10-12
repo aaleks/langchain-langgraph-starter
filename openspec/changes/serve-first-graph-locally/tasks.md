@@ -39,3 +39,23 @@
 - [x] 3.1 The story test is green through `scripts/serve.sh` -- TestServesTheAssistant, 4 passed
 - [x] 3.2 The full check passes, `bash scripts/check.sh`, and `bash scripts/check.sh live` --
   "all checks passed", exit 0: architecture 46, method 117 OK, suite 66, live 6
+
+## 4. Verify pass 1 -- the fixes (`verify.md`, reviewed at `c8f8401`)
+
+- [x] 4.1 A shell that is actually hostile (finding 1): every `LOCAL_ONLY`
+  variable removed, LangSmith switched on with keys and a `.invalid` endpoint.
+  Proved against a `serve.sh` without its LangSmith exports: 14 lookups of
+  `langsmith-hostile.invalid` recorded, both stays-local tests FAILED
+- [x] 4.2 Stopped as a person stops it (finding 2): CTRL_BREAK / SIGTERM to the
+  group; `stopped_gracefully` asserted. Measured: the lifespan shutdown runs; the
+  re-raised signal skips atexit, for a person's Ctrl+C too -- the probe's
+  planned `exit` record was dropped, after it never appeared
+- [x] 4.3 Git for Windows' bash, found beside `git` (finding 3); one server in a
+  throwaway working copy with `UV_PROJECT` -- the repo's `.langgraph_api/`
+  untouched across the runs (finding 4)
+- [x] 4.4 The probe loaded asserted in both stays-local tests (5); a non-local
+  connect in the counter-example, `None` in the spec (6); lookups by
+  `gethostbyname`/`getnameinfo` and datagram sends hooked, native and non-Python
+  gaps written (7); no connect to `127.0.0.1:9` (8); the roadmap records 1b's
+  five items (9); group kill and `taskkill`'s exit code (10); no proxy on `/ok`
+  (11); 12 and 13 accepted, in the design
