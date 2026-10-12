@@ -66,6 +66,11 @@ An exception that a tool raises, or that the model raises and the retry policy d
 | none of the Open WebUI settings | the offline model |
 | `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL` all set | the Open WebUI client those settings describe |
 
+#### Scenario: Its retry policy is the domain's
+- **GIVEN** Open WebUI configured, answering the first request with HTTP 503
+- **WHEN** the registered graph runs on the human message `hello`
+- **THEN** the request is retried once, and the run completes with the transcript `human, ai`
+
 #### Scenario: An offline run of the registered graph
 - **GIVEN** no Open WebUI configured, and a process in which every outbound socket connection is refused before the graph is loaded
 - **WHEN** the graph is loaded through `langgraph.json` and runs on the human message `hello`

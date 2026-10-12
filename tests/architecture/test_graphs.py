@@ -27,6 +27,7 @@ from .contract import (
     imports_outside,
     langgraph_validate,
     models_built_inline,
+    models_built_outside_models,
     registration_problems,
     root_package,
     uncompiled_registrations,
@@ -329,3 +330,37 @@ def test_langgraph_validate_is_run_with_cli_analytics_off(tmp_path, monkeypatch)
     monkeypatch.setattr(contract.subprocess, "run", run)
     contract.langgraph_validate(tmp_path / "langgraph.json")
     assert handed["env"]["LANGGRAPH_CLI_NO_ANALYTICS"] == "1"
+
+
+def test_models_are_built_only_in_infrastructure_models():
+    assert models_built_outside_models(SOURCE) == []
+
+
+def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
+    source = build_package(
+        tmp_path,
+        "modelsfix",
+        {
+            "infrastructure/models.py": (
+                "from langchain_openai import ChatOpenAI\n"
+                "def build():\n    return ChatOpenAI(model='m')\n"
+            ),
+            "infrastructure/agents/registry.py": (
+                "from langchain_core.language_models import fake_chat_models as f\n"
+                "model = f.GenericFakeChatModel(messages=iter([]))\n"
+            ),
+            "cli/main.py": (
+                "from langchain.chat_models import init_chat_model\n"
+                "model = init_chat_model('ollama:qwen3')\n"
+            ),
+            "config/settings.py": "from langchain_ollama import ChatOllama\nm = ChatOllama()\n",
+            # counter-examples: names that merely look alike
+            "application/chat.py": "def chat_turn():\n    return Chatter()\nclass Chatter: ...\n",
+        },
+    )
+    found = models_built_outside_models(source)
+    assert [f.split(":")[0] for f in found] == [
+        "cli/main.py",
+        "config/settings.py",
+        "infrastructure/agents/registry.py",
+    ], found

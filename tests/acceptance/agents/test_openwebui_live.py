@@ -27,9 +27,12 @@ class TestAnsweredByOpenWebUI:
         from starter.infrastructure.agents.registry import registered_assistant
 
         settings = read_settings({}, DOTENV)
-        if choose_model(
-            settings.openwebui_url, settings.openwebui_api_key, settings.openwebui_model
-        ) != "openwebui":
+        if (
+            choose_model(
+                settings.openwebui_url, settings.openwebui_api_key, settings.openwebui_model
+            )
+            != "openwebui"
+        ):
             pytest.skip(f"{DOTENV} does not configure Open WebUI -- see .env.example")
 
         graph = registered_assistant(settings)

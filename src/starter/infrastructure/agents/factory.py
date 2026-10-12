@@ -2,20 +2,45 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware import ModelCallLimitMiddleware, ModelRetryMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
 from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN
+from starter.domain.agents.retries import MODEL_RETRIES
 
 
-def build_assistant(model: BaseChatModel, tools: Sequence[BaseTool]) -> CompiledStateGraph:
-    """The assistant: a tool loop over `model` and `tools` (docs/decisions/0005)."""
+def never(failure: Exception) -> bool:
+    """A retry predicate under which no failure is transient."""
+    return False
+
+
+def build_assistant(
+    model: BaseChatModel,
+    tools: Sequence[BaseTool],
+    *,
+    transient: Callable[[Exception], bool] = never,
+    initial_delay: float = 1.0,
+) -> CompiledStateGraph:
+    """The assistant: a tool loop over `model` and `tools` (docs/decisions/0005).
+
+    `transient` decides which model failures are retried; it arrives from the
+    caller, so this adapter never imports a provider. `initial_delay` is the
+    first wait between tries -- the middleware's default; tests pass 0.
+    """
     # exit_behavior="error": the default, "end", injects an AI message saying the
     # limit was reached -- an exhausted budget that reads like an answer.
     budget = ModelCallLimitMiddleware(run_limit=MODEL_CALLS_PER_RUN, exit_behavior="error")
-    return create_agent(model=model, tools=list(tools), middleware=[budget])
+    # on_failure="error": the default, "continue", turns the last failure into a
+    # message that reads like an answer.
+    retry = ModelRetryMiddleware(
+        max_retries=MODEL_RETRIES,
+        retry_on=transient,
+        on_failure="error",
+        initial_delay=initial_delay,
+    )
+    return create_agent(model=model, tools=list(tools), middleware=[budget, retry])

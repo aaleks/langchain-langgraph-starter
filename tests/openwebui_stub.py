@@ -1,16 +1,17 @@
 """A stand-in for Open WebUI's OpenAI-compatible chat endpoint, on 127.0.0.1.
 
 It answers `POST /api/chat/completions` the way Open WebUI does -- an OpenAI
-chat completion -- and records each request's path, Authorization header and
-JSON body, so a test can see what the real client sent. It is not a model: its
-answer is fixed, and a test asserts the request, never the answer's text.
+chat completion, or first the HTTP failures it was told to give -- and records
+each request's path, Authorization header and JSON body, so a test can see what
+the real client sent. It is not a model: its answer is fixed, and a test
+asserts the request, never the answer's text.
 """
 
 from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,8 +26,10 @@ class Stub:
 
 
 @contextmanager
-def openwebui_stub() -> Iterator[Stub]:
+def openwebui_stub(failures: Iterable[int] = ()) -> Iterator[Stub]:
+    """`failures`: HTTP statuses to answer the first requests with, in order."""
     stub = Stub(url="")
+    pending = list(failures)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 -- the http.server API
@@ -41,6 +44,9 @@ def openwebui_stub() -> Iterator[Stub]:
             )
             if self.path != "/api/chat/completions":
                 self.send_error(404)
+                return
+            if pending:
+                self.send_error(pending.pop(0))
                 return
             reply = {
                 "id": "chatcmpl-stub",

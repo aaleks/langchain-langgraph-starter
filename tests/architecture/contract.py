@@ -411,6 +411,32 @@ def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
     return found
 
 
+MODELS_MODULE = "infrastructure/models.py"
+# A chat model's class: ChatOpenAI, ChatOllama, GenericFakeChatModel and kin.
+CHAT_MODEL_CLASS = re.compile(r"^(Chat[A-Z]\w*|\w*ChatModel)$")
+
+
+def models_built_outside_models(source: Path) -> list[str]:
+    """A chat model constructed anywhere in the package but infrastructure/models.py
+    -- `init_chat_model(...)`, or a call to a chat model's class. A second place
+    that builds a model is a second configuration path, and the two will
+    disagree (.claude/rules/python/infrastructure.md)."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel == MODELS_MODULE:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name in INLINE_MODEL_BUILDERS or (name and CHAT_MODEL_CLASS.match(name)):
+                found.append(f"{rel}:{node.lineno} {name}()")
+    return found
+
+
 def shell_exports(script: str) -> dict[str, str]:
     """The variables a shell script's `export NAME=value ...` lines set."""
     exported = {}
