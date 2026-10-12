@@ -1,0 +1,36 @@
+# Verify
+
+- **Verdict:** DO NOT SHIP -- pass 1. First fix: start the server from a shell
+  that is actually hostile -- the suite's sealed variables removed, LangSmith's
+  endpoint pointed at a `.invalid` name -- so the test can catch `serve.sh`
+  dropping its protections (finding 1).
+- **Reviewed at:** `c8f8401`.
+- **Evidence:** `bash scripts/check.sh live` at `c8f8401`: all checks passed --
+  architecture 46, method 117 OK, suite 66, live 6. Three mutations turned their
+  tests red (tasks.md). Two fresh-context lenses over `main..c8f8401`: proof
+  (`spec-compliance`) and defects (`code-reviewer`); both re-ran the live tests
+  (6 passed) and left no server running.
+
+## Findings
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 1 | BLOCKER | proof, defects | The "hostile shell" is the suite's sealed environment plus three overrides: `serve.sh` receives the LangSmith endpoint at `127.0.0.1:9`, analytics and the version check already off. Delete `serve.sh`'s exports and both live tests stay green -- the requirement's premise is never tested | `tests/localserver.py:73-78` | Remove every `LOCAL_ONLY` key from the child's environment; hostile values for the LangSmith switches, keys and endpoint (a `.invalid` name, so a regression is recorded, never delivered); prove red against a `serve.sh` without its LangSmith exports |
+| 2 | MAJOR | proof, defects | On Windows `taskkill /T /F` kills the tree outright: no lifespan shutdown, no exit-time flush -- "whatever the server would send at exit is recorded" is untested where the change was measured | `tests/localserver.py:126-131` | Stop gracefully first (`CTRL_BREAK_EVENT`; uvicorn handles `SIGBREAK`), fall back to `taskkill`; the probe records an `exit`, and the test asserts the server wrote one |
+| 3 | MAJOR | defects | `shutil.which("bash")` finds WSL's `System32\bash.exe` from a fresh PowerShell PATH on this machine: serve.sh would run in WSL, without the probe's variables, on a CRLF checkout | `tests/localserver.py:64` | On Windows, Git for Windows' bash, found beside `git`; refuse System32 and WindowsApps bash |
+| 4 | MAJOR | defects, proof | The test servers use the developer's `.langgraph_api/` (two at once): a developer's own assistant for `assistant` breaks "exactly one", and test threads land in their store. The design's "one server for both" is two | `test_local_server.py:54,71` | One module-scoped server for both classes, in a throwaway working copy |
+| 5 | MINOR | proof | The traced-run test does not assert the probe loaded; alone, with a broken probe, it passes | `test_local_server.py:156-160` | Assert it in the fixture |
+| 6 | MINOR | proof | The counter-example never exercises the connect branch; `LOCAL_HOSTS` holds `None`, which the spec does not list | `test_local_server.py:19,162-172` | A non-local connect in the counter-example; `None` named in the spec |
+| 7 | MINOR | proof, defects | The probe's blind spots are wider than written: native code (grpcio's C core), non-Python processes (`uv`), and the `gethostbyname`/`getnameinfo`/`sendto` events it does not hook | `probe/sitecustomize.py` | Hook the extra events; document the native and non-Python gap |
+| 8 | MINOR | defects | A connect to `127.0.0.1:9` -- serve.sh's dead LangSmith endpoint, the sign tracing came back on -- counts as local | `test_local_server.py` | Assert no connect to that endpoint |
+| 9 | MINOR | proof | `.env` loading's destination is only in intake.md; the roadmap still lists both deferred items under 1b, and its fifth item and first item are neither kept nor deferred | `docs/roadmap.md` | Update the roadmap in this change |
+| 10 | MINOR | defects | A stop that times out kills only the leader (SIGKILL to uv; `taskkill` failures silent) | `tests/localserver.py:127-141` | Kill the group; check `taskkill`'s exit code |
+| 11 | MINOR | defects | The `/ok` poll goes through a configured proxy | `tests/localserver.py:113` | An opener with no proxy |
+| 12 | MINOR | defects | A hard kill of pytest orphans the server (no job object, no parent-death hook) | `tests/localserver.py:86-90` | Record; a Windows job object is more machinery than a live-tier harness needs |
+| 13 | MINOR | defects | The free port is released before the server binds it -- a rare, loud flake, never a false pass | `tests/localserver.py:51-54` | Record |
+
+## Not checked
+
+- Placement, graph-architecture and durability lenses: the change adds tests
+  only -- no production code, graph, registration or state.
+- The CI Linux `live` job: not run (on demand); POSIX behaviour read from code.
