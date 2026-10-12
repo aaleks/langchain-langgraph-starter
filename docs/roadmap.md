@@ -80,6 +80,10 @@ early contracts harder to stabilise.
 - **Protect `main`.** CI is on (2026-10-12); `docs/ci/README.md` has the two
   settings, done by a person -- which GitHub offers a private repository only on
   a paid plan.
+- **Upstream the suite seal into the langgraph pack** (`docs/learnings.md`,
+  2026-10-12): seed `LOCAL_ONLY` in the conftest and its hostile-environment
+  check, held equal to `serve.sh` and the settings by the method's tests -- a
+  method change, with its version bump.
 - **Pressure-test the discipline skills** (`.claude/sdd/pressure-tests.md`):
   `/accept`, `/tdd`, `/eval`, `/verify` first.
 - **Prove portability**: install the method into a project in another language
