@@ -1,12 +1,14 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 3 (two MAJOR). First fix: prove the
-  served export reads the process's settings at the default tier (finding 29).
-  Pass 2: DO NOT SHIP (two MAJOR). Pass 1: DO NOT SHIP (six MAJOR).
-- **Reviewed at:** pass 3: `6033d3a`, the whole change with the fix diff
-  `dade9c1..6033d3a` in focus. Pass 2: `bd4bc4e`, the fix diff
-  `6dd2700..bd4bc4e`. Pass 1: `4dc2516`. Each the staged tree the lenses read,
-  committed unchanged after they reported.
+- **Verdict:** DO NOT SHIP -- pass 4 (two MAJOR open). First fix: prove the
+  served export's retry policy through the export itself (finding 44).
+  Pass 3: DO NOT SHIP (two MAJOR). Pass 2: DO NOT SHIP (two MAJOR). Pass 1:
+  DO NOT SHIP (six MAJOR).
+- **Reviewed at:** pass 4: `7491b94`, the whole change with the fix diff
+  `5dc4b99..7491b94` in focus, committed before the lenses read it. Pass 3:
+  `6033d3a`, the fix diff `dade9c1..6033d3a` in focus. Pass 2: `bd4bc4e`, the
+  fix diff `6dd2700..bd4bc4e`. Pass 1: `4dc2516`. Passes 1-3: the staged tree
+  the lenses read, committed unchanged after they reported.
 - **Evidence (pass 1):** `bash scripts/check.sh live` on the reviewed tree: all checks
   passed -- architecture 50, method 117 OK, suite 89, live 7 passed and 1
   skipped (Open WebUI not configured in `.env` yet). Seven mutations red
@@ -131,4 +133,49 @@ commit with the MINORs; that diff is read in pass 4.
 
 - MODEL-OPENWEBUI-LIVE: it reads the owner's `.env` and calls a real model;
   `.env` does not configure Open WebUI yet.
+- The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
+
+## Pass 4 -- the whole change, the fix diff `5dc4b99..7491b94` in focus
+
+- **Evidence:** `bash scripts/check.sh live` on the reviewed tree: every
+  default check passed -- architecture 52, OpenSpec 3 passed, `sdd check` OK,
+  method OK, manifest matches, suite 150 passed; live 8 passed and 1 failed:
+  MODEL-OPENWEBUI-LIVE, Open WebUI answering `400 {'detail': 'Model not
+  found'}` -- the owner's URL accepted, the key accepted (no 401), the model id
+  in `.env` not one this Open WebUI lists. That setting is the owner's to
+  correct; no key-shaped line in the output. Nine pass-3 mutations red and
+  five for `/api` (tasks.md 10.5).
+- **Lenses:** proof (`spec-compliance`), defects (`code-reviewer`) and
+  placement (`architecture-guardian`), fresh context, over
+  `4e48cc0..7491b94`. Mutations on scratch copies only (proof: 3, 1 red and
+  2 survived; placement: 2 on the models check, both survived). No `.env`
+  read; no live test run by a lens.
+- **Pass 3 resolved:** 28-42 rechecked by all three lenses and held; 29 is
+  now red under `registered_assistant(Settings("", "", ""))`.
+- **A decision, reversing 31's suggested fix:** a URL already ending in `/api`
+  is taken as the API itself (`domain.models.api_base`), not refused. Both
+  name the same server; refusing the API's own address would only send the
+  owner back to edit `.env`. Found by the live run: the owner's URL was
+  refused at start.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 43 | MAJOR | the live run | The owner's key was printed in the live test's traceback: pytest shows a failing frame's arguments, and `choose_model(url, key, model)` was one. Fixed before this pass and re-checked by the defects lens (`--tb=long`, `-l`, `--tb=native`): a failure is reported by its message alone | `test_openwebui_live.py` | Done: `reported_by_message_only`; the local log holding it deleted |
+| 44 | MAJOR | proof | ASSISTANT-REGISTERED's "Its retry policy is the domain's" calls `registered_assistant(settings)`, never the export: `assistant = build_assistant(..., transient=lambda f: False)` keeps every test green, and the served graph would end a run on the first 503 | `test_registered_assistant.py:110-121`; `registry.py:28` | Load the export with the settings on a stand-in failing once with 503; assert two requests and `human, ai` |
+| 45 | MAJOR | placement | The models check's provider-SDK branches cannot fail on their fixture: both SDK rows build `OpenAI`, which the name pattern already matches -- `from_sdk` and `through_sdk` each removed, the fixture stays green | `contract.py:450,467-471`; `test_graphs.py:370-371` | Rows the pattern does not match: `from ollama import Client as C; C()`, `import anthropic; anthropic.Anthropic()` |
+| 46 | MINOR | defects, proof | `api_base` reads the URL's text, not its path: `http://api` keeps no `/api` (the host is `api`), and `endswith("api")` without the slash passes the suite -- `https://webui.lan/openapi` would lose its `/api` | `domain/models.py:44-46` | Decide on the parsed path's last segment; rows `http://api` and `.../openapi` |
+| 47 | MINOR | defects | Open WebUI's full endpoint, `http://localhost:3000/api/chat/completions`, is accepted and becomes `.../chat/completions/api`: a 404 at the first run, naming nothing | `domain/models.py:50-60` | Refuse a path with segments after `/api`, naming `OPENWEBUI_URL` |
+| 48 | MINOR | placement | The name pattern misses `Ollama`, `HuggingFaceEndpoint`, `ChatOpenAI.model_validate({})`, an alias assigned (`f = ChatAnthropic`) and `partial(...)` | `contract.py:422-426` | Flag any reference to a name from a model package outside `models.py`, non-model partners excepted |
+| 49 | MINOR | placement | `api_base` is a pure decision proved only through `ChatOpenAI` | `test_models.py:46-56` | Its table at the unit tier; one integration row as the seam |
+| 50 | MINOR | placement | The overview's enforcement table lacks "models are built only in `infrastructure/models.py`"; the design overstates its reach | `docs/architecture/overview.md:60-64`; `design.md` | Add the row; qualify the sentence |
+| 51 | MINOR | proof | The URL refusal names a query but not a fragment, which it also refuses | `domain/models.py:33-36` | "no query or fragment" |
+| 52 | MINOR | proof | `http://localhost:0` and `http://localhost:` pass: neither is a valid port (pass 3, noted not counted) | `domain/models.py:49-58` | Refuse both, with rows |
+
+**Pass 4 verdict:** DO NOT SHIP -- 44 and 45 are MAJOR (43 fixed). Fixed in a
+separate commit with the MINORs; that diff is read in pass 5.
+
+## Not checked -- pass 4
+
+- MODEL-OPENWEBUI-LIVE green: it ran, and failed on the owner's model id
+  (above). Its code path ran up to Open WebUI's answer.
 - The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
