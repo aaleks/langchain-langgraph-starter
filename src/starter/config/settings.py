@@ -19,9 +19,12 @@ from dotenv import dotenv_values
 # The repository's .env, found from this file -- not from the working directory,
 # which differs between a terminal, the server and a test. Right for the
 # editable install `uv sync` makes; a non-editable install finds no .env here.
-DOTENV = Path(__file__).resolve().parents[3] / ".env"
+REPO = Path(__file__).resolve().parents[3]
+DOTENV = REPO / ".env"
+# The task list when TASKS_DB is empty: in the repository, ignored by git.
+DEFAULT_TASKS_DB = REPO / ".data" / "tasks.sqlite3"
 
-NAMES = ("OPENWEBUI_URL", "OPENWEBUI_API_KEY", "OPENWEBUI_MODEL")
+NAMES = ("OPENWEBUI_URL", "OPENWEBUI_API_KEY", "OPENWEBUI_MODEL", "TASKS_DB")
 
 
 @dataclass(frozen=True)
@@ -29,13 +32,15 @@ class Settings:
     openwebui_url: str
     openwebui_api_key: str
     openwebui_model: str
+    # Last, with a default: three-setting call sites predate it.
+    tasks_db: str = ""
 
     def __repr__(self) -> str:
         # Never the key: a settings object ends up in tracebacks and logs.
         key = "set" if self.openwebui_api_key else "empty"
         return (
             f"Settings(openwebui_url={self.openwebui_url!r}, openwebui_api_key=<{key}>, "
-            f"openwebui_model={self.openwebui_model!r})"
+            f"openwebui_model={self.openwebui_model!r}, tasks_db={self.tasks_db!r})"
         )
 
     __str__ = __repr__
@@ -54,8 +59,19 @@ def read_settings(environ: Mapping[str, str], dotenv: Path) -> Settings:
             return environ[name]
         return from_file.get(name) or ""
 
-    url, key, model = (value(name).strip() for name in NAMES)
-    return Settings(openwebui_url=url, openwebui_api_key=key, openwebui_model=model)
+    url, key, model, tasks_db = (value(name).strip() for name in NAMES)
+    return Settings(
+        openwebui_url=url, openwebui_api_key=key, openwebui_model=model, tasks_db=tasks_db
+    )
+
+
+def tasks_db_path(settings: Settings) -> Path:
+    """The task list's file: `TASKS_DB`, a relative path taken from the repository
+    -- never the working directory, which differs between a terminal, the server
+    and a test -- or the repository's `.data/tasks.sqlite3` when it is empty."""
+    if not settings.tasks_db:
+        return DEFAULT_TASKS_DB
+    return REPO / settings.tasks_db  # an absolute path replaces REPO
 
 
 def _read_dotenv(dotenv: Path) -> dict[str, str | None]:

@@ -133,7 +133,8 @@ def local_server(
 ) -> Iterator[LocalServer]:
     """`settings`: the owner's settings for this server, over the empty ones it
     inherits from the suite -- an Open WebUI, say. Those names only: anything
-    else, a proxy among them, would undo the hostile environment."""
+    else, a proxy among them, would undo the hostile environment. Its task list
+    is its own, in `workdir`, unless `settings` names one."""
     unknown = set(settings or {}) - set(SETTINGS)
     if unknown:
         raise ValueError(f"not a setting: {sorted(unknown)}; settings are {list(SETTINGS)}")
@@ -146,6 +147,7 @@ def local_server(
     )
     env = {
         **hostile_environment(dict(os.environ)),
+        "TASKS_DB": str(workdir / "tasks.sqlite3"),
         **(settings or {}),
         "UV_PROJECT": str(REPO),
         "PROBE_LOG": str(server.probe_log),

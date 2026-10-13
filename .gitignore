@@ -12,6 +12,9 @@ venv/
 .env.*
 !.env.example
 
+# The owner's task list (TASKS_DB's default) -- data, never committed
+.data/
+
 # Tool caches
 .pytest_cache/
 .ruff_cache/

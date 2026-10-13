@@ -82,6 +82,28 @@ def scripted_model(script: Iterable[AIMessage | BaseException]) -> ScriptedChatM
     )
 
 
+def manifested(fake: BaseTool, output: type = int) -> BaseTool:
+    """A fake tool given a reading tool's manifest, under its own name: the
+    factory refuses a tool without one (TOOLS-MANIFEST)."""
+    from starter.domain.agents.budgets import TOOL_CALLS_PER_RUN
+    from starter.domain.agents.capabilities import Capability
+
+    fake.metadata = {
+        "capability": Capability(
+            name=fake.name,
+            output=output,
+            errors=(),
+            idempotent=True,
+            timeout_seconds=1.0,
+            retry="none",
+            calls_per_run=TOOL_CALLS_PER_RUN,
+            side_effect="read",
+            audit_event=None,
+        )
+    }
+    return fake
+
+
 @dataclass
 class RecordingTool:
     tool: BaseTool
@@ -98,4 +120,4 @@ def recording_add() -> RecordingTool:
         calls.append({"a": a, "b": b})
         return a + b
 
-    return RecordingTool(tool=add, calls=calls)
+    return RecordingTool(tool=manifested(add), calls=calls)

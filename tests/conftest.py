@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import re
 import socket
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,10 @@ os.environ.update(LOCAL_ONLY)
 # and the live server tests, which inherit them -- on the offline model.
 MODEL_UNSET = {"OPENWEBUI_URL": "", "OPENWEBUI_API_KEY": "", "OPENWEBUI_MODEL": ""}
 os.environ.update(MODEL_UNSET)
+
+# Nor the owner's task list: the suite's is a file in a directory of its own,
+# empty until a test writes to it. A test that needs a list sets its own path.
+os.environ["TASKS_DB"] = str(Path(tempfile.mkdtemp(prefix="starter-suite-")) / "tasks.sqlite3")
 
 # The model client reads more of the environment than it is given: a proxy, an
 # organisation, extra headers. None of the owner's reaches a default test, and

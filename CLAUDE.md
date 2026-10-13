@@ -5,8 +5,10 @@ A LangChain / LangGraph starter, developed spec-first with proof.
 **A walking skeleton, on purpose.** What exists is the method, five layers with
 their contracts and checks, and one graph: `assistant`, a `create_agent` tool
 loop registered in `langgraph.json`, its model the owner's local Open WebUI when
-`.env` configures it and an offline fixed-answer model otherwise, and no tools
-until a requirement names one (`docs/decisions/0005-the-assistant-graph.md`).
+`.env` configures it and an offline fixed-answer model otherwise
+(`docs/decisions/0005-the-assistant-graph.md`), and two read-only tools over
+the owner's task list -- a SQLite file the owner adds to with `starter tasks
+add` -- each with a capability manifest (`docs/decisions/0006-the-task-store.md`).
 It is becoming an
 **approval-gated task assistant** over a local task list, its model served by
 the owner's local Open WebUI -- the slices in `docs/roadmap.md`, each through
@@ -38,6 +40,7 @@ uv sync                                   # install, dev group included
 bash scripts/check.sh                     # everything CI runs -- the one list
 bash scripts/check.sh live                # also tests needing services, models, quota
 bash scripts/serve.sh                     # the local LangGraph server, once a graph is registered
+uv run starter tasks add "title"          # add to the task list the assistant reads (TASKS_DB)
 uv run pytest                             # the suite; no services, no keys
 uv run pytest tests/architecture          # the layer contracts
 bash .claude/sdd/sdd.sh check             # requirement <-> test traceability

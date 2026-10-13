@@ -18,6 +18,34 @@ A run SHALL execute at most `TOOL_CALLS_PER_RUN` (20) tool calls: a turn whose p
 
 ## MODIFIED Requirements
 
+### Requirement: ASSISTANT-MODEL-CALL-BUDGET
+A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn SHALL make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY), its retries spending none of the budget. A model still proposing tool calls when the budget is spent SHALL end the run with `ModelCallLimitExceededError` -- never with a message that reads like an answer, and never at the step ceiling first under the ceiling the factory's graph runs with: `create_agent`'s 9,999 supersteps, where the budget needs 51 -- one more per turn since the tool-call budget's middleware (ASSISTANT-TOOL-CALL-BUDGET).
+
+- **Kind:** deterministic
+- **Proved by:** `tests/integration/agents/test_assistant.py::TestModelCallBudget`
+
+#### Scenario: A model that never stops proposing tool calls
+- **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
+- **WHEN** the assistant runs on the human message `keep adding`
+- **THEN** the run raises `ModelCallLimitExceededError`, not `GraphRecursionError`
+- **AND** the graph's step ceiling is 9,999, `MODEL_CALLS_PER_RUN` is 10, and the model was called exactly `MODEL_CALLS_PER_RUN` times and the tool as many
+
+#### Scenario: A retried turn spends one unit of the budget
+- **GIVEN** a scripted model whose every turn first times out, then proposes `add(a=1, b=1)`
+- **WHEN** the assistant runs with the registry's retry policy on the human message `keep adding`
+- **THEN** the run raises `ModelCallLimitExceededError` after 10 turns: 20 attempts, and the tool called 10 times
+
+#### Scenario: Counter-example -- an answer on the last call within budget completes
+- **GIVEN** a scripted model that proposes `add(a=1, b=1)` on calls 1 to 9 and answers on call 10
+- **WHEN** the assistant runs on the human message `keep adding`
+- **THEN** the run completes without an error, its last message is an ai message with no tool call
+- **AND** the model was called exactly 10 times and the tool 9 times
+
+#### Scenario: Counter-example -- a caller's step ceiling below 41 ends the run first
+- **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
+- **WHEN** the assistant runs on the human message `keep adding` with `recursion_limit` 50, then again with 51
+- **THEN** at 50 the run raises `GraphRecursionError`; at 51 it raises `ModelCallLimitExceededError` -- measured, with both budgets' middleware
+
 ### Requirement: ASSISTANT-REGISTERED
 `langgraph.json` SHALL register exactly one graph, under the id `assistant`, bound to the `assistant` export of `src/starter/infrastructure/agents/registry.py`. That export SHALL be the graph the factory compiles -- so it carries the budgets and the retry policy -- with the model the process's settings choose and the tools `list_tasks` and `search_tasks` over the task list they name, both read when it is loaded; with no model configured it SHALL complete runs with every outbound network connection refused.
 

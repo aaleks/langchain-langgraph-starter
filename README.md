@@ -12,8 +12,9 @@ What you get on day one:
   carry a change from intake to landing. Start at
   [`.claude/sdd/README.md`](.claude/sdd/README.md).
 - **A walking skeleton** -- five layers with their contracts already enforced,
-  each check proved able to fail. No product code: the first feature goes
-  through the loop like every other.
+  each check proved able to fail. Product code arrives through the loop like
+  everything else: so far the `assistant` graph, its Open WebUI model, and a
+  task list it reads.
 - **A LangGraph plan** -- the adoption ladder, where graphs live, and the slices
   to build them in: [`docs/roadmap.md`](docs/roadmap.md).
 - **LangGraph on your machine only** -- never through LangSmith: no hosted

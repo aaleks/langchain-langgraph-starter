@@ -3,8 +3,9 @@
 It answers `POST /api/chat/completions` the way Open WebUI does -- an OpenAI
 chat completion, or first the HTTP failures it was told to give -- and records
 each request's path, Authorization header and JSON body, so a test can see what
-the real client sent. It is not a model: its answer is fixed, and a test
-asserts the request, never the answer's text.
+the real client sent. It is not a model: its replies are scripted -- a tool
+call, or text -- then fixed, and a test asserts the request, never the
+answer's text.
 """
 
 from __future__ import annotations
@@ -15,8 +16,30 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 
 STUB_ANSWER = "stubbed reply"
+
+
+def tool_call(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A scripted reply proposing one call of `name`, as Open WebUI sends it."""
+    return {"name": name, "arguments": arguments or {}}
+
+
+def _message(reply: str | dict[str, Any], number: int) -> dict[str, Any]:
+    if isinstance(reply, str):
+        return {"role": "assistant", "content": reply}
+    return {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": f"call_stub_{number}",
+                "type": "function",
+                "function": {"name": reply["name"], "arguments": json.dumps(reply["arguments"])},
+            }
+        ],
+    }
 
 
 @dataclass
@@ -26,10 +49,15 @@ class Stub:
 
 
 @contextmanager
-def openwebui_stub(failures: Iterable[int] = ()) -> Iterator[Stub]:
-    """`failures`: HTTP statuses to answer the first requests with, in order."""
+def openwebui_stub(
+    failures: Iterable[int] = (), replies: Iterable[str | dict[str, Any]] = ()
+) -> Iterator[Stub]:
+    """`failures`: HTTP statuses to answer the first requests with, in order.
+    `replies`: what the requests after them are answered with, in order -- text,
+    or a `tool_call(...)` -- then `STUB_ANSWER` for every one after those."""
     stub = Stub(url="")
     pending = list(failures)
+    scripted = list(replies)
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802 -- the http.server API
@@ -48,6 +76,7 @@ def openwebui_stub(failures: Iterable[int] = ()) -> Iterator[Stub]:
             if pending:
                 self.send_error(pending.pop(0))
                 return
+            message = _message(scripted.pop(0) if scripted else STUB_ANSWER, len(stub.requests))
             reply = {
                 "id": "chatcmpl-stub",
                 "object": "chat.completion",
@@ -56,8 +85,8 @@ def openwebui_stub(failures: Iterable[int] = ()) -> Iterator[Stub]:
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": STUB_ANSWER},
-                        "finish_reason": "stop",
+                        "message": message,
+                        "finish_reason": "tool_calls" if "tool_calls" in message else "stop",
                     }
                 ],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
