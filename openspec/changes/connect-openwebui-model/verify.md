@@ -1,11 +1,12 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 2 (two MAJOR). First fix: run the server
-  with Open WebUI configured under the probe (finding 18). Pass 1: DO NOT SHIP
-  (six MAJOR).
-- **Reviewed at:** pass 2: `bd4bc4e`, the fix diff `6dd2700..bd4bc4e` -- the
-  staged tree the lenses read, committed unchanged after they reported. Pass 1:
-  `4dc2516`, likewise.
+- **Verdict:** DO NOT SHIP -- pass 3 (two MAJOR). First fix: prove the
+  served export reads the process's settings at the default tier (finding 29).
+  Pass 2: DO NOT SHIP (two MAJOR). Pass 1: DO NOT SHIP (six MAJOR).
+- **Reviewed at:** pass 3: `6033d3a`, the whole change with the fix diff
+  `dade9c1..6033d3a` in focus. Pass 2: `bd4bc4e`, the fix diff
+  `6dd2700..bd4bc4e`. Pass 1: `4dc2516`. Each the staged tree the lenses read,
+  committed unchanged after they reported.
 - **Evidence (pass 1):** `bash scripts/check.sh live` on the reviewed tree: all checks
   passed -- architecture 50, method 117 OK, suite 89, live 7 passed and 1
   skipped (Open WebUI not configured in `.env` yet). Seven mutations red
@@ -85,3 +86,49 @@ commit with the MINORs, and that diff is read in pass 3.
 - The placement lens (`architecture-guardian`): not re-run on the fix diff;
   pass 3 runs all three lenses over the whole change.
 - A live run through Open WebUI: `.env` does not configure it yet.
+
+## Pass 3 -- the whole change, the fix diff `dade9c1..6033d3a` in focus
+
+- **Evidence:** `bash scripts/check.sh live` on the reviewed tree: `all checks
+  passed`, exit 0 -- architecture 51, OpenSpec 3 passed, `sdd check` OK,
+  method 117 OK, manifest matches, suite 131 passed, live 8 passed and 1
+  skipped (Open WebUI not configured in `.env`). Seven pass-2 mutations red
+  (tasks.md 9.4).
+- **Lenses:** proof (`spec-compliance`), defects (`code-reviewer`) and
+  placement (`architecture-guardian`), fresh context, over `git diff --cached
+  main`. The proof lens ran 24 mutations on a scratch copy, live ones included
+  -- 18 red, 6 survived (below); it checked every test class's docstring
+  against its requirement, word for word. No `.env` read; nothing left running.
+- **Pass 2 resolved:** 18-24 and 27 rechecked, each red under its mutation;
+  27's narrowing went too far (30).
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 28 | MAJOR | proof | MODEL-CHOICE: no row leaves the URL unset -- `if not url: return "offline"` passes every test, so a key and a model under a mistyped URL variable would run offline, unrefused | `domain/models.py:22`; `test_model_choice.py` | Rows: key and model set; model only |
+| 29 | MAJOR | proof | ASSISTANT-REGISTERED: the export is never proved to read the process's settings at the default tier -- `assistant = registered_assistant(Settings("", "", ""))` keeps `check.sh` green; only a live test of another requirement turns red | `registry.py:24,28`; `test_registered_assistant.py` | Load the registry with the settings in the environment, against the stand-in; a partial environment refused at load |
+| 30 | MINOR | placement, defects | The models check misses `import openai; openai.OpenAI()`, no longer catches completion models (`OllamaLLM`, `langchain_openai.OpenAI`) or embeddings HEAD caught, and flags `ChatPromptTemplate`, `ChatMessage` -- prompts in `application/` would fail the build | `contract.py:418-456` | Track module aliases of provider packages; name model classes by their package, not a pattern alone; counter-example rows for prompts and messages |
+| 31 | MINOR | placement, defects | The URL check accepts a path and a query: `http://localhost:3000/api` -- Open WebUI's own documented base URL -- becomes `/api/api`, a 404 at the first run naming nothing | `domain/models.py:37-43`; `infrastructure/models.py:58` | Refuse a path ending in `/api`, a query or a fragment, naming `OPENWEBUI_URL` |
+| 32 | MINOR | placement | Only `langchain_openai` is guarded against a module-level import: `import openai` at the top of `models.py` stays green | `test_models.py:50` | Make `openai` impossible to import too |
+| 33 | MINOR | placement | `openai` is imported directly but not declared: its range is langchain-openai's, two majors wide, while the transient classification depends on its exception classes | `pyproject.toml` | Declare it, bounded to the checked minor |
+| 34 | MINOR | placement | `config`'s allowlist (`dotenv`) has no fixture proving it can fail; `CLAUDE.md` and `docs/architecture/overview.md` still describe the old one | `contract.py:37`; `test_imports.py` | A fixture; the documents updated |
+| 35 | MINOR | placement | `local_server(settings=)` accepts any name, so a proxy variable could come back after the hostile environment removed it | `tests/localserver.py` | Accept only the settings' names |
+| 36 | MINOR | placement | The factory's default predicate `never` is a retry policy in the adapter: a second graph composed without one would retry nothing, every test green | `factory.py:21-30` | A required keyword |
+| 37 | MINOR | proof | SETTINGS-ENVIRONMENT-WINS's counter-example reads a copy of `os.environ`: a reader writing into the mapping it is given passes | `test_settings.py:107` | Read `os.environ` itself |
+| 38 | MINOR | proof | Spaces are proved on `OPENWEBUI_MODEL` only; trimming a non-empty value is claimed by no requirement | `test_settings.py`; `settings.py:57` | Rows for the URL and the key; claim trimming |
+| 39 | MINOR | proof | `.env` values interpolate `${VAR}` from the real `os.environ`, bypassing `read_settings`' argument -- unclaimed | `settings.py:65` | `interpolate=False`, with a row |
+| 40 | MINOR | proof | MODEL-TRANSIENT-FAILURES says "exactly" but samples: 507 made transient passes | `test_retries.py` | Every status from 100 to 599 |
+| 41 | MINOR | proof | The session server's "no Open WebUI configured" is assumed: were the empty settings lost on the way, the owner's `.env` would answer and every session test pass | `test_local_server.py` | Assert the offline answer in both session runs |
+| 42 | MINOR | proof | Stale text: the living `local-server` Purpose ("never reaching anything beyond 127.0.0.1"); `design.md` says the live server tests keep the offline model; `frame.md:63` "one call"; `CLAUDE.md` "No model provider is installed yet" | as listed | Reword; the Purpose with the archive |
+
+Also noted, not counted: an empty port (`http://localhost:`), port 0 and a
+hostname with a space pass the URL check -- httpx refuses the last at the first
+run; the POSIX-only clauses of the live tests are unrun on this machine.
+
+**Pass 3 verdict:** DO NOT SHIP -- 28 and 29 are MAJOR. Fixed in a separate
+commit with the MINORs; that diff is read in pass 4.
+
+## Not checked -- pass 3
+
+- MODEL-OPENWEBUI-LIVE: it reads the owner's `.env` and calls a real model;
+  `.env` does not configure Open WebUI yet.
+- The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
