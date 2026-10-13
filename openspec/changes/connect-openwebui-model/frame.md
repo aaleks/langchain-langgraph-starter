@@ -4,8 +4,8 @@
 
 The owner fills three lines of `.env`, starts the server with
 `bash scripts/serve.sh`, and the `assistant` answers through their local Open
-WebUI. A slow or briefly failing model is retried a bounded number of times
-and never hangs a run forever; a misconfigured `.env` fails loudly at start,
+WebUI. A briefly failing model is retried a bounded number of times, and a
+stalled one times out rather than hanging; a misconfigured `.env` fails loudly at start,
 naming what is missing; and the default suite still never calls a model.
 
 Observable signals:
@@ -65,7 +65,7 @@ Unchanged: the tool loop (`create_agent`). The retry policy is middleware on it.
 | Untrusted input -- anything ingested that this project did not write | Partial | the person's message now reaches a real model, but no tool can act on its answer: the data-never-instruction requirement and its adversarial case come with the first tool (slice 3), as the roadmap says |
 | Interfaces -- a flag, env var, output schema, embedding, default or graph id | Clear | three settings, `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`, documented in `.env.example`; the default -- nothing configured -- keeps the offline model |
 | Failure -- what the user sees when a dependency is down | Clear | ASSISTANT-TRANSIENT-RETRY: retried twice, then the failure itself; a deadline on every call |
-| Cost -- tokens, time, money and storage per run | Clear | a local model: no money; time bounded by `MODEL_CALL_DEADLINE_SECONDS` x (1 + `MODEL_RETRIES`) per call |
+| Cost -- tokens, time, money and storage per run | Clear | a local model: no money; time bounded by `MODEL_CALL_TIMEOUT_SECONDS` x (1 + `MODEL_RETRIES`) per call |
 | Ownership -- who decides when a requirement turns out to be wrong | Clear | the project owner |
 
 ## Defect
@@ -76,6 +76,6 @@ N-A
 
 | # | Question | Ask now / OPEN | Resolution |
 |---|---|---|---|
-| 1 | Are 120 s per call and 2 retries right for the owner's model? | OPEN -- needs real runs | Starting policy; measured in the live test's runs. Owner: the project owner. Review by: 2026-12-31 |
+| 1 | Are a 120 s timeout per wait and 2 retries right for the owner's model? | OPEN -- needs real runs | Starting policy; measured in the live test's runs. Owner: the project owner. Review by: 2026-12-31 |
 | 2 | Open WebUI's Ollama path appears to drop `max_completion_tokens`, `temperature` and `top_p` (source-read, not run) | OPEN -- needs a live instance | Nothing here sets them; checked when one is first needed. Owner: the project owner. Review by: 2026-12-31 |
 | 3 | `scripts/serve.sh` and the local-only environment do not empty `LANGSMITH_GATEWAY` / `LANGSMITH_GATEWAY_API_KEY` | Reported to the owner | Closed for this project's model by the explicit `base_url` and `api_key`; the seal itself is the method's and the owner's settings to change -- upstream with the suite seal (roadmap, Method) |

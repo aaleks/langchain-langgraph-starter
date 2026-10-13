@@ -61,9 +61,9 @@ class TestAssistantIsRegistered:
     """ASSISTANT-REGISTERED: `langgraph.json` SHALL register exactly one graph,
     under the id `assistant`, bound to the `assistant` export of
     `src/starter/infrastructure/agents/registry.py`. That export SHALL be the
-    graph the factory compiles -- so it carries the budget -- with the offline
-    model and no tools, and it SHALL complete runs with every outbound network
-    connection refused."""
+    graph the factory compiles -- so it carries the budget and the retry policy
+    -- with the model the settings choose and no tools; with no model configured
+    it SHALL complete runs with every outbound network connection refused."""
 
     def test_langgraph_json_registers_the_assistant_and_nothing_else(self):
         graphs = json.loads(CONFIG.read_text(encoding="utf-8"))["graphs"]
@@ -102,6 +102,14 @@ class TestAssistantIsRegistered:
             ("/api/chat/completions", "Bearer sk-local")
         ]
         assert stub.requests[0]["body"]["model"] == "llama3.1:8b"
+
+    def test_partly_configured_is_refused_at_start_naming_what_is_missing(self, registry):
+        from starter.config.settings import Settings
+
+        with pytest.raises(ValueError) as refused:
+            registry.registered_assistant(Settings("http://localhost:3000", "", "llama3.1:8b"))
+
+        assert str(refused.value).endswith("missing: OPENWEBUI_API_KEY")
 
     def test_its_retry_policy_is_the_domains_a_503_from_open_webui_is_retried(self, registry):
         from starter.config.settings import Settings

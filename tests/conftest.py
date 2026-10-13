@@ -47,6 +47,17 @@ os.environ.update(LOCAL_ONLY)
 MODEL_UNSET = {"OPENWEBUI_URL": "", "OPENWEBUI_API_KEY": "", "OPENWEBUI_MODEL": ""}
 os.environ.update(MODEL_UNSET)
 
+# The model client reads more of the environment than it is given: a proxy, an
+# organisation, extra headers. None of the owner's reaches a default test, and
+# nothing bound for 127.0.0.1 -- the Open WebUI stub -- is sent to a proxy.
+for _name in [
+    n
+    for n in os.environ
+    if n.upper().startswith("OPENAI_") or n.upper() in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}
+]:
+    del os.environ[_name]
+os.environ["NO_PROXY"] = "127.0.0.1,localhost"
+
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
 # `NAME=value` or `# NAME=value`: a documented variable, set or not.

@@ -19,7 +19,7 @@ from starter.infrastructure.models import OFFLINE_ANSWER
 class TestAnsweredByOpenWebUI:
     """MODEL-OPENWEBUI-LIVE: With Open WebUI configured in `.env`, a run of the
     registered assistant SHALL be answered by that Open WebUI model: one model
-    call, a transcript of `human, ai`, and an answer that is not empty and is
+    turn, a transcript of `human, ai`, and an answer that is not empty and is
     not the offline model's."""
 
     @pytest.mark.live

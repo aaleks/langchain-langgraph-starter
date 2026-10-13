@@ -5,7 +5,7 @@ The model is what the assistant thinks with: chosen from the settings -- the own
 ## ADDED Requirements
 
 ### Requirement: MODEL-CHOICE
-The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model.
+The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not `http` or `https` with a host.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_model_choice.py::TestModelChoice`
@@ -14,16 +14,37 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 | `OPENWEBUI_URL` | `OPENWEBUI_API_KEY` | `OPENWEBUI_MODEL` | Choice |
 |---|---|---|---|
 | `http://localhost:3000` | `sk-local` | `llama3.1:8b` | `openwebui` |
+| `https://webui.lan` | `sk-local` | `llama3.1:8b` | `openwebui` |
 | empty | empty | empty | `offline` |
 
-#### Scenario: Counter-example -- partly configured is refused, not defaulted
+#### Scenario: Counter-example -- partly or wrongly configured is refused, not defaulted
 | Set | Refused, naming |
 |---|---|
 | `OPENWEBUI_URL` only | `OPENWEBUI_API_KEY, OPENWEBUI_MODEL` |
 | `OPENWEBUI_URL`, `OPENWEBUI_MODEL` | `OPENWEBUI_API_KEY` |
+| all three, the URL `localhost:3000` | `OPENWEBUI_URL` |
+
+### Requirement: MODEL-TRANSIENT-FAILURES
+A failed model call SHALL be transient exactly when it timed out, its connection failed, or the server answered HTTP 408, 429, 500, 502, 503 or 504.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/unit/domain/test_retries.py::TestTransientFailures`
+
+#### Scenario: Transient
+| Failure | Transient |
+|---|---|
+| timed out | yes |
+| connection failed | yes |
+| HTTP 408, 429, 500, 502, 503, 504 | yes |
+
+#### Scenario: Counter-example -- the same on every try
+| Failure | Transient |
+|---|---|
+| HTTP 400, 401, 403, 404, 422 | no |
+| no status, no timeout, no connection failure | no |
 
 ### Requirement: MODEL-OPENWEBUI-CLIENT
-The Open WebUI model SHALL be an OpenAI-compatible chat client addressed to `<OPENWEBUI_URL>/api` -- a trailing slash on the URL ignored -- with the configured key and model, a deadline of `MODEL_CALL_DEADLINE_SECONDS` per call, and no retries of its own: retrying is the assistant's policy, not the client's.
+The Open WebUI model SHALL be an OpenAI-compatible chat-completions client addressed to `<OPENWEBUI_URL>/api` -- a trailing slash on the URL ignored -- with the configured key and model, a timeout of `MODEL_CALL_TIMEOUT_SECONDS` on every wait for the model, a streamed chunk included, and no retries of its own: retrying is the assistant's policy, not the client's.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/infrastructure/test_models.py::TestOpenWebUIClient`
@@ -31,15 +52,15 @@ The Open WebUI model SHALL be an OpenAI-compatible chat client addressed to `<OP
 #### Scenario: The client the settings describe
 - **GIVEN** `OPENWEBUI_URL=http://localhost:3000/`, `OPENWEBUI_API_KEY=sk-local`, `OPENWEBUI_MODEL=llama3.1:8b`
 - **WHEN** the model is built
-- **THEN** its base URL is `http://localhost:3000/api`, its model `llama3.1:8b`, its timeout `MODEL_CALL_DEADLINE_SECONDS` (120), its retries 0, and building it made no connection
+- **THEN** its base URL is `http://localhost:3000/api`, its model `llama3.1:8b`, its timeout and its streamed-chunk timeout `MODEL_CALL_TIMEOUT_SECONDS` (120), its retries 0, it never uses the Responses API, and building it made no connection
 
 #### Scenario: Counter-example -- nothing configured builds the offline model
-- **GIVEN** none of the three settings
-- **WHEN** the model is built
-- **THEN** it is the offline model, and `langchain_openai` was not needed to build it
+- **GIVEN** none of the three settings, and `langchain_openai` impossible to import
+- **WHEN** the models module is imported afresh and the model built
+- **THEN** it is the offline model
 
 ### Requirement: MODEL-OPENWEBUI-LIVE
-With Open WebUI configured in `.env`, a run of the registered assistant SHALL be answered by that Open WebUI model: one model call, a transcript of `human, ai`, and an answer that is not empty and is not the offline model's.
+With Open WebUI configured in `.env`, a run of the registered assistant SHALL be answered by that Open WebUI model: one model turn, a transcript of `human, ai`, and an answer that is not empty and is not the offline model's.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/acceptance/agents/test_openwebui_live.py::TestAnsweredByOpenWebUI`

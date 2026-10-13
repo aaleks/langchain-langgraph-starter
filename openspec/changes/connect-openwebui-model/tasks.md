@@ -63,3 +63,27 @@
 - [x] 7.1 The story test is green through the registry -- TestAssistantIsRegistered, 8 passed
 - [x] 7.2 `bash scripts/check.sh` and `bash scripts/check.sh live` pass -- "all checks passed":
   architecture 50, method 117 OK, suite 89, live 7 passed and 1 skipped (Open WebUI not configured)
+
+## 8. Verify pass 1 -- the fixes (`verify.md`, reviewed at `4dc2516`)
+
+- [x] 8.1 MODEL-TRANSIENT-FAILURES added at the unit tier, every status; each
+  failure kind proved through the client's own exceptions -- a streamed chunk's
+  builtin `TimeoutError` now transient, `stream_chunk_timeout` set (1, 6)
+- [x] 8.2 The settings counter-example removes the name before reading; the
+  registry refuses a partial configuration at start; `.env` read only for a
+  missing name, a non-UTF-8 file refused naming it; a URL without
+  `http(s)://host` refused (2, 3, 8, 9)
+- [x] 8.3 ASSISTANT-MODEL-CALL-BUDGET modified to turns, a retried turn proved to
+  spend one unit; LOCAL-SERVER-STAYS-LOCAL modified to except the owner's
+  configured Open WebUI (4, 5)
+- [x] 8.4 Timeout, not deadline, throughout; the suite sealed from proxies and
+  `OPENAI_*`; the offline test re-imports the module; the models check catches
+  aliases and `AzureChatOpenAI`, `config/` allowed only `dotenv`; retry timing
+  in the domain; SETTINGS-KEY-NEVER-SHOWN added; stale text updated (7, 10-16);
+  17 accepted in the design
+- [x] 8.5 Proved by mutation, eight probes in a full-suite run, each red: a
+  stream timeout not transient, 429 not transient, a failed connection not
+  transient, `load_dotenv` in the reader, `build_model` falling back silently,
+  the provider imported at module level, the chunk timer left to
+  langchain-openai (red once its environment override is set in the test), `.env`
+  opened regardless

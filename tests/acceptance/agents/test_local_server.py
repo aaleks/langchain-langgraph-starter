@@ -177,7 +177,9 @@ class TestStaysLocal:
     endpoint elsewhere, the server SHALL start, serve runs -- including one whose
     request asks for LangSmith tracing -- and stop, attempting no connection and
     no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no
-    host at all)."""
+    host at all) -- save one: the Open WebUI the owner's `.env` configures,
+    wherever it runs. These tests configure none: the suite sets the settings
+    empty, and the server inherits them."""
 
     @pytest.mark.live
     def test_nothing_beyond_this_machine_from_a_hostile_shell(self, session):

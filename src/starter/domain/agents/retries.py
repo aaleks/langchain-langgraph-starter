@@ -1,9 +1,11 @@
-"""Which model failures are worth another try, and how many tries."""
+"""Which model failures are worth another try, how many tries, and how far apart."""
 
 from __future__ import annotations
 
-# Starting policy, revisited against real runs (connect-openwebui-model, frame.md).
+# Starting policy, to be measured against real runs (connect-openwebui-model, frame.md).
 MODEL_RETRIES = 2
+RETRY_INITIAL_DELAY_SECONDS = 1.0
+RETRY_BACKOFF_FACTOR = 2.0
 
 # A request the server may answer next time: a timeout, too many requests, or
 # a server-side failure. A 400 or a 401 will be the same on every try.

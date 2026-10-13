@@ -15,6 +15,7 @@ import pytest
 from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
+from langchain_openai import StreamChunkTimeoutError
 from langgraph.errors import GraphRecursionError
 
 from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN
@@ -146,9 +147,10 @@ class TestToolError:
 
 
 class TestErrorsPropagate:
-    """ASSISTANT-ERRORS-PROPAGATE: An exception that a tool or the model raises
-    SHALL end the run by propagating to the caller unchanged -- the unexpected
-    class, never turned into a message the run carries on with."""
+    """ASSISTANT-ERRORS-PROPAGATE: An exception that a tool raises, or that the
+    model raises and the retry policy does not classify as transient, SHALL end
+    the run by propagating to the caller unchanged -- the unexpected class, never
+    turned into a message the run carries on with."""
 
     def test_a_tools_exception_reaches_the_caller_unchanged(self, fake_llm):
         failure = RuntimeError("explode failed")
@@ -197,11 +199,13 @@ class TestErrorsPropagate:
 
 class TestModelCallBudget:
     """ASSISTANT-MODEL-CALL-BUDGET: A run of the assistant SHALL make at most
-    `MODEL_CALLS_PER_RUN` model calls, a domain budget equal to 10. A model still
-    proposing tool calls when the budget is spent SHALL end the run with
-    `ModelCallLimitExceededError` -- never with a message that reads like an
-    answer, and never at the step ceiling first under the ceiling the factory's
-    graph runs with: `create_agent`'s 9,999 supersteps, where the budget needs 41."""
+    `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn
+    SHALL make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY),
+    its retries spending none of the budget. A model still proposing tool calls
+    when the budget is spent SHALL end the run with `ModelCallLimitExceededError`
+    -- never with a message that reads like an answer, and never at the step
+    ceiling first under the ceiling the factory's graph runs with:
+    `create_agent`'s 9,999 supersteps, where the budget needs 41."""
 
     def test_a_model_that_never_stops_proposing_calls_ends_in_the_budget_error(
         self, fake_llm, add_tool
@@ -216,6 +220,23 @@ class TestModelCallBudget:
         assert graph.config["recursion_limit"] == 9_999
         assert MODEL_CALLS_PER_RUN == 10
         assert model.calls == MODEL_CALLS_PER_RUN
+        assert len(add_tool.calls) == MODEL_CALLS_PER_RUN
+
+    def test_a_retried_turn_spends_one_unit_of_the_budget(self, fake_llm, add_tool):
+        def every_turn_times_out_first():
+            while True:
+                yield openai.APITimeoutError(request=REQUEST)
+                yield propose(("add", {"a": 1, "b": 1}))
+
+        model = fake_llm(every_turn_times_out_first())
+        graph = build_assistant(
+            model, [add_tool.tool], transient=is_transient_failure, initial_delay=0
+        )
+
+        with pytest.raises(ModelCallLimitExceededError):
+            run(graph, "keep adding")
+
+        assert model.calls == 2 * MODEL_CALLS_PER_RUN
         assert len(add_tool.calls) == MODEL_CALLS_PER_RUN
 
     def test_counter_example_an_answer_on_the_last_call_within_budget_completes(
@@ -265,10 +286,32 @@ def retrying(model) -> object:
 
 class TestTransientRetry:
     """ASSISTANT-TRANSIENT-RETRY: A model failure that the domain classifies as
-    transient -- a timeout, a failed connection, or HTTP 408, 429, 500, 502, 503
-    or 504 -- SHALL be retried, at most `MODEL_RETRIES` times (2); when the
-    retries are spent the run SHALL end with that failure, never with a message
-    that reads like an answer. Any other failure SHALL NOT be retried."""
+    transient (MODEL-TRANSIENT-FAILURES) -- a streamed chunk that never came
+    included -- SHALL be retried within its turn, at most `MODEL_RETRIES` times
+    (2); when the retries are spent the run SHALL end with that failure, never
+    with a message that reads like an answer. Any other failure SHALL NOT be
+    retried."""
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            openai.APITimeoutError(request=REQUEST),
+            openai.APIConnectionError(request=REQUEST),
+            StreamChunkTimeoutError(120.0),
+            "429",
+        ],
+        ids=["openai-timeout", "connection-refused", "stream-chunk-timeout", "http-429"],
+    )
+    def test_each_kind_of_transient_failure_as_the_client_raises_it_is_retried(
+        self, fake_llm, failure
+    ):
+        first = status_failure(429) if failure == "429" else failure
+        model = fake_llm([first, answer()])
+
+        messages = run(retrying(model), "hello")
+
+        assert [m.type for m in messages] == ["human", "ai"]
+        assert model.calls == 2
 
     def test_a_timeout_is_retried_and_the_answer_completes_the_run(self, fake_llm):
         model = fake_llm([openai.APITimeoutError(request=REQUEST), answer()])

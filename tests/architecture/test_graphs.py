@@ -354,6 +354,13 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
                 "model = init_chat_model('ollama:qwen3')\n"
             ),
             "config/settings.py": "from langchain_ollama import ChatOllama\nm = ChatOllama()\n",
+            # the same class under another name, and a name the pattern misses
+            "infrastructure/agents/alias.py": (
+                "from langchain_openai import ChatOpenAI as Model\nm = Model(model='m')\n"
+            ),
+            "infrastructure/agents/azure.py": (
+                "import langchain_openai\nm = langchain_openai.AzureChatOpenAI()\n"
+            ),
             # counter-examples: names that merely look alike
             "application/chat.py": "def chat_turn():\n    return Chatter()\nclass Chatter: ...\n",
         },
@@ -362,5 +369,7 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
     assert [f.split(":")[0] for f in found] == [
         "cli/main.py",
         "config/settings.py",
+        "infrastructure/agents/alias.py",
+        "infrastructure/agents/azure.py",
         "infrastructure/agents/registry.py",
     ], found

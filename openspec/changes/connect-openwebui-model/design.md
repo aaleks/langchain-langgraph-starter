@@ -14,8 +14,8 @@ setting is read anywhere; `config/` is empty.
 |---|---|---|
 | `src/starter/config/settings.py` | `Settings` (url, key, model); `read_settings(environ, dotenv)` -- the environment wins, `.env` fills the rest via `dotenv_values`, nothing written; `settings_from_process()` -- `os.environ` and the repository's `.env` | config: the only reader of `os.environ` |
 | `src/starter/domain/models.py` | `choose_model(url, key, model) -> "openwebui" \| "offline"`, refusing a partial configuration with the missing names | domain: pure |
-| `src/starter/domain/agents/budgets.py` | `MODEL_CALL_DEADLINE_SECONDS = 120`, beside `MODEL_CALLS_PER_RUN` | domain |
-| `src/starter/domain/agents/retries.py` | `MODEL_RETRIES = 2`; `is_transient(status, timed_out, connection_failed)` | domain: facts in, a decision out |
+| `src/starter/domain/agents/budgets.py` | `MODEL_CALL_TIMEOUT_SECONDS = 120`, beside `MODEL_CALLS_PER_RUN` | domain |
+| `src/starter/domain/agents/retries.py` | `MODEL_RETRIES = 2`, `RETRY_INITIAL_DELAY_SECONDS = 1.0`, `RETRY_BACKOFF_FACTOR = 2.0`; `is_transient(status, timed_out, connection_failed)` | domain: facts in, a decision out |
 | `src/starter/infrastructure/models.py` | `build_model(settings)` -- the choice, then `build_openwebui_model(...)` (`langchain_openai` imported inside it) or the offline model; `is_transient_failure(exc)` -- an exception's facts, handed to the domain | infrastructure: the only place a model is built, and the only place that knows the provider's exceptions |
 | `src/starter/infrastructure/agents/factory.py` | `build_assistant(model, tools, *, transient=never)` -- adds `ModelRetryMiddleware(max_retries=MODEL_RETRIES, retry_on=transient, on_failure="error")` | agents adapter: the predicate arrives as a dependency, so the adapter imports no provider |
 | `src/starter/infrastructure/agents/registry.py` | `assistant = registered_assistant()` -- a factory function: settings, model, graph | registration |
@@ -44,18 +44,45 @@ setting is read anywhere; `config/` is empty.
   -- is not, and propagates unchanged (ASSISTANT-ERRORS-PROPAGATE, modified:
   its model scenario now raises a `RuntimeError`, a timeout being transient).
 - **The client:** `ChatOpenAI(base_url=<url>/api, api_key=, model=,
-  timeout=MODEL_CALL_DEADLINE_SECONDS, max_retries=0, use_responses_api=False)`.
+  timeout=MODEL_CALL_TIMEOUT_SECONDS, max_retries=0, use_responses_api=False)`.
   Explicit `base_url` and `api_key` also close `langchain-core`'s
   `LANGSMITH_GATEWAY` routing (frame.md).
 - **The registry reads settings in a function, at import.** The server imports
   the registry once; `registered_assistant()` reads the settings then -- `.env`
   included, so nothing is read before it is loaded (the inherited lesson).
 
+- **Verify pass 1's corrections** (`verify.md`):
+  - *A timeout, not a deadline.* `MODEL_CALL_TIMEOUT_SECONDS` bounds every wait
+    -- to connect, for the next part of an answer, for the next streamed chunk
+    (`stream_chunk_timeout`, else langchain-openai's own 120 s, or its
+    environment override, applies) -- not a whole call: a model that keeps
+    answering is not cut off. A builtin `TimeoutError`, which is how
+    langchain-openai reports a chunk that never came, is a timeout.
+  - *Turns, not attempts.* `ModelCallLimitMiddleware` counts turns; the
+    retries happen inside one. A run is at most `MODEL_CALLS_PER_RUN` turns of
+    at most `1 + MODEL_RETRIES` attempts -- 30 requests, each waited on at most
+    120 s at a time (ASSISTANT-MODEL-CALL-BUDGET, modified).
+  - *The owner's Open WebUI is the one exception to "local only".*
+    LOCAL-SERVER-STAYS-LOCAL is modified: the conversation goes to the Open
+    WebUI `.env` names, wherever it runs -- the owner's choice. ADR 0004 is
+    about LangSmith, and holds.
+  - *Refused at start:* a partial configuration, and a URL that is not
+    `http(s)://host`; an unreadable `.env`, naming the file. The file is not
+    opened when the environment holds every setting.
+  - *The suite* removes the owner's proxy and `OPENAI_*` variables and sets
+    `NO_PROXY` for 127.0.0.1. The server's client still reads them from the
+    owner's shell -- the owner's choice; recorded in `models.py`.
+  - *Accepted, recorded:* the domain names the three variables as config does;
+    the `.env` path is right for the editable install `uv sync` makes; the
+    registry composes the model (the factory would, once a second graph
+    exists); retrying a timeout on a single-slot local model may queue behind
+    the abandoned generation.
+
 ## Orchestration design
 
 N-A for the node table -- the tool loop. What changes:
 
-- **Budgets:** `MODEL_CALL_DEADLINE_SECONDS = 120` per call; `MODEL_RETRIES = 2`
+- **Budgets:** `MODEL_CALL_TIMEOUT_SECONDS = 120` per call; `MODEL_RETRIES = 2`
   per call; `MODEL_CALLS_PER_RUN = 10` unchanged (re-measured with tools,
   slice 3).
 - **Errors:** transient -> retried, then raised; everything else -> raised
