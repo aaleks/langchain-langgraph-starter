@@ -64,8 +64,8 @@ Unchanged: the tool loop (`create_agent`). The retry policy is middleware on it.
 | Data -- provenance, freshness, what happens when a source is withdrawn | N-A | no data read beyond the owner's settings |
 | Untrusted input -- anything ingested that this project did not write | Partial | the person's message now reaches a real model, but no tool can act on its answer: the data-never-instruction requirement and its adversarial case come with the first tool (slice 3), as the roadmap says |
 | Interfaces -- a flag, env var, output schema, embedding, default or graph id | Clear | three settings, `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`, documented in `.env.example`; the default -- nothing configured -- keeps the offline model |
-| Failure -- what the user sees when a dependency is down | Clear | ASSISTANT-TRANSIENT-RETRY: retried twice, then the failure itself; a deadline on every call |
-| Cost -- tokens, time, money and storage per run | Clear | a local model: no money; time bounded by `MODEL_CALL_TIMEOUT_SECONDS` x (1 + `MODEL_RETRIES`) per call |
+| Failure -- what the user sees when a dependency is down | Clear | ASSISTANT-TRANSIENT-RETRY: retried twice, then the failure itself; a timeout on every wait for the model |
+| Cost -- tokens, time, money and storage per run | Clear | a local model: no money; a run is at most `MODEL_CALLS_PER_RUN` turns of at most 1 + `MODEL_RETRIES` attempts, each wait for the model at most `MODEL_CALL_TIMEOUT_SECONDS` -- a timeout per wait, not a cap on a call: a model that keeps answering is not cut off |
 | Ownership -- who decides when a requirement turns out to be wrong | Clear | the project owner |
 
 ## Defect

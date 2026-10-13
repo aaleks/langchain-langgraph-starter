@@ -16,7 +16,8 @@ A setting SHALL be read from the process environment when the environment holds 
 | `OPENWEBUI_MODEL=qwen3:8b` | `OPENWEBUI_MODEL=llama3.1:8b` | `qwen3:8b` |
 | not set | `OPENWEBUI_MODEL=llama3.1:8b` | `llama3.1:8b` |
 | `OPENWEBUI_MODEL=` (empty) | `OPENWEBUI_MODEL=llama3.1:8b` | empty |
-| not set | `OPENWEBUI_MODEL=   ` (spaces) | empty |
+| `OPENWEBUI_MODEL=   ` (spaces) | `OPENWEBUI_MODEL=llama3.1:8b` | empty |
+| not set | `OPENWEBUI_MODEL="   "` (quoted spaces) | empty |
 
 #### Scenario: The process's own settings
 - **GIVEN** the process environment holding `OPENWEBUI_MODEL=qwen3:8b` and no other setting, and the repository's `.env` holding `OPENWEBUI_URL=http://localhost:3000`
@@ -46,9 +47,10 @@ The Open WebUI API key SHALL appear neither in a settings object's text nor in t
 - **THEN** their text contains `<set>` and not `sk-secret-123`
 
 #### Scenario: A configuration refused
-- **GIVEN** the URL and the key `sk-secret-123` set, and no model
-- **WHEN** the model is chosen
-- **THEN** the refusal names `OPENWEBUI_MODEL`, and its message does not contain `sk-secret-123`
+| Settings | Refusal names | Its message contains `sk-secret-123` |
+|---|---|---|
+| the URL and the key `sk-secret-123`, no model | `OPENWEBUI_MODEL` | no |
+| all three, the URL's and the key's lines swapped: `OPENWEBUI_URL=sk-secret-123` | `OPENWEBUI_URL` | no |
 
 #### Scenario: Counter-example -- what is not secret is shown
 - **GIVEN** settings with the URL `http://localhost:3000` and the model `llama3.1:8b`

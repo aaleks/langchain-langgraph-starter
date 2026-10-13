@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: LOCAL-SERVER-STAYS-LOCAL
-Started through `scripts/serve.sh` from a shell that exports LangSmith keys, switches tracing on and points LangSmith's endpoint elsewhere, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and stop, attempting no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no host at all) -- save one: the Open WebUI the owner's `.env` configures, wherever it runs, to which the assistant's conversation goes by the owner's choice.
+Started through `scripts/serve.sh` from a shell that exports LangSmith keys, switches tracing on and points LangSmith's endpoint elsewhere, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and stop, attempting no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no host at all) -- save one: the Open WebUI the owner's settings configure, wherever it runs, to which the assistant's conversation goes by the owner's choice.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/acceptance/agents/test_local_server.py::TestStaysLocal`
@@ -15,6 +15,11 @@ Started through `scripts/serve.sh` from a shell that exports LangSmith keys, swi
 #### Scenario: A run that asks for LangSmith tracing
 - **WHEN** a client streams a run of `assistant` whose request sets `langsmith_tracing` to `{"project_name": "probe"}`
 - **THEN** the run completes, the probe recorded nothing beyond this machine, and no connection to `serve.sh`'s closed LangSmith endpoint, `127.0.0.1:9` -- a clause the probe can break only on POSIX: on Windows an asyncio client's connect to a literal IP raises no event
+
+#### Scenario: Open WebUI configured -- the conversation goes there, and nowhere else
+- **GIVEN** the same shell and probe, and the server's settings configuring an Open WebUI -- a stand-in on `127.0.0.1` -- with the key `sk-local` and the model `llama3.1:8b`
+- **WHEN** the server starts, a client streams a run of `assistant`, and the server is stopped by the signal
+- **THEN** the run completes with the transcript `human, ai`, the stand-in received one request, at `/api/chat/completions` with the key `sk-local`, and the probe recorded nothing beyond this machine
 
 #### Scenario: Counter-example -- connections on this machine are not counted
 - **GIVEN** probe records of a connection to `127.0.0.1` and lookups of `localhost`, `::1` and no host, beside a connection to `203.0.113.7` and a lookup of `api.smith.langchain.com`

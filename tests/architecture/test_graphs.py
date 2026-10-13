@@ -361,8 +361,16 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
             "infrastructure/agents/azure.py": (
                 "import langchain_openai\nm = langchain_openai.AzureChatOpenAI()\n"
             ),
-            # counter-examples: names that merely look alike
+            "infrastructure/agents/make.py": (
+                "from langchain.chat_models import init_chat_model as make\n"
+                "m = make('ollama:qwen3')\n"
+            ),
+            # a provider's own SDK: every client it makes is a model client
+            "infrastructure/agents/sdk.py": "from openai import OpenAI as Client\nc = Client()\n",
+            # counter-examples: names that merely look alike, and a partner
+            # package's class that is not a model
             "application/chat.py": "def chat_turn():\n    return Chatter()\nclass Chatter: ...\n",
+            "infrastructure/stores/tasks.py": "from langchain_chroma import Chroma\ns = Chroma()\n",
         },
     )
     found = models_built_outside_models(source)
@@ -371,5 +379,7 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
         "config/settings.py",
         "infrastructure/agents/alias.py",
         "infrastructure/agents/azure.py",
+        "infrastructure/agents/make.py",
         "infrastructure/agents/registry.py",
+        "infrastructure/agents/sdk.py",
     ], found

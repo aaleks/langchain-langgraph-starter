@@ -416,6 +416,9 @@ def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
 MODELS_MODULE = "infrastructure/models.py"
 # A chat model's class: ChatOpenAI, ChatOllama, GenericFakeChatModel and kin.
 CHAT_MODEL_CLASS = re.compile(r"^(\w*Chat[A-Z]\w*|\w*ChatModel)$")
+# A provider's own SDK: every client it makes is a model client. A partner
+# package (`langchain_chroma`) is matched by its classes' names, not its own.
+PROVIDER_SDKS = frozenset({"openai", "anthropic", "ollama", "mistralai", "cohere"})
 
 
 def models_built_outside_models(source: Path) -> list[str]:
@@ -429,12 +432,16 @@ def models_built_outside_models(source: Path) -> list[str]:
         if rel == MODELS_MODULE:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        # Anything taken from a provider's package, under whatever name it is bound.
-        from_providers = {
+        # A model builder or a chat model's class, under whatever name it is
+        # bound -- and anything taken from a provider's own SDK.
+        builders = {
             alias.asname or alias.name
             for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom) and node.module and _is_provider(node.module)
+            if isinstance(node, ast.ImportFrom) and node.module
             for alias in node.names
+            if alias.name in INLINE_MODEL_BUILDERS
+            or CHAT_MODEL_CLASS.match(alias.name)
+            or node.module.split(".")[0] in PROVIDER_SDKS
         }
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
@@ -443,24 +450,11 @@ def models_built_outside_models(source: Path) -> list[str]:
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
             if (
                 name in INLINE_MODEL_BUILDERS
-                or name in from_providers
+                or name in builders
                 or (name and CHAT_MODEL_CLASS.match(name))
             ):
                 found.append(f"{rel}:{node.lineno} {name}()")
     return found
-
-
-def _is_provider(module: str) -> bool:
-    """A model provider's package: `langchain_openai`, `langchain_ollama` and kin,
-    or a provider's own SDK -- not langchain's core, its runtime or its agents."""
-    root = module.split(".")[0]
-    if root in {"openai", "anthropic", "ollama", "mistralai", "cohere"}:
-        return True
-    return root.startswith("langchain_") and root not in {
-        "langchain_core",
-        "langchain_text_splitters",
-        "langchain_community",
-    }
 
 
 def shell_exports(script: str) -> dict[str, str]:

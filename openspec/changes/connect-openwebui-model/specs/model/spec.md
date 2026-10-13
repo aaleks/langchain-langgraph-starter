@@ -5,7 +5,7 @@ The model is what the assistant thinks with: chosen from the settings -- the own
 ## ADDED Requirements
 
 ### Requirement: MODEL-CHOICE
-The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not `http` or `https` with a host.
+The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not `http` or `https` with a host and, if it names one, a valid port, the refusal naming `OPENWEBUI_URL`.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_model_choice.py::TestModelChoice`
@@ -15,6 +15,7 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 |---|---|---|---|
 | `http://localhost:3000` | `sk-local` | `llama3.1:8b` | `openwebui` |
 | `https://webui.lan` | `sk-local` | `llama3.1:8b` | `openwebui` |
+| `http://[::1]:3000` | `sk-local` | `llama3.1:8b` | `openwebui` |
 | empty | empty | empty | `offline` |
 
 #### Scenario: Counter-example -- partly or wrongly configured is refused, not defaulted
@@ -22,7 +23,10 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 |---|---|
 | `OPENWEBUI_URL` only | `OPENWEBUI_API_KEY, OPENWEBUI_MODEL` |
 | `OPENWEBUI_URL`, `OPENWEBUI_MODEL` | `OPENWEBUI_API_KEY` |
-| all three, the URL `localhost:3000` | `OPENWEBUI_URL` |
+| all three, the URL `localhost:3000` (no scheme) | `OPENWEBUI_URL` |
+| all three, the URL `http://:3000` (no host) | `OPENWEBUI_URL` |
+| all three, the URL `http://localhost:99999` or `http://localhost:abc` (no valid port) | `OPENWEBUI_URL` |
+| all three, the URL `http://[::1` (not a URL at all) | `OPENWEBUI_URL` |
 
 ### Requirement: MODEL-TRANSIENT-FAILURES
 A failed model call SHALL be transient exactly when it timed out, its connection failed, or the server answered HTTP 408, 429, 500, 502, 503 or 504.
@@ -40,7 +44,7 @@ A failed model call SHALL be transient exactly when it timed out, its connection
 #### Scenario: Counter-example -- the same on every try
 | Failure | Transient |
 |---|---|
-| HTTP 400, 401, 403, 404, 422 | no |
+| HTTP 400, 401, 403, 404, 409, 422, 501, 505 | no |
 | no status, no timeout, no connection failure | no |
 
 ### Requirement: MODEL-OPENWEBUI-CLIENT

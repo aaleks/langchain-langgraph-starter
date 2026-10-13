@@ -37,9 +37,17 @@ class TestEnvironmentWins:
             ({"OPENWEBUI_MODEL": "qwen3:8b"}, "OPENWEBUI_MODEL=llama3.1:8b", "qwen3:8b"),
             ({}, "OPENWEBUI_MODEL=llama3.1:8b", "llama3.1:8b"),
             ({"OPENWEBUI_MODEL": ""}, "OPENWEBUI_MODEL=llama3.1:8b", ""),
-            ({}, "OPENWEBUI_MODEL=   ", ""),
+            ({"OPENWEBUI_MODEL": "   "}, "OPENWEBUI_MODEL=llama3.1:8b", ""),
+            # Quoted: python-dotenv strips an unquoted value itself, a quoted one not.
+            ({}, 'OPENWEBUI_MODEL="   "', ""),
         ],
-        ids=["environment-wins", "dotenv-fills", "empty-is-set", "spaces-are-empty"],
+        ids=[
+            "environment-wins",
+            "dotenv-fills",
+            "empty-is-set",
+            "spaces-in-the-environment-are-set-and-empty",
+            "quoted-spaces-in-dotenv-are-empty",
+        ],
     )
     def test_the_environment_wins_and_dotenv_fills_only_what_it_lacks(
         self, tmp_path, environ, line, expected
@@ -114,11 +122,20 @@ class TestKeyNeverShown:
             assert "sk-secret-123" not in text
             assert "<set>" in text
 
-    def test_a_configuration_refused_does_not_quote_the_key(self):
+    @pytest.mark.parametrize(
+        ("url", "key", "model", "named"),
+        [
+            ("http://localhost:3000", "sk-secret-123", "", "OPENWEBUI_MODEL"),
+            # Two lines swapped: the key is where the URL should be.
+            ("sk-secret-123", "http://localhost:3000", "llama3.1:8b", "OPENWEBUI_URL"),
+        ],
+        ids=["partly-configured", "key-in-the-url-line"],
+    )
+    def test_a_configuration_refused_does_not_quote_the_key(self, url, key, model, named):
         with pytest.raises(ValueError) as refused:
-            choose_model("http://localhost:3000", "sk-secret-123", "")
+            choose_model(url, key, model)
 
-        assert "OPENWEBUI_MODEL" in str(refused.value)
+        assert named in str(refused.value)
         assert "sk-secret-123" not in str(refused.value)
 
     def test_counter_example_what_is_not_secret_is_shown(self):

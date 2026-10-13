@@ -34,8 +34,10 @@ setting is read anywhere; `config/` is empty.
   hear about at start -- `ValueError` naming what is missing -- not a silent
   offline assistant.
 - **One retry layer.** The client gets `max_retries=0`; `ModelRetryMiddleware`
-  retries on the domain's predicate, `on_failure="error"`. `initial_delay` and
-  `backoff_factor` stay at the middleware's defaults (1 s, x2); the tests pass
+  retries on the domain's predicate, `on_failure="error"`, after
+  `RETRY_INITIAL_DELAY_SECONDS` and then x `RETRY_BACKOFF_FACTOR` (1 s, 2 s),
+  with the middleware's jitter. The timing is passed, not asserted: the jitter
+  is random, and nothing observable depends on the delays yet. The tests pass
   a zero delay through a factory parameter rather than sleep.
 - **What is transient** is the domain's: a timeout, a failed connection, or HTTP
   408, 429, 500, 502, 503, 504. `models.is_transient_failure` reads those facts
@@ -77,14 +79,28 @@ setting is read anywhere; `config/` is empty.
     registry composes the model (the factory would, once a second graph
     exists); retrying a timeout on a single-slot local model may queue behind
     the abandoned generation.
+- **Verify pass 2's corrections** (`verify.md`):
+  - *The URL refusal names the variable, never the value* -- two lines
+    swapped would otherwise print the key -- and refuses a bad port or an
+    unparseable URL at start rather than at the first run.
+  - *Accepted, recorded:* a permanent connection failure (a certificate
+    refused) is retried like a transient one -- about 10 s lost, the cause in
+    the traceback's chain; telling them apart needs the cause chain, and
+    narrows MODEL-TRANSIENT-FAILURES -- revisited when a remote Open WebUI is
+    configured. A streamed attempt cut off and retried leaves its partial text
+    in the `messages` stream under its own id; the thread's state holds only
+    the retried answer -- revisited when a client renders the stream (slice 6).
+  - *Settings' text* shows the URL and the model as given: a key put in the
+    URL's line would show there. The refusal at start, which names no value,
+    comes first.
 
 ## Orchestration design
 
 N-A for the node table -- the tool loop. What changes:
 
-- **Budgets:** `MODEL_CALL_TIMEOUT_SECONDS = 120` per call; `MODEL_RETRIES = 2`
-  per call; `MODEL_CALLS_PER_RUN = 10` unchanged (re-measured with tools,
-  slice 3).
+- **Budgets:** `MODEL_CALL_TIMEOUT_SECONDS = 120` per wait for the model;
+  `MODEL_RETRIES = 2` per turn; `MODEL_CALLS_PER_RUN = 10` turns, unchanged
+  (re-measured with tools, slice 3).
 - **Errors:** transient -> retried, then raised; everything else -> raised
   unchanged. Both pinned by tests.
 - **Runtime:** with `.env` configured, the served graph calls Open WebUI. The

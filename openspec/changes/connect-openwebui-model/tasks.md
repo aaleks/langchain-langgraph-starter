@@ -87,3 +87,21 @@
   the provider imported at module level, the chunk timer left to
   langchain-openai (red once its environment override is set in the test), `.env`
   opened regardless
+
+## 9. Verify pass 2 -- the fixes (`verify.md`, reviewed at `bd4bc4e`)
+
+- [x] 9.1 LOCAL-SERVER-STAYS-LOCAL: a second live server, its Open WebUI a
+  stand-in on 127.0.0.1, run under the probe -- one request at
+  `/api/chat/completions` with the key, nothing beyond this machine (18)
+- [x] 9.2 Spaces read as empty from the environment and from a quoted `.env`
+  value (19); the URL refusal names the variable, never the value, and refuses
+  a missing host, a bad port and an unparseable URL (20, 21); 409, 501 and 505
+  not transient (22)
+- [x] 9.3 Frame and design: a timeout per wait, retries per turn; the retry
+  timing recorded as passed, not asserted (23, 24); 25 and 26 accepted in the
+  design; the models check follows `init_chat_model`'s aliases and leaves a
+  partner package's non-model classes alone (27)
+- [x] 9.4 Proved by mutation, each red: the configured server looking up a far
+  host; `.strip()` dropped (both rows); the port not read; `urlsplit`'s error
+  escaping; the refusal quoting the value; 501 made transient; and the models
+  check's fixture against the old check (missed alias, flagged `Chroma`)

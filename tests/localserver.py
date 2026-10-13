@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,7 +127,11 @@ def working_copy(destination: Path) -> Path:
 
 
 @contextmanager
-def local_server(workdir: Path, *, start_timeout: float = 180) -> Iterator[LocalServer]:
+def local_server(
+    workdir: Path, *, start_timeout: float = 180, settings: Mapping[str, str] | None = None
+) -> Iterator[LocalServer]:
+    """`settings`: the owner's settings for this server, over the empty ones it
+    inherits from the suite -- an Open WebUI, say."""
     copy = working_copy(workdir / "project")
     port = free_port()
     server = LocalServer(
@@ -137,6 +141,7 @@ def local_server(workdir: Path, *, start_timeout: float = 180) -> Iterator[Local
     )
     env = {
         **hostile_environment(dict(os.environ)),
+        **(settings or {}),
         "UV_PROJECT": str(REPO),
         "PROBE_LOG": str(server.probe_log),
         "PYTHONPATH": os.pathsep.join(filter(None, [str(PROBE), os.environ.get("PYTHONPATH")])),

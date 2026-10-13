@@ -23,6 +23,7 @@ class TestTransientFailures:
     ):
         assert is_transient(status=status, timed_out=timed_out, connection_failed=connection_failed)
 
-    @pytest.mark.parametrize("status", [400, 401, 403, 404, 422, None])
+    # 409, 501 and 505 sit beside the listed statuses: a set grown by one would pass the rest.
+    @pytest.mark.parametrize("status", [400, 401, 403, 404, 409, 422, 501, 505, None])
     def test_counter_example_a_failure_that_is_the_same_on_every_try_is_not(self, status):
         assert not is_transient(status=status, timed_out=False, connection_failed=False)
