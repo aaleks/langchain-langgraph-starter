@@ -1,7 +1,7 @@
 # local-server Specification
 
 ## Purpose
-The local server is how a person runs the starter's graphs on their own machine: started only by `scripts/serve.sh`, driven through its API, and never reaching anything beyond 127.0.0.1.
+The local server is how a person runs the starter's graphs on their own machine: started only by `scripts/serve.sh`, driven through its API, and reaching nothing beyond this machine but the Open WebUI the owner configures.
 
 ## Requirements
 
@@ -38,20 +38,25 @@ The local server is how a person runs the starter's graphs on their own machine:
 - **THEN** the server refuses it as not found (HTTP 404), naming `assistant` as the only graph it serves
 
 ### Requirement: LOCAL-SERVER-STAYS-LOCAL
-Started through `scripts/serve.sh` from a shell that exports LangSmith keys, switches tracing on and points LangSmith's endpoint elsewhere, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and stop, attempting no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no host at all).
+Started through `scripts/serve.sh` from a shell that exports LangSmith keys, switches tracing on and points LangSmith's endpoint elsewhere, the server SHALL start, serve runs -- including one whose request asks for LangSmith tracing -- and stop, attempting no connection and no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no host at all) -- save one: the Open WebUI the owner's settings configure, wherever it runs, to which the assistant's conversation goes by the owner's choice.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/acceptance/agents/test_local_server.py::TestStaysLocal`
 
 #### Scenario: Nothing beyond this machine, from a hostile shell
-- **GIVEN** a shell holding none of the suite's local-only variables, exporting all four tracing switches as `true`, a LangSmith API key and control-plane key, and LangSmith's endpoint at `http://langsmith-hostile.invalid`; and a connection probe loaded into every Python process the server starts
+- **GIVEN** no Open WebUI configured, a shell holding none of the suite's local-only variables, exporting all four tracing switches as `true`, a LangSmith API key and control-plane key, and LangSmith's endpoint at `http://langsmith-hostile.invalid`; and a connection probe loaded into every Python process the server starts
 - **WHEN** the server starts, serves the runs of LOCAL-SERVER-SERVES-ASSISTANT, and is stopped by a signal -- SIGINT, a person's Ctrl+C, on POSIX; CTRL_BREAK on Windows, where a process group can receive no other
 - **THEN** the probe recorded no connection and no name lookup beyond this machine
-- **AND** it recorded the server's own process starting, and the signal alone stopped the server
+- **AND** it recorded the server's own process starting, the signal alone stopped the server, and the runs were answered by the offline model -- no Open WebUI was configured
 
 #### Scenario: A run that asks for LangSmith tracing
 - **WHEN** a client streams a run of `assistant` whose request sets `langsmith_tracing` to `{"project_name": "probe"}`
-- **THEN** the run completes, the probe recorded nothing beyond this machine, and no connection to `serve.sh`'s closed LangSmith endpoint, `127.0.0.1:9` -- a clause the probe can break only on POSIX: on Windows an asyncio client's connect to a literal IP raises no event
+- **THEN** the run completes, answered by the offline model, the probe recorded nothing beyond this machine, and no connection to `serve.sh`'s closed LangSmith endpoint, `127.0.0.1:9` -- a clause the probe can break only on POSIX: on Windows an asyncio client's connect to a literal IP raises no event
+
+#### Scenario: Open WebUI configured -- the conversation goes there, and nowhere else
+- **GIVEN** the same shell and probe, and the server's settings configuring an Open WebUI -- a stand-in on `127.0.0.1` -- with the key `sk-local` and the model `llama3.1:8b`
+- **WHEN** the server starts, a client streams a run of `assistant`, and the server is stopped by the signal
+- **THEN** the run completes with the transcript `human, ai`, the stand-in received one request, at `/api/chat/completions` with the key `sk-local`, and the probe recorded nothing beyond this machine
 
 #### Scenario: Counter-example -- connections on this machine are not counted
 - **GIVEN** probe records of a connection to `127.0.0.1` and lookups of `localhost`, `::1` and no host, beside a connection to `203.0.113.7` and a lookup of `api.smith.langchain.com`
