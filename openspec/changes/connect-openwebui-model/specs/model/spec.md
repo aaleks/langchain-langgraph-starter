@@ -5,7 +5,7 @@ The model is what the assistant thinks with: chosen from the settings -- the own
 ## ADDED Requirements
 
 ### Requirement: MODEL-CHOICE
-The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not Open WebUI's address -- `http` or `https`, a host, a valid port if it names one, and no query or fragment -- the refusal naming `OPENWEBUI_URL`.
+The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not Open WebUI's address -- `http` or `https`, a host, a port from 1 to 65535 if it names one, no query or fragment, and no path beyond an `/api` segment -- the refusal naming `OPENWEBUI_URL`.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_model_choice.py::TestModelChoice`
@@ -29,9 +29,10 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 | `OPENWEBUI_MODEL` only | `OPENWEBUI_URL, OPENWEBUI_API_KEY` |
 | all three, the URL `localhost:3000` (no scheme) | `OPENWEBUI_URL` |
 | all three, the URL `http://:3000` (no host) | `OPENWEBUI_URL` |
-| all three, the URL `http://localhost:99999` or `http://localhost:abc` (no valid port) | `OPENWEBUI_URL` |
+| all three, the URL `http://localhost:99999`, `http://localhost:abc`, `http://localhost:0` or `http://localhost:` (no valid port) | `OPENWEBUI_URL` |
 | all three, the URL `http://[::1` (not a URL at all) | `OPENWEBUI_URL` |
 | all three, the URL `http://localhost:3000/?x=1` or `http://localhost:3000/#top` | `OPENWEBUI_URL` |
+| all three, the URL `http://localhost:3000/api/chat/completions` (an endpoint, not the address) | `OPENWEBUI_URL` |
 
 ### Requirement: MODEL-TRANSIENT-FAILURES
 A failed model call SHALL be transient exactly when it timed out, its connection failed, or the server answered HTTP 408, 429, 500, 502, 503 or 504.
@@ -57,7 +58,7 @@ A failed model call SHALL be transient exactly when it timed out, its connection
 - **THEN** the transient ones are exactly 408, 429, 500, 502, 503 and 504
 
 ### Requirement: MODEL-OPENWEBUI-CLIENT
-The Open WebUI model SHALL be an OpenAI-compatible chat-completions client addressed to `<OPENWEBUI_URL>/api` -- a trailing slash on the URL ignored, and a URL already ending in `/api` taken as the API itself -- with the configured key and model, a timeout of `MODEL_CALL_TIMEOUT_SECONDS` on every wait for the model, a streamed chunk included, and no retries of its own: retrying is the assistant's policy, not the client's.
+The Open WebUI model SHALL be an OpenAI-compatible chat-completions client addressed to `<OPENWEBUI_URL>/api` -- a trailing slash on the URL ignored, and a URL whose path already ends in `/api` taken as the API itself -- with the configured key and model, a timeout of `MODEL_CALL_TIMEOUT_SECONDS` on every wait for the model, a streamed chunk included, and no retries of its own: retrying is the assistant's policy, not the client's.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/infrastructure/test_models.py::TestOpenWebUIClient`
@@ -79,6 +80,8 @@ The Open WebUI model SHALL be an OpenAI-compatible chat-completions client addre
 | `http://localhost:3000/api` | `http://localhost:3000/api` |
 | `http://localhost:3000/api/` | `http://localhost:3000/api` |
 | `https://webui.lan/openwebui` | `https://webui.lan/openwebui/api` |
+| `https://webui.lan/openapi` (a path ending in `api`, not `/api`) | `https://webui.lan/openapi/api` |
+| `http://api` (a host named `api`) | `http://api/api` |
 
 ### Requirement: MODEL-OPENWEBUI-LIVE
 With Open WebUI configured in `.env`, a run of the registered assistant SHALL be answered by that Open WebUI model: one model turn, a transcript of `human, ai`, and an answer that is not empty and is not the offline model's.

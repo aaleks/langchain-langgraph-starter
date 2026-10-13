@@ -366,9 +366,10 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
                 "m = make('ollama:qwen3')\n"
             ),
             # a provider's own SDK: every client it makes is a model client,
-            # imported from it or called through it
-            "infrastructure/agents/sdk.py": "from openai import OpenAI as Client\nc = Client()\n",
-            "infrastructure/tracing/client.py": "import openai\nc = openai.OpenAI()\n",
+            # imported from it or called through it -- names the class pattern
+            # does not match, so only the SDK rule can catch them
+            "infrastructure/agents/sdk.py": "from ollama import Client as C\nc = C()\n",
+            "infrastructure/tracing/client.py": "import anthropic\nc = anthropic.Anthropic()\n",
             # a completion model and embeddings are models too
             "infrastructure/stores/llm.py": "from langchain_ollama import OllamaLLM\nm = OllamaLLM()\n",
             "cli/embed.py": "import langchain_openai as lo\ne = lo.OpenAIEmbeddings()\n",

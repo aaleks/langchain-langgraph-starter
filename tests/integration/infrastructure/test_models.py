@@ -16,8 +16,8 @@ from starter.infrastructure.models import build_model
 class TestOpenWebUIClient:
     """MODEL-OPENWEBUI-CLIENT: The Open WebUI model SHALL be an OpenAI-compatible
     chat-completions client addressed to `<OPENWEBUI_URL>/api` -- a trailing
-    slash on the URL ignored, and a URL already ending in `/api` taken as the
-    API itself -- with the configured key and model, a timeout of
+    slash on the URL ignored, and a URL whose path already ends in `/api` taken
+    as the API itself -- with the configured key and model, a timeout of
     `MODEL_CALL_TIMEOUT_SECONDS` on every wait for the model, a streamed chunk
     included, and no retries of its own: retrying is the assistant's policy, not
     the client's."""
@@ -54,6 +54,8 @@ class TestOpenWebUIClient:
             ("http://localhost:3000/api", "http://localhost:3000/api"),
             ("http://localhost:3000/api/", "http://localhost:3000/api"),
             ("https://webui.lan/openwebui", "https://webui.lan/openwebui/api"),
+            ("https://webui.lan/openapi", "https://webui.lan/openapi/api"),
+            ("http://api", "http://api/api"),
         ],
     )
     def test_the_api_is_addressed_under_open_webuis_address(self, url, base):

@@ -132,3 +132,18 @@
   allowlist
   -- and five for `/api` taken as the API: added twice, never added, the
   trailing slash kept, refused again, the builder bypassing `api_base`
+
+## 11. Verify pass 4 -- the fixes (`verify.md`, reviewed at `7491b94`)
+
+- [x] 11.1 ASSISTANT-REGISTERED's retry scenario run through the export,
+  loaded as the server loads it (44)
+- [x] 11.2 The models check's SDK rows name clients the class pattern misses
+  -- `ollama`'s `Client` imported under an alias, `anthropic.Anthropic()` (45);
+  its reach stated in the overview, the rest accepted in the design (48, 50)
+- [x] 11.3 The URL: `api_base` on the path's last segment -- `http://api` and
+  `.../openapi` rows (46); a path beyond `/api` refused (47); port 0 and an
+  empty port refused (52); the refusal names a fragment (51). `api_base`'s
+  table stays at the client's tier, accepted in the design (49)
+- [x] 11.4 Proved by mutation, eight in a full-suite run, each red: the export
+  never retrying, either SDK branch removed, `api_base` on the text with and
+  without the slash, a path beyond `/api`, port 0 and an empty port accepted

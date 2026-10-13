@@ -111,16 +111,16 @@ class TestAssistantIsRegistered:
 
         assert str(refused.value).endswith("missing: OPENWEBUI_API_KEY")
 
-    def test_its_retry_policy_is_the_domains_a_503_from_open_webui_is_retried(self, registry):
-        from starter.config.settings import Settings
-
+    def test_its_retry_policy_is_the_domains_a_503_from_open_webui_is_retried(self, monkeypatch):
+        # The export itself, as the server loads it: a graph composed there with
+        # another predicate would pass a test of `registered_assistant()`. It
+        # waits the domain's first delay, about a second -- the export's own.
         with openwebui_stub(failures=[503]) as stub:
-            settings = Settings(
-                openwebui_url=stub.url, openwebui_api_key="sk-local", openwebui_model="llama3.1:8b"
-            )
-            messages = registry.registered_assistant(settings).invoke(
-                {"messages": [HumanMessage("hello")]}
-            )["messages"]
+            monkeypatch.setenv("OPENWEBUI_URL", stub.url)
+            monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-local")
+            monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+            registered, _ = load_registered("assistant")
+            messages = registered.invoke({"messages": [HumanMessage("hello")]})["messages"]
 
         assert types(messages) == ["human", "ai"]
         assert [r["path"] for r in stub.requests] == ["/api/chat/completions"] * 2

@@ -110,7 +110,24 @@ setting is read anywhere; `config/` is empty.
     is retried, and langchain-openai alone allows two majors.
   - *The models check names a model by its class and its SDK*: chat and
     completion models and embeddings by name, langchain_core's chat data
-    excepted; a provider SDK's clients however they are reached.
+    excepted; a provider SDK's clients, imported from it or called through
+    it.
+- **Verify pass 4's corrections** (`verify.md`):
+  - *The served export's retry policy* is proved through the export, loaded
+    as the server loads it; the test waits the domain's first delay, about a
+    second.
+  - *The URL:* `api_base` decides on the path's last segment, not the text --
+    a host named `api` keeps its `/api`; a path beyond an `/api` segment (Open
+    WebUI's full endpoint, pasted) is refused at start, as are port 0 and an
+    empty port.
+  - *Accepted, recorded:* the models check sees the names a model goes by,
+    not every way of reaching one -- `partial`, a class bound to another name
+    by assignment, a model named like none (`langchain_community`'s `Ollama`);
+    the overview says so. It guards against the natural slip, not an author
+    set on evading it; revisited when a second model builder is wanted.
+    `api_base`'s table is proved through the client builder, at the
+    integration tier MODEL-OPENWEBUI-CLIENT needs anyway: a unit table of the
+    same rows would prove the same claim twice.
 
 ## Orchestration design
 

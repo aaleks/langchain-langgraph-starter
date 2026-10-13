@@ -11,8 +11,8 @@ class TestModelChoice:
     when none is. When only some are set the choice SHALL be refused, naming
     each one missing -- never a silent fall back to the offline model -- and so
     SHALL a URL that is not Open WebUI's address -- `http` or `https`, a host, a
-    valid port if it names one, and no query or fragment -- the refusal naming
-    `OPENWEBUI_URL`."""
+    port from 1 to 65535 if it names one, no query or fragment, and no path
+    beyond an `/api` segment -- the refusal naming `OPENWEBUI_URL`."""
 
     @pytest.mark.parametrize(
         ("url", "key", "model", "choice"),
@@ -56,9 +56,12 @@ class TestModelChoice:
             "http://:3000",
             "http://localhost:99999",
             "http://localhost:abc",
+            "http://localhost:0",
+            "http://localhost:",
             "http://[::1",
             "http://localhost:3000/?x=1",
             "http://localhost:3000/#top",
+            "http://localhost:3000/api/chat/completions",
         ],
     )
     def test_counter_example_a_url_that_is_not_http_with_a_host_is_refused(self, url):
