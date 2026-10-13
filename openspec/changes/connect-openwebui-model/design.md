@@ -124,7 +124,10 @@ setting is read anywhere; `config/` is empty.
     not every way of reaching one -- `partial`, a class bound to another name
     by assignment, a classmethod constructor (`ChatOpenAI.model_validate`), a
     model named like none (`langchain_community`'s `Ollama`);
-    the overview says so. It guards against the natural slip, not an author
+    the overview says so. Its other way round, after pass 6: an SDK's
+    function or type imported by name and called
+    (`from openai import pydantic_function_tool`), or `openai.Timeout(5)`,
+    is reported as a model built -- none is used outside `models.py`. It guards against the natural slip, not an author
     set on evading it; revisited when a second model builder is wanted.
     `api_base`'s table is proved through the client builder, at the
     integration tier MODEL-OPENWEBUI-CLIENT needs anyway: a unit table of the

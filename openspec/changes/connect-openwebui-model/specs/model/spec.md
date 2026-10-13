@@ -36,7 +36,8 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 | all three, the URL `http://[::1` (not a URL at all) | `OPENWEBUI_URL` |
 | all three, the URL `http://localhost:3000/?x=1` or `http://localhost:3000/#top` | `OPENWEBUI_URL` |
 | all three, the URL `http://localhost:3000/api/chat/completions` or `https://webui.lan/openwebui/api/chat/completions` (an endpoint, not the address) | `OPENWEBUI_URL` |
-| all three, the URL `http://owner:secret@localhost:3000` (a user and password) | `OPENWEBUI_URL` |
+| all three, the URL `http://owner:secret@localhost:3000` or `http://owner@localhost:3000` (a user, with or without a password) | `OPENWEBUI_URL` |
+| all three, the URL `https://webui.lan/api/openwebui` (a site under an `/api/` prefix) | `OPENWEBUI_URL` |
 
 ### Requirement: MODEL-TRANSIENT-FAILURES
 A failed model call SHALL be transient exactly when it timed out, its connection failed, or the server answered HTTP 408, 429, 500, 502, 503 or 504.

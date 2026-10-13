@@ -70,6 +70,8 @@ class TestModelChoice:
             "http://localhost:3000/api/chat/completions",
             "https://webui.lan/openwebui/api/chat/completions",
             "http://owner:secret@localhost:3000",
+            "http://owner@localhost:3000",
+            "https://webui.lan/api/openwebui",
         ],
     )
     def test_counter_example_a_url_that_is_not_http_with_a_host_is_refused(self, url):

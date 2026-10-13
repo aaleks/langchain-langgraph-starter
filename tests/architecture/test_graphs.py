@@ -385,7 +385,8 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
             ),
             "infrastructure/stores/tasks.py": "from langchain_chroma import Chroma\ns = Chroma()\n",
             # more of langchain_core's chat data, an error named like a model,
-            # and an SDK's errors and functions: none of them builds a model
+            # and an SDK's errors and a function called through it: none of
+            # them builds a model
             "application/outputs.py": (
                 "r = ChatResult(generations=[])\ng = ChatGenerationChunk()\n"
                 "s = ChatSession()\nl = BaseChatLoader()\nm = ChatModelStream()\n"

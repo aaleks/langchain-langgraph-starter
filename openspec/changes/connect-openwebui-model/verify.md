@@ -1,10 +1,12 @@
 # Verify
 
-- **Verdict:** SHIP at `11c3f50` -- pass 5 (no BLOCKER, no MAJOR; nine
-  MINOR, fixed after it and read in pass 6). Pass 4: DO NOT SHIP (two
+- **Verdict:** SHIP at `bbbcf5d` -- pass 6 (no BLOCKER, no MAJOR; three
+  MINOR: two rows added after it, proved by mutation; one recorded). Pass
+  5: SHIP at `11c3f50` (nine MINOR, fixed and read in pass 6). Pass 4: DO NOT SHIP (two
   MAJOR). Pass 3: DO NOT SHIP (two MAJOR). Pass 2: DO NOT SHIP (two MAJOR).
   Pass 1: DO NOT SHIP (six MAJOR).
-- **Reviewed at:** pass 5: `11c3f50`, the fix diff `9118344..11c3f50`,
+- **Reviewed at:** pass 6: `bbbcf5d`, the fix diff `bd1e1be..bbbcf5d`,
+  committed before the lenses read it. Pass 5: `11c3f50`, the fix diff `9118344..11c3f50`,
   committed before the lenses read it. Pass 4: `7491b94`, the whole change with the fix diff
   `5dc4b99..7491b94` in focus, committed before the lenses read it. Pass 3:
   `6033d3a`, the fix diff `dade9c1..6033d3a` in focus. Pass 2: `bd4bc4e`, the
@@ -217,3 +219,42 @@ in a separate commit read in pass 6.
 - MODEL-OPENWEBUI-LIVE green: the owner's model id (pass 4).
 - The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
 - The eight requirements the fix diff did not touch: re-proved in pass 4.
+
+## Pass 6 -- the fix diff `bd1e1be..bbbcf5d`
+
+- **Evidence:** `bash scripts/check.sh live` at `bbbcf5d`: every default check
+  passed -- architecture 52, OpenSpec 3 passed, `sdd check` OK, method OK,
+  manifest matches, suite 163 passed; live 8 passed and 1 failed, as in
+  passes 4 and 5: Open WebUI's `400 Model not found` for the owner's model
+  id. No key-shaped line in the output. Twelve pass-5 mutations red
+  (tasks.md 12.5).
+- **Lenses:** proof (`spec-compliance`) and defects (`code-reviewer`), fresh
+  context, over the fix diff, the commit read as it stands. Placement not
+  run: the diff moves no decision between layers, and pass 5's placement
+  findings were rows and wording. Mutations on a scratch worktree only
+  (proof: 16, 14 red and 2 survived -- 62, 63); no `.env` read; no live
+  test run by a lens.
+- **Pass 5 resolved:** 53-61, each red under its mutation, rechecked by both
+  lenses; the defects lens probed the `@` refusal against httpx (zone ids,
+  `@` in the path, percent-encoding, parser disagreement) and found no URL
+  sent with a user that the check accepts.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 62 | MINOR | proof | A user without a password is not proved refused: `parts.password is None` in place of the `@` check stays green, and httpx sends `http://owner@localhost:3000` as Basic auth too | `test_model_choice.py:72` | A refused row `http://owner@localhost:3000` |
+| 63 | MINOR | proof | A site under an `/api/` prefix has no refused row: `[:-2]` in place of `[:-1]` stays green | `domain/models.py:73` | A refused row `https://webui.lan/api/openwebui` |
+| 64 | MINOR | proof | The models check reports an SDK's function or type imported by name and called (`pydantic_function_tool`, `MessageParam`), and `openai.Timeout(5)`; the fixture's comment claims functions are not | `contract.py:453`; `test_graphs.py:387-388` | Narrow the comment; record it with the blind spots |
+
+**Pass 6 verdict:** SHIP at `bbbcf5d` -- no BLOCKER, no MAJOR. 62 and 63 are
+two refused rows, added after the pass with their spec rows; each turns red
+under the mutation that survived (tasks.md 13.2) -- read by no lens. 64:
+the comment narrowed and the reach recorded in the design, not fixed; no
+caller outside `models.py` exists.
+
+## Not checked -- pass 6
+
+- MODEL-OPENWEBUI-LIVE green: the owner's model id is not one their Open
+  WebUI lists. It ran to Open WebUI's answer; the owner corrects `.env`.
+- The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
+- The placement lens (above); the requirements the diff did not touch.
+- The rows for 62 and 63, added after the pass: proved by mutation, not read.

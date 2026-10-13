@@ -162,3 +162,11 @@
   constructor named among the blind spots (61)
 - [x] 12.5 Proved by mutation, twelve in a full-suite run, each red -- the
   five that survived pass 5 among them
+
+## 13. Verify pass 6 -- the MINORs (`verify.md`, reviewed at `bbbcf5d`)
+
+- [x] 13.1 MODEL-CHOICE refused rows: a user without a password (62), a site
+  under an `/api/` prefix (63); the models check's reach over an SDK's
+  functions recorded in the design, its fixture comment narrowed (64)
+- [x] 13.2 Proved by mutation, each red in a full-suite run: `parts.password
+  is None` in place of the `@` check; `[:-2]` in place of `[:-1]`
