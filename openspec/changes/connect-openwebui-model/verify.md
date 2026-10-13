@@ -1,10 +1,11 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 4 (two MAJOR open). First fix: prove the
-  served export's retry policy through the export itself (finding 44).
-  Pass 3: DO NOT SHIP (two MAJOR). Pass 2: DO NOT SHIP (two MAJOR). Pass 1:
-  DO NOT SHIP (six MAJOR).
-- **Reviewed at:** pass 4: `7491b94`, the whole change with the fix diff
+- **Verdict:** SHIP at `11c3f50` -- pass 5 (no BLOCKER, no MAJOR; nine
+  MINOR, fixed after it and read in pass 6). Pass 4: DO NOT SHIP (two
+  MAJOR). Pass 3: DO NOT SHIP (two MAJOR). Pass 2: DO NOT SHIP (two MAJOR).
+  Pass 1: DO NOT SHIP (six MAJOR).
+- **Reviewed at:** pass 5: `11c3f50`, the fix diff `9118344..11c3f50`,
+  committed before the lenses read it. Pass 4: `7491b94`, the whole change with the fix diff
   `5dc4b99..7491b94` in focus, committed before the lenses read it. Pass 3:
   `6033d3a`, the fix diff `dade9c1..6033d3a` in focus. Pass 2: `bd4bc4e`, the
   fix diff `6dd2700..bd4bc4e`. Pass 1: `4dc2516`. Passes 1-3: the staged tree
@@ -179,3 +180,40 @@ separate commit with the MINORs; that diff is read in pass 5.
 - MODEL-OPENWEBUI-LIVE green: it ran, and failed on the owner's model id
   (above). Its code path ran up to Open WebUI's answer.
 - The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
+
+## Pass 5 -- the fix diff `9118344..11c3f50`
+
+- **Evidence:** `bash scripts/check.sh live` at `11c3f50`: every default check
+  passed -- architecture 52, OpenSpec 3 passed, `sdd check` OK, method OK,
+  manifest matches, suite 155 passed; live 8 passed and 1 failed, as in pass
+  4: Open WebUI's `400 Model not found` for the owner's model id. No key-shaped
+  line in the output. Eight pass-4 mutations red (tasks.md 11.4).
+- **Lenses:** proof (`spec-compliance`), defects (`code-reviewer`) and
+  placement (`architecture-guardian`), fresh context, over the fix diff, the
+  commit read as it stands. Mutations on scratch worktrees only (proof: 13, 8
+  red and 5 survived -- below); no `.env` read; no live test run by a lens.
+- **Pass 4 resolved:** 44-47, 51 and 52 red under their mutations, rechecked
+  by all three lenses; 48-50 accepted on the record, the reasons judged sound
+  by the placement lens.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 53 | MINOR | defects | A URL with a user and password (`http://owner:secret@localhost:3000`) is accepted: httpx sends them as Basic auth over the bearer key -- measured on the stand-in, `sk-local` never sent; a 401 pointing at the wrong setting -- and `Settings`' text shows the password | `domain/models.py:53-69`; `config/settings.py:33-39` | Refuse a user or password in the URL, naming `OPENWEBUI_URL`; a row |
+| 54 | MINOR | defects, placement | A site under an `/api/` prefix (`https://host/api/openwebui`) is refused: the spec says so, the design gives the reason only for a pasted endpoint | `domain/models.py:68`; `design.md` | Keep the rule; the design says it is chosen |
+| 55 | MINOR | proof | ASSISTANT-REGISTERED's retry policy is proved for a retried failure only: an export retrying everything (`transient=lambda f: True`) stays green | `test_registered_assistant.py:114-126` | A 401 from the stand-in, raised after one request |
+| 56 | MINOR | proof | The beyond-`/api` refusal has one row, starting with `/api`: only a leading `/api` refused, or the text checked (refusing the host `http://api/openwebui`), both stay green | `test_model_choice.py:64` | Refused `.../openwebui/api/chat/completions`; accepted `http://api/openwebui`, `.../api/` |
+| 57 | MINOR | proof | No accepted row has two path segments: every such path refused stays green | `test_model_choice.py:19-26` | Accepted `https://webui.lan/tools/openwebui` |
+| 58 | MINOR | proof | "A port from 1 to 65535" has no low or high accepted row: ports below 1024 refused stays green | `test_model_choice.py:19-26` | Accepted `:1` and `:65535` |
+| 59 | MINOR | placement | Parts of the models check can be deleted, the fixture green: the `Error` lookahead, the chat-data exclusions past `Prompt`/`Message`, the SDK call's capital-letter guard, a builder called as an attribute | `contract.py:423-424,471,476`; `test_graphs.py:376-384` | Rows: `cm.init_chat_model(...)`; counter-examples `ChatResult`, `ChatGenerationChunk`, `SomeChatError()`, `openai.base_url_for(...)` |
+| 60 | MINOR | placement | An SDK's exception is reported as a model built: `raise openai.APITimeoutError(...)` outside `models.py` would fail the build | `contract.py:449-456,468-472` | The `Error` exclusion for SDK names too; a counter-example |
+| 61 | MINOR | placement | The accepted blind spots leave out a classmethod constructor (`ChatOpenAI.model_validate({})`), named in 48 | `design.md`; `overview.md:65` | Name it in both |
+
+**Pass 5 verdict:** SHIP at `11c3f50` -- no BLOCKER, no MAJOR. The MINORs are
+cheap and 53 sends the wrong credential, so they are fixed before the land,
+in a separate commit read in pass 6.
+
+## Not checked -- pass 5
+
+- MODEL-OPENWEBUI-LIVE green: the owner's model id (pass 4).
+- The SIGINT path and the `127.0.0.1:9` clause: POSIX only (CI's `live` job).
+- The eight requirements the fix diff did not touch: re-proved in pass 4.
