@@ -18,23 +18,18 @@ from starter.domain.agents.retries import (
 )
 
 
-def never(failure: Exception) -> bool:
-    """A retry predicate under which no failure is transient."""
-    return False
-
-
 def build_assistant(
     model: BaseChatModel,
     tools: Sequence[BaseTool],
     *,
-    transient: Callable[[Exception], bool] = never,
+    transient: Callable[[Exception], bool],
     initial_delay: float = RETRY_INITIAL_DELAY_SECONDS,
 ) -> CompiledStateGraph:
     """The assistant: a tool loop over `model` and `tools` (docs/decisions/0005).
 
     `transient` decides which model failures are retried; it arrives from the
-    caller, so this adapter never imports a provider -- and without one, nothing
-    is retried. `initial_delay` is the first wait between tries, the domain's;
+    caller, so this adapter never imports a provider. It has no default: a graph
+    composed without one would quietly retry nothing. `initial_delay` is the first wait between tries, the domain's;
     tests pass 0.
 
     The budget counts model turns: a turn's retries happen inside it, so a run

@@ -5,7 +5,7 @@ Settings are how the owner configures the assistant without touching code: read 
 ## ADDED Requirements
 
 ### Requirement: SETTINGS-ENVIRONMENT-WINS
-A setting SHALL be read from the process environment when the environment holds it -- an empty value included -- and from the repository's `.env` only when the environment does not; a value of only spaces SHALL read as empty. A missing `.env` SHALL read as empty, a `.env` that is not UTF-8 SHALL be refused naming the file, and reading SHALL change neither the environment nor the file -- nor open the file when the environment holds every setting.
+A setting SHALL be read from the process environment when the environment holds it -- an empty value included -- and from the repository's `.env` only when the environment does not, as written there: `${NAME}` is not expanded. Every value SHALL be read with the spaces around it removed, so a value of only spaces reads as empty. A missing `.env` SHALL read as empty, a `.env` that is not UTF-8 SHALL be refused naming the file, and reading SHALL change neither the environment nor the file -- nor open the file when the environment holds every setting.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/config/test_settings.py::TestEnvironmentWins`
@@ -18,6 +18,13 @@ A setting SHALL be read from the process environment when the environment holds 
 | `OPENWEBUI_MODEL=` (empty) | `OPENWEBUI_MODEL=llama3.1:8b` | empty |
 | `OPENWEBUI_MODEL=   ` (spaces) | `OPENWEBUI_MODEL=llama3.1:8b` | empty |
 | not set | `OPENWEBUI_MODEL="   "` (quoted spaces) | empty |
+| not set, `PROBE=leaked` | `OPENWEBUI_MODEL=${PROBE}` | `${PROBE}` |
+
+#### Scenario: Spaces around a value
+| Each of `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL` in the environment | Read |
+|---|---|
+| `   ` | empty |
+| `  sk-local` followed by a tab | `sk-local` |
 
 #### Scenario: The process's own settings
 - **GIVEN** the process environment holding `OPENWEBUI_MODEL=qwen3:8b` and no other setting, and the repository's `.env` holding `OPENWEBUI_URL=http://localhost:3000`
@@ -33,7 +40,7 @@ A setting SHALL be read from the process environment when the environment holds 
 
 #### Scenario: Counter-example -- reading leaves the process environment as it was
 - **GIVEN** a `.env` holding `OPENWEBUI_URL=http://localhost:3000` and a process environment without `OPENWEBUI_URL`
-- **WHEN** the settings are read
+- **WHEN** the process's settings are read -- from its environment itself
 - **THEN** `OPENWEBUI_URL` reads as `http://localhost:3000`, the process environment still does not hold it, and the file is unchanged
 
 ### Requirement: SETTINGS-KEY-NEVER-SHOWN

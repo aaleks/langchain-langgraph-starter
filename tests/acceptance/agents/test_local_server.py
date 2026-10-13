@@ -18,6 +18,7 @@ import sys
 
 import pytest
 
+from starter.infrastructure.models import OFFLINE_ANSWER
 from tests.localserver import local_server
 
 # This machine. `None` is a lookup of no host at all -- an address to bind.
@@ -217,6 +218,9 @@ class TestStaysLocal:
         assert probe_was_in_the_server(records), records[:5]
         assert session["stopped_gracefully"] is True
         assert session["runs"] == ["success"]
+        # No Open WebUI configured, checked: an owner's .env read by mistake
+        # could answer from this machine, and nothing above would notice.
+        assert session["last"]["messages"][-1]["content"] == OFFLINE_ANSWER
         assert beyond_this_machine(records) == []
 
     @pytest.mark.live
@@ -227,6 +231,7 @@ class TestStaysLocal:
         assert session["stopped_gracefully"] is True
         assert session["traced_runs"] == ["success"]
         assert message_types(session["traced_last"]) == ["human", "ai"]
+        assert session["traced_last"]["messages"][-1]["content"] == OFFLINE_ANSWER
         assert beyond_this_machine(records) == []
         assert [r for r in records if r["detail"] == DEAD_ENDPOINT] == []
 

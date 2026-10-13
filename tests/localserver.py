@@ -36,6 +36,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from starter.config.settings import NAMES as SETTINGS
 from tests.conftest import LOCAL_ONLY
 
 REPO = Path(__file__).resolve().parents[1]
@@ -131,7 +132,11 @@ def local_server(
     workdir: Path, *, start_timeout: float = 180, settings: Mapping[str, str] | None = None
 ) -> Iterator[LocalServer]:
     """`settings`: the owner's settings for this server, over the empty ones it
-    inherits from the suite -- an Open WebUI, say."""
+    inherits from the suite -- an Open WebUI, say. Those names only: anything
+    else, a proxy among them, would undo the hostile environment."""
+    unknown = set(settings or {}) - set(SETTINGS)
+    if unknown:
+        raise ValueError(f"not a setting: {sorted(unknown)}; settings are {list(SETTINGS)}")
     copy = working_copy(workdir / "project")
     port = free_port()
     server = LocalServer(

@@ -6,6 +6,8 @@ from __future__ import annotations
 import importlib
 import sys
 
+import pytest
+
 from starter.config.settings import Settings
 from starter.domain.agents.budgets import MODEL_CALL_TIMEOUT_SECONDS
 from starter.infrastructure.models import build_model
@@ -14,7 +16,8 @@ from starter.infrastructure.models import build_model
 class TestOpenWebUIClient:
     """MODEL-OPENWEBUI-CLIENT: The Open WebUI model SHALL be an OpenAI-compatible
     chat-completions client addressed to `<OPENWEBUI_URL>/api` -- a trailing
-    slash on the URL ignored -- with the configured key and model, a timeout of
+    slash on the URL ignored, and a URL already ending in `/api` taken as the
+    API itself -- with the configured key and model, a timeout of
     `MODEL_CALL_TIMEOUT_SECONDS` on every wait for the model, a streamed chunk
     included, and no retries of its own: retrying is the assistant's policy, not
     the client's."""
@@ -44,10 +47,25 @@ class TestOpenWebUIClient:
         assert model.use_responses_api is False
         assert no_network == []
 
+    @pytest.mark.parametrize(
+        ("url", "base"),
+        [
+            ("http://localhost:3000/", "http://localhost:3000/api"),
+            ("http://localhost:3000/api", "http://localhost:3000/api"),
+            ("http://localhost:3000/api/", "http://localhost:3000/api"),
+            ("https://webui.lan/openwebui", "https://webui.lan/openwebui/api"),
+        ],
+    )
+    def test_the_api_is_addressed_under_open_webuis_address(self, url, base):
+        model = build_model(Settings(url, "sk-local", "llama3.1:8b"))
+
+        assert model.openai_api_base == base
+
     def test_counter_example_nothing_configured_builds_the_offline_model(self, monkeypatch):
-        # The models module imported afresh, with the provider impossible to
-        # import: a module-level `from langchain_openai import ...` would fail here.
+        # The models module imported afresh, with the provider and its SDK
+        # impossible to import: a module-level import of either would fail here.
         monkeypatch.setitem(sys.modules, "langchain_openai", None)
+        monkeypatch.setitem(sys.modules, "openai", None)
         monkeypatch.delitem(sys.modules, "starter.infrastructure.models")
         models = importlib.import_module("starter.infrastructure.models")
 

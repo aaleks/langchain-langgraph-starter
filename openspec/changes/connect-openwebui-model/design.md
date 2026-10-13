@@ -13,11 +13,11 @@ setting is read anywhere; `config/` is empty.
 | File | Holds | Layer rule |
 |---|---|---|
 | `src/starter/config/settings.py` | `Settings` (url, key, model); `read_settings(environ, dotenv)` -- the environment wins, `.env` fills the rest via `dotenv_values`, nothing written; `settings_from_process()` -- `os.environ` and the repository's `.env` | config: the only reader of `os.environ` |
-| `src/starter/domain/models.py` | `choose_model(url, key, model) -> "openwebui" \| "offline"`, refusing a partial configuration with the missing names | domain: pure |
+| `src/starter/domain/models.py` | `choose_model(url, key, model) -> "openwebui" \| "offline"`, refusing a partial configuration with the missing names; `api_base(url)` -- the API's address under it | domain: pure |
 | `src/starter/domain/agents/budgets.py` | `MODEL_CALL_TIMEOUT_SECONDS = 120`, beside `MODEL_CALLS_PER_RUN` | domain |
 | `src/starter/domain/agents/retries.py` | `MODEL_RETRIES = 2`, `RETRY_INITIAL_DELAY_SECONDS = 1.0`, `RETRY_BACKOFF_FACTOR = 2.0`; `is_transient(status, timed_out, connection_failed)` | domain: facts in, a decision out |
 | `src/starter/infrastructure/models.py` | `build_model(settings)` -- the choice, then `build_openwebui_model(...)` (`langchain_openai` imported inside it) or the offline model; `is_transient_failure(exc)` -- an exception's facts, handed to the domain | infrastructure: the only place a model is built, and the only place that knows the provider's exceptions |
-| `src/starter/infrastructure/agents/factory.py` | `build_assistant(model, tools, *, transient=never)` -- adds `ModelRetryMiddleware(max_retries=MODEL_RETRIES, retry_on=transient, on_failure="error")` | agents adapter: the predicate arrives as a dependency, so the adapter imports no provider |
+| `src/starter/infrastructure/agents/factory.py` | `build_assistant(model, tools, *, transient)` -- the predicate required, no default -- adds `ModelRetryMiddleware(max_retries=MODEL_RETRIES, retry_on=transient, on_failure="error")` | agents adapter: the predicate arrives as a dependency, so the adapter imports no provider |
 | `src/starter/infrastructure/agents/registry.py` | `assistant = registered_assistant()` -- a factory function: settings, model, graph | registration |
 
 - **The environment wins, and `.env` never enters it.** `dotenv_values` reads
@@ -28,8 +28,9 @@ setting is read anywhere; `config/` is empty.
 - **The suite is sealed from the owner's `.env`.** `tests/conftest.py` sets the
   three settings empty in the process environment, beside `LOCAL_ONLY`; the
   environment wins, so every default test -- and the live server tests of
-  slice 1b, which inherit it -- chooses the offline model. The live Open WebUI
-  test reads `.env` alone, on purpose.
+  slice 1b, which inherit it -- chooses the offline model, unless a test sets
+  its own settings over them: a stand-in on 127.0.0.1, never the owner's. The
+  live Open WebUI test reads `.env` alone, on purpose.
 - **Partial is refused.** A URL without a key is a mistake the owner should
   hear about at start -- `ValueError` naming what is missing -- not a silent
   offline assistant.
@@ -93,6 +94,23 @@ setting is read anywhere; `config/` is empty.
   - *Settings' text* shows the URL and the model as given: a key put in the
     URL's line would show there. The refusal at start, which names no value,
     comes first.
+- **Verify pass 3's corrections** (`verify.md`):
+  - *The URL is Open WebUI's address*: a query or a fragment is refused at
+    start; a path under a reverse proxy is not. A URL already ending in
+    `/api` -- every endpoint's prefix, an address an owner may well copy -- is
+    taken as the API itself (`domain.models.api_base`) rather than refused:
+    both name the same server.
+  - *The export reads the process's settings*, proved at the default tier by
+    loading `langgraph.json`'s file with the settings in the environment.
+  - *`.env` values are read as written*: `interpolate=False`, since expanding
+    `${NAME}` reads `os.environ` behind `read_settings`' argument.
+  - *The retry predicate has no default*: a graph composed without one would
+    quietly retry nothing. Tests that are not about retrying say so.
+  - *`openai` is declared*, bounded to 3.29: its exception classes decide what
+    is retried, and langchain-openai alone allows two majors.
+  - *The models check names a model by its class and its SDK*: chat and
+    completion models and embeddings by name, langchain_core's chat data
+    excepted; a provider SDK's clients however they are reached.
 
 ## Orchestration design
 
@@ -105,7 +123,8 @@ N-A for the node table -- the tool loop. What changes:
   unchanged. Both pinned by tests.
 - **Runtime:** with `.env` configured, the served graph calls Open WebUI. The
   live server tests of 1b keep the offline model -- they inherit the suite's
-  empty settings.
+  empty settings, and assert its answer; one more server, its Open WebUI a
+  stand-in on 127.0.0.1, proves the configured path stays on the machine.
 
 ## Risks
 

@@ -62,6 +62,16 @@ def test_the_application_allowlist_refuses_a_runtime_but_not_its_abstractions(fi
     assert found == {"langchain", "langgraph"}
 
 
+def test_the_config_allowlist_refuses_anything_but_the_dotenv_reader(fixture_package):
+    name = fixture_package(
+        {"config/settings.py": "import os\nimport dotenv\nimport httpx\nimport langchain_openai\n"}
+    )
+    found = {
+        imported for _, imported in imports_outside(name, "config", ALLOWED_EXTERNALS["config"])
+    }
+    assert found == {"httpx", "langchain_openai"}
+
+
 def test_a_runtime_outside_the_agents_adapter_is_refused(fixture_package):
     name = fixture_package(
         {

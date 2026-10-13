@@ -60,7 +60,7 @@ Unchanged: the tool loop (`create_agent`). The retry policy is middleware on it.
 |---|---|---|
 | Outcome -- who it is for; what observable thing says it worked | Clear | the owner, and the three signals above |
 | Behaviour -- every rule falsifiable, each with a counter-example | Clear | seven requirements, each with one |
-| Determinism -- honestly tagged; every evaluated rule split once more | Clear | the live run asserts structure -- one call, `human, ai`, a non-empty answer that is not the offline one -- never the text |
+| Determinism -- honestly tagged; every evaluated rule split once more | Clear | the live run asserts structure -- one model turn, `human, ai`, a non-empty answer that is not the offline one -- never the text |
 | Data -- provenance, freshness, what happens when a source is withdrawn | N-A | no data read beyond the owner's settings |
 | Untrusted input -- anything ingested that this project did not write | Partial | the person's message now reaches a real model, but no tool can act on its answer: the data-never-instruction requirement and its adversarial case come with the first tool (slice 3), as the roadmap says |
 | Interfaces -- a flag, env var, output schema, embedding, default or graph id | Clear | three settings, `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`, documented in `.env.example`; the default -- nothing configured -- keeps the offline model |

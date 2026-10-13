@@ -105,3 +105,30 @@
   host; `.strip()` dropped (both rows); the port not read; `urlsplit`'s error
   escaping; the refusal quoting the value; 501 made transient; and the models
   check's fixture against the old check (missed alias, flagged `Chroma`)
+
+## 10. Verify pass 3 -- the fixes (`verify.md`, reviewed at `6033d3a`)
+
+- [x] 10.1 MODEL-CHOICE refuses a key and a model without the URL (28); the
+  registered export proved to read the process's settings, loaded through
+  `langgraph.json` with them in the environment, a partial set refused at load
+  (29)
+- [x] 10.2 The URL is Open WebUI's address: a query or a fragment refused, a
+  URL ending in `/api` taken as the API itself (31); `openai` impossible to import in the offline
+  counter-example (32), declared and bounded to 3.29 (33)
+- [x] 10.3 The models check by class name and SDK module, chat data excepted
+  (30); `config`'s allowlist fixture-proved, `CLAUDE.md` and the overview
+  updated (34); `local_server(settings=)` takes the settings' names only (35);
+  the retry predicate required (36)
+- [x] 10.4 SETTINGS-ENVIRONMENT-WINS: the counter-example reads `os.environ`
+  itself (37); every setting trimmed, claimed (38); `.env` values not
+  interpolated, claimed (39); MODEL-TRANSIENT-FAILURES over every status
+  100-599 (40); the session servers assert the offline answer (41); stale text
+  in the frame, design and `CLAUDE.md` (42 -- the living Purpose at archive)
+- [x] 10.5 Proved by mutation, nine in a full-suite run, each red: the URL
+  deciding offline, the export ignoring the process's settings, a query
+  accepted, `/api` added twice or dropped, `openai` imported at module level, the reader writing into
+  the environment, only the model trimmed, `.env` interpolated, 507 transient;
+  the two architecture fixtures red against the old check and a widened
+  allowlist
+  -- and five for `/api` taken as the API: added twice, never added, the
+  trailing slash kept, refused again, the builder bypassing `api_base`

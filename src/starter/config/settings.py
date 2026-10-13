@@ -62,7 +62,8 @@ def _read_dotenv(dotenv: Path) -> dict[str, str | None]:
     if not dotenv.is_file():
         return {}
     try:
-        return dotenv_values(dotenv, encoding="utf-8")
+        # As written: expanding ${NAME} would read os.environ behind `environ`'s back.
+        return dotenv_values(dotenv, encoding="utf-8", interpolate=False)
     except UnicodeDecodeError as error:
         # A .env saved as UTF-16 (Windows PowerShell's `>`) fails here; say where.
         raise ValueError(f"{dotenv} is not UTF-8 text -- save it as UTF-8") from error

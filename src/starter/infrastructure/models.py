@@ -18,7 +18,7 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from starter.config.settings import Settings
 from starter.domain.agents.budgets import MODEL_CALL_TIMEOUT_SECONDS
 from starter.domain.agents.retries import is_transient
-from starter.domain.models import choose_model
+from starter.domain.models import api_base, choose_model
 
 OFFLINE_ANSWER = (
     "This is the starter's offline model: no provider is configured, so every "
@@ -55,7 +55,7 @@ def build_openwebui_model(settings: Settings) -> BaseChatModel:
     from langchain_openai import ChatOpenAI  # the provider, only when chosen
 
     return ChatOpenAI(
-        base_url=settings.openwebui_url.rstrip("/") + "/api",
+        base_url=api_base(settings.openwebui_url),
         api_key=settings.openwebui_api_key,
         model=settings.openwebui_model,
         timeout=MODEL_CALL_TIMEOUT_SECONDS,

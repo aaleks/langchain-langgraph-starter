@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from starter.config import settings as settings_module
-from starter.config.settings import Settings, read_settings, settings_from_process
+from starter.config.settings import NAMES, Settings, read_settings, settings_from_process
 from starter.domain.models import choose_model
 
 REPO = Path(__file__).resolve().parents[3]
@@ -25,8 +25,10 @@ def dotenv(tmp_path, text: str, encoding: str = "utf-8") -> Path:
 class TestEnvironmentWins:
     """SETTINGS-ENVIRONMENT-WINS: A setting SHALL be read from the process
     environment when the environment holds it -- an empty value included -- and
-    from the repository's `.env` only when the environment does not; a value of
-    only spaces SHALL read as empty. A missing `.env` SHALL read as empty, a
+    from the repository's `.env` only when the environment does not, as written
+    there: `${NAME}` is not expanded. Every value SHALL be read with the spaces
+    around it removed, so a value of only spaces reads as empty. A missing `.env`
+    SHALL read as empty, a
     `.env` that is not UTF-8 SHALL be refused naming the file, and reading SHALL
     change neither the environment nor the file -- nor open the file when the
     environment holds every setting."""
@@ -55,6 +57,22 @@ class TestEnvironmentWins:
         settings = read_settings(environ, dotenv(tmp_path, line + "\n"))
 
         assert settings.openwebui_model == expected
+
+    def test_a_dotenv_value_is_read_as_written_not_expanded(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PROBE", "leaked")
+
+        settings = read_settings({}, dotenv(tmp_path, "OPENWEBUI_MODEL=${PROBE}\n"))
+
+        assert settings.openwebui_model == "${PROBE}"
+
+    @pytest.mark.parametrize("name", NAMES)
+    @pytest.mark.parametrize(
+        ("given", "read"), [("   ", ""), ("  sk-local\t", "sk-local")], ids=["spaces", "padded"]
+    )
+    def test_every_setting_is_read_without_the_spaces_around_it(self, tmp_path, name, given, read):
+        settings = read_settings({**ALL_THREE, name: given}, tmp_path / ".env")
+
+        assert getattr(settings, name.lower()) == read
 
     def test_the_process_reads_its_environment_then_the_repositorys_dotenv(
         self, tmp_path, monkeypatch
@@ -103,8 +121,10 @@ class TestEnvironmentWins:
     ):
         monkeypatch.delenv("OPENWEBUI_URL")
         path = dotenv(tmp_path, "OPENWEBUI_URL=http://localhost:3000\n")
+        monkeypatch.setattr(settings_module, "DOTENV", path)
 
-        settings = read_settings(dict(os.environ), path)
+        # The process's own reading: os.environ itself, never a copy of it.
+        settings = settings_from_process()
 
         assert settings.openwebui_url == "http://localhost:3000"
         assert "OPENWEBUI_URL" not in os.environ

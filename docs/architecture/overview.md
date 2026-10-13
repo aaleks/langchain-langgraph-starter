@@ -7,7 +7,7 @@ cli  ->  infrastructure  ->  (application | config)  ->  domain
 | Layer | Holds | May import | Enforced by |
 |---|---|---|---|
 | `domain/` | pure decisions: precedence, validation, routing, budgets, approval and retry policy | the standard library | `tests/architecture/test_imports.py` (allowlist) |
-| `config/` | locating and loading configuration; the only reader of `os.environ` | `domain`, `dotenv` | `test_layers.py`, `test_conventions.py` |
+| `config/` | locating and loading configuration; the only reader of `os.environ` and `.env` | `domain`, `dotenv` | `test_imports.py` (allowlist), `test_layers.py`, `test_conventions.py` |
 | `application/` | use cases, prompts, output contracts | `domain`, `langchain_core`, `pydantic` | `test_imports.py` (allowlist), `test_layers.py` |
 | `infrastructure/` | adapters: model builders, stores, tracing; graphs in `agents/` | `domain`, `config`, `application` | `test_layers.py`; `langgraph` only in `agents/` by `test_imports.py` |
 | `cli/` | arguments, output, exit codes; the only `sys.exit` | everything | `test_conventions.py` |

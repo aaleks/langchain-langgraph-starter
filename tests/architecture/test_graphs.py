@@ -365,16 +365,27 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
                 "from langchain.chat_models import init_chat_model as make\n"
                 "m = make('ollama:qwen3')\n"
             ),
-            # a provider's own SDK: every client it makes is a model client
+            # a provider's own SDK: every client it makes is a model client,
+            # imported from it or called through it
             "infrastructure/agents/sdk.py": "from openai import OpenAI as Client\nc = Client()\n",
-            # counter-examples: names that merely look alike, and a partner
-            # package's class that is not a model
+            "infrastructure/tracing/client.py": "import openai\nc = openai.OpenAI()\n",
+            # a completion model and embeddings are models too
+            "infrastructure/stores/llm.py": "from langchain_ollama import OllamaLLM\nm = OllamaLLM()\n",
+            "cli/embed.py": "import langchain_openai as lo\ne = lo.OpenAIEmbeddings()\n",
+            # counter-examples: names that merely look alike, langchain_core's
+            # chat data, and a partner package's class that is not a model
             "application/chat.py": "def chat_turn():\n    return Chatter()\nclass Chatter: ...\n",
+            "application/prompts.py": (
+                "from langchain_core.prompts import ChatPromptTemplate as T\n"
+                "from langchain_core.messages import ChatMessage\n"
+                "P = T([('system', 'x')])\nM = ChatMessage(role='system', content='x')\n"
+            ),
             "infrastructure/stores/tasks.py": "from langchain_chroma import Chroma\ns = Chroma()\n",
         },
     )
     found = models_built_outside_models(source)
     assert [f.split(":")[0] for f in found] == [
+        "cli/embed.py",
         "cli/main.py",
         "config/settings.py",
         "infrastructure/agents/alias.py",
@@ -382,4 +393,6 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
         "infrastructure/agents/make.py",
         "infrastructure/agents/registry.py",
         "infrastructure/agents/sdk.py",
+        "infrastructure/stores/llm.py",
+        "infrastructure/tracing/client.py",
     ], found

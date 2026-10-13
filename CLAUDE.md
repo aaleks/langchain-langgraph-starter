@@ -4,9 +4,10 @@ A LangChain / LangGraph starter, developed spec-first with proof.
 
 **A walking skeleton, on purpose.** What exists is the method, five layers with
 their contracts and checks, and one graph: `assistant`, a `create_agent` tool
-loop registered in `langgraph.json`, running an offline fixed-answer model and
-no tools until a requirement names a provider or a tool
-(`docs/decisions/0005-the-assistant-graph.md`). It is becoming an
+loop registered in `langgraph.json`, its model the owner's local Open WebUI when
+`.env` configures it and an offline fixed-answer model otherwise, and no tools
+until a requirement names one (`docs/decisions/0005-the-assistant-graph.md`).
+It is becoming an
 **approval-gated task assistant** over a local task list, its model served by
 the owner's local Open WebUI -- the slices in `docs/roadmap.md`, each through
 the loop like everything else.
@@ -24,10 +25,11 @@ change is `.claude/sdd/GUIDE.md`.
 - **pytest, ruff, import-linter** (with grimp) -- the dev group in `pyproject.toml`.
 - **OpenSpec 1.14** for the spec lifecycle, pinned and run through
   `bash .claude/sdd/sdd.sh openspec <args>`. Needs Node 20.19+.
-- **LangChain 1.4, langchain-core 1.6, LangGraph 1.2** -- runtime dependencies,
-  each bounded to the minor it was checked against; `langgraph-cli[inmem]` in
-  the dev group. No model provider is installed yet. They run on this machine
-  only -- never through LangSmith (below).
+- **LangChain 1.4, langchain-core 1.6, LangGraph 1.2; langchain-openai 1.7 and
+  openai 3.29** (the Open WebUI client); **python-dotenv 1.2** (`.env`) --
+  runtime dependencies, each bounded to the minor it was checked against;
+  `langgraph-cli[inmem]` in the dev group. They run on this machine only --
+  never through LangSmith (below).
 
 ## Commands
 
@@ -55,7 +57,7 @@ cli  ->  infrastructure  ->  (application | config)  ->  domain
 | Layer | Holds | May import |
 |---|---|---|
 | `domain/` | pure decisions: precedence, validation, routing, budgets, policies | the standard library only |
-| `config/` | finding and loading configuration; the only reader of `os.environ` | `domain` |
+| `config/` | finding and loading configuration; the only reader of `os.environ` and `.env` | `domain`, `dotenv` |
 | `application/` | use cases, prompts, output contracts | `domain`, `langchain_core`, `pydantic` -- never a runtime |
 | `infrastructure/` | adapters: model builders, stores, tracing; every graph, in `agents/` | `domain`, `config`, `application` |
 | `cli/` | arguments, output, exit codes; the only `sys.exit` | everything |

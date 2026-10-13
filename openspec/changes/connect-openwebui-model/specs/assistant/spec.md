@@ -54,7 +54,7 @@ An exception that a tool raises, or that the model raises and the retry policy d
 - **THEN** the run completes, and the tool message answering the call has status `success` and content `error: nothing to explain`
 
 ### Requirement: ASSISTANT-REGISTERED
-`langgraph.json` SHALL register exactly one graph, under the id `assistant`, bound to the `assistant` export of `src/starter/infrastructure/agents/registry.py`. That export SHALL be the graph the factory compiles -- so it carries the budget and the retry policy -- with the model the settings choose and no tools; with no model configured it SHALL complete runs with every outbound network connection refused.
+`langgraph.json` SHALL register exactly one graph, under the id `assistant`, bound to the `assistant` export of `src/starter/infrastructure/agents/registry.py`. That export SHALL be the graph the factory compiles -- so it carries the budget and the retry policy -- with the model the process's settings choose, read when it is loaded, and no tools; with no model configured it SHALL complete runs with every outbound network connection refused.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/acceptance/agents/test_registered_assistant.py::TestAssistantIsRegistered`
@@ -68,12 +68,14 @@ An exception that a tool raises, or that the model raises and the retry policy d
 - **GIVEN** the registered graph, and a graph the factory compiles from a scripted model and no tools
 - **THEN** their nodes are the same, the budget's middleware among them, and so are their step ceilings -- the retry policy wraps the model call and has no node of its own: its own scenario proves it
 
-#### Scenario: The model the settings choose
+#### Scenario: The model the process's settings choose
+- **WHEN** the graph is loaded through `langgraph.json`, the settings in the process's environment
+
 | Settings | The registered graph's model |
 |---|---|
 | none of the Open WebUI settings | the offline model |
-| `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL` all set | the Open WebUI client those settings describe |
-| `OPENWEBUI_URL` and `OPENWEBUI_MODEL` only | none: refused at start, naming `OPENWEBUI_API_KEY` |
+| `OPENWEBUI_URL` -- a stand-in on `127.0.0.1` -- `OPENWEBUI_API_KEY=sk-local`, `OPENWEBUI_MODEL=llama3.1:8b` | the Open WebUI client those settings describe: a run on `hello` reaches the stand-in once, at `/api/chat/completions` with the key |
+| `OPENWEBUI_URL` and `OPENWEBUI_MODEL` only | none: refused at load, naming `OPENWEBUI_API_KEY` |
 
 #### Scenario: Its retry policy is the domain's
 - **GIVEN** Open WebUI configured, answering the first request with HTTP 503

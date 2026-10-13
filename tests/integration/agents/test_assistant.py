@@ -25,6 +25,11 @@ from starter.infrastructure.models import is_transient_failure
 from tests.fakes import answer, propose
 
 
+def no_retries(failure: Exception) -> bool:
+    """For the routes that are not about retrying: no failure is transient."""
+    return False
+
+
 def run(graph, text: str, **config) -> list:
     return graph.invoke({"messages": [HumanMessage(text)]}, config=config or None)["messages"]
 
@@ -48,7 +53,9 @@ class TestToolLoop:
         proposal = propose(("add", {"a": 2, "b": 3}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [add_tool.tool]), "what is 2 + 3?")
+        messages = run(
+            build_assistant(model, [add_tool.tool], transient=no_retries), "what is 2 + 3?"
+        )
 
         assert model.bound == ["add"]
         assert add_tool.calls == [{"a": 2, "b": 3}]
@@ -65,7 +72,10 @@ class TestToolLoop:
         proposal = propose(("add", {"a": 1, "b": 2}), ("add", {"a": 3, "b": 4}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [add_tool.tool]), "add 1 and 2, and 3 and 4")
+        messages = run(
+            build_assistant(model, [add_tool.tool], transient=no_retries),
+            "add 1 and 2, and 3 and 4",
+        )
 
         assert sorted(add_tool.calls, key=lambda c: c["a"]) == [
             {"a": 1, "b": 2},
@@ -82,7 +92,7 @@ class TestToolLoop:
     def test_counter_example_a_model_that_answers_at_once_runs_no_tool(self, fake_llm, add_tool):
         model = fake_llm([answer()])
 
-        messages = run(build_assistant(model, [add_tool.tool]), "hello")
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "hello")
 
         assert add_tool.calls == []
         assert [m.type for m in messages] == ["human", "ai"]
@@ -102,7 +112,9 @@ class TestToolError:
         proposal = propose(("multiply", {"a": 2, "b": 3}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [add_tool.tool]), "what is 2 times 3?")
+        messages = run(
+            build_assistant(model, [add_tool.tool], transient=no_retries), "what is 2 times 3?"
+        )
 
         assert add_tool.calls == []
         assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
@@ -114,7 +126,9 @@ class TestToolError:
         proposal = propose(("add", {"a": "two", "b": 3}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [add_tool.tool]), "what is two plus 3?")
+        messages = run(
+            build_assistant(model, [add_tool.tool], transient=no_retries), "what is two plus 3?"
+        )
 
         assert add_tool.calls == []
         # Another path through the tool node than an unknown tool's: the
@@ -128,7 +142,7 @@ class TestToolError:
         model = fake_llm(propose(("multiply", {"a": 2, "b": 3})) for _ in itertools.count())
 
         with pytest.raises(ModelCallLimitExceededError):
-            run(build_assistant(model, [add_tool.tool]), "keep multiplying")
+            run(build_assistant(model, [add_tool.tool], transient=no_retries), "keep multiplying")
 
         assert model.calls == 10
         assert add_tool.calls == []
@@ -137,7 +151,10 @@ class TestToolError:
         proposal = propose(("add", {"a": 1, "b": 2}), ("multiply", {"a": 3, "b": 4}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [add_tool.tool]), "add 1 and 2, multiply 3 and 4")
+        messages = run(
+            build_assistant(model, [add_tool.tool], transient=no_retries),
+            "add 1 and 2, multiply 3 and 4",
+        )
 
         assert add_tool.calls == [{"a": 1, "b": 2}]
         add_id, multiply_id = (call["id"] for call in proposal.tool_calls)
@@ -163,7 +180,7 @@ class TestErrorsPropagate:
         model = fake_llm([propose(("explode", {"a": 1})), answer()])
 
         with pytest.raises(RuntimeError) as raised:
-            run(build_assistant(model, [explode]), "explode")
+            run(build_assistant(model, [explode], transient=no_retries), "explode")
 
         assert raised.value is failure
         assert model.calls == 1
@@ -189,7 +206,7 @@ class TestErrorsPropagate:
         proposal = propose(("explain", {"a": 1}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [explain]), "explain")
+        messages = run(build_assistant(model, [explain], transient=no_retries), "explain")
 
         assert tool_messages(messages) == {
             proposal.tool_calls[0]["id"]: ("success", "error: nothing to explain")
@@ -211,7 +228,7 @@ class TestModelCallBudget:
         self, fake_llm, add_tool
     ):
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
-        graph = build_assistant(model, [add_tool.tool])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries)
 
         # Not GraphRecursionError: the budget, not the runtime's step ceiling, ends the run.
         with pytest.raises(ModelCallLimitExceededError):
@@ -245,7 +262,7 @@ class TestModelCallBudget:
         script = [propose(("add", {"a": 1, "b": 1})) for _ in range(9)] + [answer()]
         model = fake_llm(script)
 
-        messages = run(build_assistant(model, [add_tool.tool]), "keep adding")
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "keep adding")
 
         assert messages[-1].type == "ai"
         assert messages[-1].tool_calls == []
@@ -263,7 +280,7 @@ class TestModelCallBudget:
 
         with pytest.raises(ends_with):
             run(
-                build_assistant(model, [add_tool.tool]),
+                build_assistant(model, [add_tool.tool], transient=no_retries),
                 "keep adding",
                 recursion_limit=recursion_limit,
             )
