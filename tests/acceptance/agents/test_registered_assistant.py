@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import socket
 import sys
 import uuid
 from pathlib import Path
@@ -19,6 +18,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.pregel import Pregel
 
 from tests.fakes import answer
+from tests.openwebui_stub import STUB_ANSWER, openwebui_stub
 
 REPO = Path(__file__).resolve().parents[3]
 CONFIG = REPO / "langgraph.json"
@@ -53,22 +53,6 @@ def build_assistant():
     return build_assistant
 
 
-@pytest.fixture
-def no_network(monkeypatch):
-    """Refuse every outbound connection, and record each attempt."""
-    attempts: list[object] = []
-
-    def refuse(*args, **kwargs):
-        attempts.append(args[1:] or kwargs)
-        raise ConnectionRefusedError("the network is refused in this test")
-
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket.socket, "connect_ex", refuse)
-    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: refuse(None, *a))
-    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: refuse(None, *a))
-    return attempts
-
-
 def types(messages: list) -> list[str]:
     return [m.type for m in messages]
 
@@ -77,9 +61,10 @@ class TestAssistantIsRegistered:
     """ASSISTANT-REGISTERED: `langgraph.json` SHALL register exactly one graph,
     under the id `assistant`, bound to the `assistant` export of
     `src/starter/infrastructure/agents/registry.py`. That export SHALL be the
-    graph the factory compiles -- so it carries the budget -- with the offline
-    model and no tools, and it SHALL complete runs with every outbound network
-    connection refused."""
+    graph the factory compiles -- so it carries the budget and the retry policy
+    -- with the model the process's settings choose, read when it is loaded, and
+    no tools; with no model configured it SHALL complete runs with every outbound
+    network connection refused."""
 
     def test_langgraph_json_registers_the_assistant_and_nothing_else(self):
         graphs = json.loads(CONFIG.read_text(encoding="utf-8"))["graphs"]
@@ -90,10 +75,74 @@ class TestAssistantIsRegistered:
         bound = {name for name, value in vars(module).items() if isinstance(value, Pregel)}
         assert bound == {"assistant"}
 
+    def test_with_nothing_configured_the_registered_graph_answers_offline(self, registry):
+        from starter.config.settings import Settings
+        from starter.infrastructure.models import OFFLINE_ANSWER
+
+        graph = registry.registered_assistant(Settings("", "", ""))
+        messages = graph.invoke({"messages": [HumanMessage("hello")]})["messages"]
+
+        assert types(messages) == ["human", "ai"]
+        assert messages[-1].content == OFFLINE_ANSWER
+
+    def test_with_open_webui_configured_the_registered_graph_asks_it(self, monkeypatch):
+        with openwebui_stub() as stub:
+            # The process's settings, as the server has them when it loads the file.
+            monkeypatch.setenv("OPENWEBUI_URL", stub.url + "/")
+            monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-local")
+            monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+            registered, _ = load_registered("assistant")
+            messages = registered.invoke({"messages": [HumanMessage("hello")]})["messages"]
+
+        assert types(messages) == ["human", "ai"]
+        assert messages[-1].content == STUB_ANSWER
+        assert [(r["path"], r["authorization"]) for r in stub.requests] == [
+            ("/api/chat/completions", "Bearer sk-local")
+        ]
+        assert stub.requests[0]["body"]["model"] == "llama3.1:8b"
+
+    def test_partly_configured_is_refused_at_start_naming_what_is_missing(self, monkeypatch):
+        # The key stays as the suite set it -- empty, and so not read from .env.
+        monkeypatch.setenv("OPENWEBUI_URL", "http://localhost:3000")
+        monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+
+        with pytest.raises(ValueError) as refused:
+            load_registered("assistant")
+
+        assert str(refused.value).endswith("missing: OPENWEBUI_API_KEY")
+
+    def test_its_retry_policy_is_the_domains_a_503_from_open_webui_is_retried(self, monkeypatch):
+        # The export itself, as the server loads it: a graph composed there with
+        # another predicate would pass a test of `registered_assistant()`. It
+        # waits the domain's first delay, about a second -- the export's own.
+        with openwebui_stub(failures=[503]) as stub:
+            monkeypatch.setenv("OPENWEBUI_URL", stub.url)
+            monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-local")
+            monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+            registered, _ = load_registered("assistant")
+            messages = registered.invoke({"messages": [HumanMessage("hello")]})["messages"]
+
+        assert types(messages) == ["human", "ai"]
+        assert [r["path"] for r in stub.requests] == ["/api/chat/completions"] * 2
+
+    def test_counter_example_a_401_from_open_webui_is_raised_not_retried(self, monkeypatch):
+        import openai
+
+        with openwebui_stub(failures=[401]) as stub:
+            monkeypatch.setenv("OPENWEBUI_URL", stub.url)
+            monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-local")
+            monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+            registered, _ = load_registered("assistant")
+            with pytest.raises(openai.APIStatusError) as raised:
+                registered.invoke({"messages": [HumanMessage("hello")]})
+
+        assert raised.value.status_code == 401
+        assert [r["path"] for r in stub.requests] == ["/api/chat/completions"]
+
     def test_the_registered_graph_is_the_factorys_with_its_budget(
         self, registry, build_assistant, fake_llm
     ):
-        built = build_assistant(fake_llm([answer()]), [])
+        built = build_assistant(fake_llm([answer()]), [], transient=lambda failure: False)
 
         assert set(registry.assistant.nodes) == set(built.nodes)
         assert any(node.startswith("ModelCallLimitMiddleware") for node in built.nodes)
@@ -128,7 +177,9 @@ class TestAssistantIsRegistered:
     def test_counter_example_the_factorys_graph_offers_a_tool_the_registered_one_offers_none(
         self, registry, build_assistant, fake_llm, add_tool
     ):
-        built = build_assistant(fake_llm([answer()]), [add_tool.tool])
+        built = build_assistant(
+            fake_llm([answer()]), [add_tool.tool], transient=lambda failure: False
+        )
 
         assert "tools" in built.nodes
         assert "tools" not in registry.assistant.nodes

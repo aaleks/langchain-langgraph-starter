@@ -18,6 +18,7 @@ import sys
 
 import pytest
 
+from starter.infrastructure.models import OFFLINE_ANSWER
 from tests.localserver import local_server
 
 # This machine. `None` is a lookup of no host at all -- an address to bind.
@@ -110,6 +111,33 @@ def session(tmp_path_factory):
     return seen
 
 
+@pytest.fixture(scope="module")
+def configured(tmp_path_factory):
+    """A second server lifetime, its Open WebUI configured: a stand-in on
+    127.0.0.1, so the one place the conversation may go is on this machine, and
+    anything else the configured server reached would be beyond it."""
+    from langgraph_sdk import get_sync_client
+
+    from tests.openwebui_stub import openwebui_stub
+
+    seen: dict = {}
+    with openwebui_stub() as stub:
+        settings = {
+            "OPENWEBUI_URL": stub.url,
+            "OPENWEBUI_API_KEY": "sk-local",
+            "OPENWEBUI_MODEL": "llama3.1:8b",
+        }
+        with local_server(tmp_path_factory.mktemp("configured"), settings=settings) as server:
+            client = get_sync_client(url=server.url)
+            thread = client.threads.create()["thread_id"]
+            _, seen["last"] = stream(client, thread)
+            seen["runs"] = [run["status"] for run in client.runs.list(thread)]
+        seen["requests"] = list(stub.requests)
+    seen["records"] = server.records()
+    seen["stopped_gracefully"] = server.stopped_gracefully
+    return seen
+
+
 def probe_was_in_the_server(records: list[dict]) -> bool:
     """Whether the probe recorded the server's own process starting: a probe that
     never loaded records nothing, and nothing would read like a pass."""
@@ -177,7 +205,11 @@ class TestStaysLocal:
     endpoint elsewhere, the server SHALL start, serve runs -- including one whose
     request asks for LangSmith tracing -- and stop, attempting no connection and
     no name lookup beyond this machine (`127.0.0.1`, `::1`, `localhost`, or no
-    host at all)."""
+    host at all) -- save one: the Open WebUI the owner's settings configure,
+    wherever it runs, to which the assistant's conversation goes by the owner's
+    choice. The module's server configures none -- the suite sets the settings
+    empty, and it inherits them; the `configured` server sets its Open WebUI on
+    127.0.0.1."""
 
     @pytest.mark.live
     def test_nothing_beyond_this_machine_from_a_hostile_shell(self, session):
@@ -186,6 +218,9 @@ class TestStaysLocal:
         assert probe_was_in_the_server(records), records[:5]
         assert session["stopped_gracefully"] is True
         assert session["runs"] == ["success"]
+        # No Open WebUI configured, checked: an owner's .env read by mistake
+        # could answer from this machine, and nothing above would notice.
+        assert session["last"]["messages"][-1]["content"] == OFFLINE_ANSWER
         assert beyond_this_machine(records) == []
 
     @pytest.mark.live
@@ -196,8 +231,24 @@ class TestStaysLocal:
         assert session["stopped_gracefully"] is True
         assert session["traced_runs"] == ["success"]
         assert message_types(session["traced_last"]) == ["human", "ai"]
+        assert session["traced_last"]["messages"][-1]["content"] == OFFLINE_ANSWER
         assert beyond_this_machine(records) == []
         assert [r for r in records if r["detail"] == DEAD_ENDPOINT] == []
+
+    @pytest.mark.live
+    def test_with_open_webui_configured_the_conversation_goes_there_and_nowhere_else(
+        self, configured
+    ):
+        records = configured["records"]
+
+        assert probe_was_in_the_server(records), records[:5]
+        assert configured["stopped_gracefully"] is True
+        assert configured["runs"] == ["success"]
+        assert message_types(configured["last"]) == ["human", "ai"]
+        assert [(r["path"], r["authorization"]) for r in configured["requests"]] == [
+            ("/api/chat/completions", "Bearer sk-local")
+        ]
+        assert beyond_this_machine(records) == []
 
     def test_counter_example_connections_on_this_machine_are_not_counted(self):
         far_connect = {"pid": 2, "kind": "connect", "detail": ["203.0.113.7", 443]}

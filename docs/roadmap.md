@@ -27,27 +27,36 @@ durability, safety) arrives in the slice whose requirement asks for it.
      that records nothing beyond 127.0.0.1 (`langgraph-api` 0.16.0, measured;
      CI's `live` job green on Linux). Its interrupt moved to slice 4, its
      `.env` loading to slice 2: neither had a requirement yet.
-2. **The model: Open WebUI** (structural). The first real model, and with it
-   what the first provider must bring (register-first-graph, `verify.md`):
-   - `config/` loads `.env` without overriding what is already set
-     (python-dotenv's default); the Open WebUI URL, key and model are
-     documented in `.env.example` and read only there;
-   - `infrastructure/models.py` builds the model -- `ChatOpenAI` against Open
-     WebUI's OpenAI-compatible endpoint -- the provider imported inside its
-     builder; the registry chooses it in a factory function, the offline model
-     when nothing is configured;
-   - transient failures retried by `ModelRetryMiddleware(...,
-     on_failure="error")` on a domain predicate, a deadline on each call, and
-     a decision on `invalid_tool_calls`;
-   - a `live` test of a real run through Open WebUI, and `MODEL_CALLS_PER_RUN`
-     re-measured against real runs;
-   - the "only `models.py` builds a model" check extended to every module.
+2. **The model: Open WebUI** -- landed, **`connect-openwebui-model`** (#8),
+   after six verify passes:
+   - settings read by `config/` from the environment, then `.env` -- read as
+     written, never written into the environment, the environment winning;
+     the three documented in `.env.example`;
+   - a partial configuration, or a URL that is not Open WebUI's address,
+     refused at start, naming the variable and never quoting the value;
+   - `ChatOpenAI` against Open WebUI's `/api`, built only in
+     `infrastructure/models.py`, the provider imported inside its builder; the
+     registry chooses it from the process's settings, the offline model when
+     nothing is configured;
+   - transient failures -- a timeout, a failed connection, 408, 429, 500,
+     502-504 -- retried twice by `ModelRetryMiddleware(on_failure="error")` on
+     a domain predicate; a 120 s timeout on every wait for the model;
+   - LOCAL-SERVER-STAYS-LOCAL's one exception: the Open WebUI the owner
+     configures; the "only `models.py` builds a model" check over the whole
+     package, provider SDK clients included;
+   - a `live` test of a real run through Open WebUI -- it reaches the owner's
+     server, which has yet to answer it: the model id in `.env` is not one
+     that server lists.
 3. **The task store, read only** (structural). A local SQLite task list -- its
    schema an ADR -- and the first real tools: list and search. With them:
    - the capability-manifest format, decided with the first real tool, and the
      fixture-proven check that no tool registers without one (the old Safety
      slice's requirement);
-   - a tool-call budget beside the model-call budget;
+   - a tool-call budget beside the model-call budget, and
+     `MODEL_CALLS_PER_RUN` re-measured against real runs with tools (moved
+     from slice 2: without tools a run is one model turn);
+   - a decision on `invalid_tool_calls` (moved from slice 2: no tool, no
+     malformed call);
    - task text and tool output as **untrusted data, never instruction**, with
      an adversarial case asserting no unauthorised effect.
 4. **Approval-gated writes** (structural). Create, close and reassign, each

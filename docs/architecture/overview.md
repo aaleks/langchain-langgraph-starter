@@ -7,7 +7,7 @@ cli  ->  infrastructure  ->  (application | config)  ->  domain
 | Layer | Holds | May import | Enforced by |
 |---|---|---|---|
 | `domain/` | pure decisions: precedence, validation, routing, budgets, approval and retry policy | the standard library | `tests/architecture/test_imports.py` (allowlist) |
-| `config/` | locating and loading configuration; the only reader of `os.environ` | `domain` | `test_layers.py`, `test_conventions.py` |
+| `config/` | locating and loading configuration; the only reader of `os.environ` and `.env` | `domain`, `dotenv` | `test_imports.py` (allowlist), `test_layers.py`, `test_conventions.py` |
 | `application/` | use cases, prompts, output contracts | `domain`, `langchain_core`, `pydantic` | `test_imports.py` (allowlist), `test_layers.py` |
 | `infrastructure/` | adapters: model builders, stores, tracing; graphs in `agents/` | `domain`, `config`, `application` | `test_layers.py`; `langgraph` only in `agents/` by `test_imports.py` |
 | `cli/` | arguments, output, exit codes; the only `sys.exit` | everything | `test_conventions.py` |
@@ -62,6 +62,7 @@ environment in which nothing reaches LangSmith. See
 | `langgraph.json` names only registry exports, under stable ids, with no `env` | `tests/architecture/test_graphs.py` |
 | the agents adapter imports no provider SDK or client | `tests/architecture/test_graphs.py` (allowlist) |
 | no model built inline in the agents adapter | `tests/architecture/test_graphs.py` |
+| a model -- a chat or completion model, embeddings, a provider SDK's client -- built only in `infrastructure/models.py`. Caught by the names a model goes by, not every way of reaching one: a class passed to `partial`, bound to another name by assignment, built by a classmethod (`ChatOpenAI.model_validate`), or named like no model (`langchain_community`'s `Ollama`) is not seen | `tests/architecture/test_graphs.py` |
 | the server starts only through `scripts/serve.sh`; nothing reaches LangSmith | `.claude/settings.json` (deny rules and env), `scripts/serve.sh` |
 
 Each `test_graphs.py` check skips, with its reason, until the first graph

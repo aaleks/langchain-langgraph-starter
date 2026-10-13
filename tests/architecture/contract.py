@@ -33,6 +33,8 @@ PYPROJECT = REPO / "pyproject.toml"
 ALLOWED_EXTERNALS = {
     "domain": frozenset(),
     "application": frozenset({"langchain_core", "pydantic"}),
+    # Reads .env into a dict -- nothing more: no client, no SDK.
+    "config": frozenset({"dotenv"}),
 }
 
 # Runtimes confined to the agents adapter. Checked at package granularity --
@@ -408,6 +410,77 @@ def agent_runtime_imports_outside_agents(source: Path) -> list[str]:
             hit = next((n for n in _import_names(node) if _within(n, "langchain.agents")), None)
             if hit:
                 found.append(f"{rel} imports {hit}")
+    return found
+
+
+MODELS_MODULE = "infrastructure/models.py"
+# A model's class, by its name: a chat model (ChatOpenAI, AzureChatOpenAI,
+# GenericFakeChatModel), a completion model (OllamaLLM, OpenAI) or embeddings --
+# not langchain_core's chat data (ChatPromptTemplate, ChatMessage, ChatResult,
+# ChatSession, ChatModelStream and kin), nor an error class. A partner package's
+# other classes (`langchain_chroma.Chroma`) build no model.
+MODEL_CLASS = re.compile(
+    r"^(?!\w*Error$)"
+    r"(\w*Chat(?!Prompt|Message|Generation|Result|Session|Loader|ModelStream)[A-Z]\w*"
+    r"|\w*LLM|\w*Embeddings|(Azure)?OpenAI)$"
+)
+# A provider's own SDK: every client it makes is a model client, whatever its
+# name (`ollama.Client`) -- imported from the SDK, or called through it; its
+# error classes (`openai.APITimeoutError`) are not.
+PROVIDER_SDKS = frozenset({"openai", "anthropic", "ollama", "mistralai", "cohere"})
+
+
+def models_built_outside_models(source: Path) -> list[str]:
+    """A model constructed anywhere in the package but infrastructure/models.py
+    -- `init_chat_model(...)`, a model's class called, or a provider SDK's client.
+    A second place that builds a model is a second configuration path, and the
+    two will disagree (.claude/rules/python/infrastructure.md)."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel == MODELS_MODULE:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        # The local names of a builder or a model's class, whatever they are bound
+        # as, and of a provider SDK's module.
+        builders: set[str] = set()
+        sdk_modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                from_sdk = node.module.split(".")[0] in PROVIDER_SDKS
+                for alias in node.names:
+                    if (
+                        (from_sdk and not alias.name.endswith("Error"))
+                        or alias.name in INLINE_MODEL_BUILDERS
+                        or MODEL_CLASS.match(alias.name)
+                    ):
+                        builders.add(alias.asname or alias.name)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    root = alias.name.split(".")[0]
+                    if root in PROVIDER_SDKS:
+                        sdk_modules.add(alias.asname or root)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Attribute):
+                name = func.attr
+                through_sdk = (
+                    isinstance(func.value, ast.Name)
+                    and func.value.id in sdk_modules
+                    and name[:1].isupper()
+                    and not name.endswith("Error")
+                )
+            else:
+                name, through_sdk = getattr(func, "id", None), False
+            if name and (
+                name in INLINE_MODEL_BUILDERS
+                or name in builders
+                or MODEL_CLASS.match(name)
+                or through_sdk
+            ):
+                found.append(f"{rel}:{node.lineno} {name}()")
     return found
 
 

@@ -27,6 +27,7 @@ from .contract import (
     imports_outside,
     langgraph_validate,
     models_built_inline,
+    models_built_outside_models,
     registration_problems,
     root_package,
     uncompiled_registrations,
@@ -329,3 +330,86 @@ def test_langgraph_validate_is_run_with_cli_analytics_off(tmp_path, monkeypatch)
     monkeypatch.setattr(contract.subprocess, "run", run)
     contract.langgraph_validate(tmp_path / "langgraph.json")
     assert handed["env"]["LANGGRAPH_CLI_NO_ANALYTICS"] == "1"
+
+
+def test_models_are_built_only_in_infrastructure_models():
+    assert models_built_outside_models(SOURCE) == []
+
+
+def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
+    source = build_package(
+        tmp_path,
+        "modelsfix",
+        {
+            "infrastructure/models.py": (
+                "from langchain_openai import ChatOpenAI\n"
+                "def build():\n    return ChatOpenAI(model='m')\n"
+            ),
+            "infrastructure/agents/registry.py": (
+                "from langchain_core.language_models import fake_chat_models as f\n"
+                "model = f.GenericFakeChatModel(messages=iter([]))\n"
+            ),
+            "cli/main.py": (
+                "from langchain.chat_models import init_chat_model\n"
+                "model = init_chat_model('ollama:qwen3')\n"
+            ),
+            "config/settings.py": "from langchain_ollama import ChatOllama\nm = ChatOllama()\n",
+            # the same class under another name, and a name the pattern misses
+            "infrastructure/agents/alias.py": (
+                "from langchain_openai import ChatOpenAI as Model\nm = Model(model='m')\n"
+            ),
+            "infrastructure/agents/azure.py": (
+                "import langchain_openai\nm = langchain_openai.AzureChatOpenAI()\n"
+            ),
+            "infrastructure/agents/make.py": (
+                "from langchain.chat_models import init_chat_model as make\n"
+                "m = make('ollama:qwen3')\n"
+            ),
+            # a provider's own SDK: every client it makes is a model client,
+            # imported from it or called through it -- names the class pattern
+            # does not match, so only the SDK rule can catch them
+            "infrastructure/agents/sdk.py": "from ollama import Client as C\nc = C()\n",
+            "infrastructure/tracing/client.py": "import anthropic\nc = anthropic.Anthropic()\n",
+            # a completion model and embeddings are models too
+            "infrastructure/stores/llm.py": "from langchain_ollama import OllamaLLM\nm = OllamaLLM()\n",
+            "cli/embed.py": "import langchain_openai as lo\ne = lo.OpenAIEmbeddings()\n",
+            # the builder reached through its module
+            "cli/chat.py": ("import langchain.chat_models as cm\nm = cm.init_chat_model('x')\n"),
+            # counter-examples: names that merely look alike, langchain_core's
+            # chat data, and a partner package's class that is not a model
+            "application/chat.py": "def chat_turn():\n    return Chatter()\nclass Chatter: ...\n",
+            "application/prompts.py": (
+                "from langchain_core.prompts import ChatPromptTemplate as T\n"
+                "from langchain_core.messages import ChatMessage\n"
+                "P = T([('system', 'x')])\nM = ChatMessage(role='system', content='x')\n"
+            ),
+            "infrastructure/stores/tasks.py": "from langchain_chroma import Chroma\ns = Chroma()\n",
+            # more of langchain_core's chat data, an error named like a model,
+            # and an SDK's errors and a function called through it: none of
+            # them builds a model
+            "application/outputs.py": (
+                "r = ChatResult(generations=[])\ng = ChatGenerationChunk()\n"
+                "s = ChatSession()\nl = BaseChatLoader()\nm = ChatModelStream()\n"
+                "e = SomeChatError()\n"
+            ),
+            "infrastructure/stores/failures.py": (
+                "import openai\nfrom openai import APIStatusError\n"
+                "e = APIStatusError('x')\nt = openai.APITimeoutError(request=None)\n"
+                "u = openai.base_url_for('x')\n"
+            ),
+        },
+    )
+    found = models_built_outside_models(source)
+    assert [f.split(":")[0] for f in found] == [
+        "cli/chat.py",
+        "cli/embed.py",
+        "cli/main.py",
+        "config/settings.py",
+        "infrastructure/agents/alias.py",
+        "infrastructure/agents/azure.py",
+        "infrastructure/agents/make.py",
+        "infrastructure/agents/registry.py",
+        "infrastructure/agents/sdk.py",
+        "infrastructure/stores/llm.py",
+        "infrastructure/tracing/client.py",
+    ], found

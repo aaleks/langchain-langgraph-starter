@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,23 @@ LOCAL_ONLY = {
     "LANGGRAPH_NO_VERSION_CHECK": "true",
 }
 os.environ.update(LOCAL_ONLY)
+
+# The owner's .env may configure a real model. The environment wins over .env
+# (SETTINGS-ENVIRONMENT-WINS), so these empty values keep every default test --
+# and the live server tests, which inherit them -- on the offline model.
+MODEL_UNSET = {"OPENWEBUI_URL": "", "OPENWEBUI_API_KEY": "", "OPENWEBUI_MODEL": ""}
+os.environ.update(MODEL_UNSET)
+
+# The model client reads more of the environment than it is given: a proxy, an
+# organisation, extra headers. None of the owner's reaches a default test, and
+# nothing bound for 127.0.0.1 -- the Open WebUI stub -- is sent to a proxy.
+for _name in [
+    n
+    for n in os.environ
+    if n.upper().startswith("OPENAI_") or n.upper() in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"}
+]:
+    del os.environ[_name]
+os.environ["NO_PROXY"] = "127.0.0.1,localhost"
 
 ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
 
@@ -74,13 +92,15 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """A process environment with every documented variable removed.
+    """A process environment with every documented variable set empty.
 
     Without this, whatever is in the developer's real .env leaks into a test,
-    and it passes or fails depending on whose machine runs it.
+    and it passes or fails depending on whose machine runs it. Empty, not
+    removed: the environment wins over .env (SETTINGS-ENVIRONMENT-WINS), so a
+    removed variable would be filled from the developer's .env again.
     """
     for name in documented_variables():
-        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(name, "")
     return monkeypatch
 
 
@@ -101,3 +121,19 @@ def add_tool():
     from tests.fakes import recording_add
 
     return recording_add()
+
+
+@pytest.fixture
+def no_network(monkeypatch):
+    """Refuse every outbound connection, and record each attempt."""
+    attempts: list[object] = []
+
+    def refuse(*args, **kwargs):
+        attempts.append(args[1:] or kwargs)
+        raise ConnectionRefusedError("the network is refused in this test")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket.socket, "connect_ex", refuse)
+    monkeypatch.setattr(socket, "create_connection", lambda *a, **k: refuse(None, *a))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: refuse(None, *a))
+    return attempts
