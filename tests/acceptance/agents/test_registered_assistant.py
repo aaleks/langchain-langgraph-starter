@@ -125,6 +125,20 @@ class TestAssistantIsRegistered:
         assert types(messages) == ["human", "ai"]
         assert [r["path"] for r in stub.requests] == ["/api/chat/completions"] * 2
 
+    def test_counter_example_a_401_from_open_webui_is_raised_not_retried(self, monkeypatch):
+        import openai
+
+        with openwebui_stub(failures=[401]) as stub:
+            monkeypatch.setenv("OPENWEBUI_URL", stub.url)
+            monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-local")
+            monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+            registered, _ = load_registered("assistant")
+            with pytest.raises(openai.APIStatusError) as raised:
+                registered.invoke({"messages": [HumanMessage("hello")]})
+
+        assert raised.value.status_code == 401
+        assert [r["path"] for r in stub.requests] == ["/api/chat/completions"]
+
     def test_the_registered_graph_is_the_factorys_with_its_budget(
         self, registry, build_assistant, fake_llm
     ):

@@ -16,7 +16,8 @@ def choose_model(url: str, key: str, model: str) -> ModelChoice:
     is not Open WebUI's address, `http(s)://host[:port][/path]`: without a
     scheme it would surface as a nameless connection error, retried as if the
     network were at fault; with a query, a fragment or a path beyond `/api`
-    (an endpoint, pasted whole), as a 404 at the first run. The refusal never
+    (an endpoint, pasted whole), as a 404 at the first run; with a user and
+    password, as Basic auth sent in place of the key. The refusal never
     quotes the value: two lines swapped would put the key there.
     """
     given = {"OPENWEBUI_URL": url, "OPENWEBUI_API_KEY": key, "OPENWEBUI_MODEL": model}
@@ -31,7 +32,8 @@ def choose_model(url: str, key: str, model: str) -> ModelChoice:
     if not _is_open_webui_address(url):
         raise ValueError(
             "OPENWEBUI_URL is not an http(s) URL of Open WebUI -- a host, a valid "
-            "port if any, no query or fragment, and nothing after /api; "
+            "port if any, no user or password, no query or fragment, and nothing "
+            "after /api; "
             "e.g. http://localhost:3000"
         )
     return "openwebui"
@@ -62,8 +64,11 @@ def _is_open_webui_address(url: str) -> bool:
         # 0 and an empty port parse, and reach nothing.
         and port != 0
         and not parts.netloc.endswith(":")
+        # httpx sends a user and password as Basic auth, over the bearer key.
+        and "@" not in parts.netloc
         # "?" and "#", not the parsed parts: an empty query still breaks the address.
         and "?" not in url
         and "#" not in url
+        # An endpoint pasted whole; a site under an `/api/` prefix too, by choice.
         and "api" not in _path_segments(url)[:-1]
     )

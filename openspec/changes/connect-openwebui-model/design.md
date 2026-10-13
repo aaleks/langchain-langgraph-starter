@@ -122,12 +122,21 @@ setting is read anywhere; `config/` is empty.
     empty port.
   - *Accepted, recorded:* the models check sees the names a model goes by,
     not every way of reaching one -- `partial`, a class bound to another name
-    by assignment, a model named like none (`langchain_community`'s `Ollama`);
+    by assignment, a classmethod constructor (`ChatOpenAI.model_validate`), a
+    model named like none (`langchain_community`'s `Ollama`);
     the overview says so. It guards against the natural slip, not an author
     set on evading it; revisited when a second model builder is wanted.
     `api_base`'s table is proved through the client builder, at the
     integration tier MODEL-OPENWEBUI-CLIENT needs anyway: a unit table of the
     same rows would prove the same claim twice.
+- **Verify pass 5's corrections** (`verify.md`):
+  - *A user and password in the URL are refused*: httpx sends them as Basic
+    auth over the bearer key, and `Settings`' text would show them.
+  - *A site under an `/api/` prefix is refused, by choice*: telling it from
+    an endpoint pasted whole would take a list of Open WebUI's routes; a
+    reverse proxy can mount it elsewhere. Revisited when an owner needs it.
+  - *The models check skips an SDK's error classes*: raising one is not
+    building a model.
 
 ## Orchestration design
 

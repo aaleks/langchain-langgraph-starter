@@ -373,6 +373,8 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
             # a completion model and embeddings are models too
             "infrastructure/stores/llm.py": "from langchain_ollama import OllamaLLM\nm = OllamaLLM()\n",
             "cli/embed.py": "import langchain_openai as lo\ne = lo.OpenAIEmbeddings()\n",
+            # the builder reached through its module
+            "cli/chat.py": ("import langchain.chat_models as cm\nm = cm.init_chat_model('x')\n"),
             # counter-examples: names that merely look alike, langchain_core's
             # chat data, and a partner package's class that is not a model
             "application/chat.py": "def chat_turn():\n    return Chatter()\nclass Chatter: ...\n",
@@ -382,10 +384,23 @@ def test_each_model_built_outside_infrastructure_models_is_caught(tmp_path):
                 "P = T([('system', 'x')])\nM = ChatMessage(role='system', content='x')\n"
             ),
             "infrastructure/stores/tasks.py": "from langchain_chroma import Chroma\ns = Chroma()\n",
+            # more of langchain_core's chat data, an error named like a model,
+            # and an SDK's errors and functions: none of them builds a model
+            "application/outputs.py": (
+                "r = ChatResult(generations=[])\ng = ChatGenerationChunk()\n"
+                "s = ChatSession()\nl = BaseChatLoader()\nm = ChatModelStream()\n"
+                "e = SomeChatError()\n"
+            ),
+            "infrastructure/stores/failures.py": (
+                "import openai\nfrom openai import APIStatusError\n"
+                "e = APIStatusError('x')\nt = openai.APITimeoutError(request=None)\n"
+                "u = openai.base_url_for('x')\n"
+            ),
         },
     )
     found = models_built_outside_models(source)
     assert [f.split(":")[0] for f in found] == [
+        "cli/chat.py",
         "cli/embed.py",
         "cli/main.py",
         "config/settings.py",

@@ -147,3 +147,18 @@
 - [x] 11.4 Proved by mutation, eight in a full-suite run, each red: the export
   never retrying, either SDK branch removed, `api_base` on the text with and
   without the slash, a path beyond `/api`, port 0 and an empty port accepted
+
+## 12. Verify pass 5 -- the MINORs (`verify.md`, reviewed at `11c3f50`)
+
+- [x] 12.1 A user and password in the URL refused, with a row (53); a site
+  under an `/api/` prefix refused by choice, said in the design (54)
+- [x] 12.2 ASSISTANT-REGISTERED's counter-example: a 401 from the stand-in,
+  through the export, raised after one request (55)
+- [x] 12.3 MODEL-CHOICE rows: an endpoint under a path, a host named `api`,
+  `/api/`, two segments, ports 1 and 65535 (56-58)
+- [x] 12.4 The models check: a builder reached through its module, the chat
+  data, an error named like a model, an SDK's errors and functions as
+  fixture rows (59); an SDK's error classes skipped (60); the classmethod
+  constructor named among the blind spots (61)
+- [x] 12.5 Proved by mutation, twelve in a full-suite run, each red -- the
+  five that survived pass 5 among them

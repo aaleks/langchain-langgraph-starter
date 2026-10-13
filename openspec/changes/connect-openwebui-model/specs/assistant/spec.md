@@ -81,6 +81,7 @@ An exception that a tool raises, or that the model raises and the retry policy d
 - **GIVEN** Open WebUI configured, answering the first request with HTTP 503
 - **WHEN** the registered graph runs on the human message `hello`
 - **THEN** the request is retried once, and the run completes with the transcript `human, ai`
+- **AND** answering it with HTTP 401 instead, the run raises the 401 after that one request, not retried
 
 #### Scenario: An offline run of the registered graph
 - **GIVEN** no Open WebUI configured, and a process in which every outbound socket connection is refused before the graph is loaded

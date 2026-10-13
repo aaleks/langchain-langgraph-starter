@@ -5,7 +5,7 @@ The model is what the assistant thinks with: chosen from the settings -- the own
 ## ADDED Requirements
 
 ### Requirement: MODEL-CHOICE
-The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not Open WebUI's address -- `http` or `https`, a host, a port from 1 to 65535 if it names one, no query or fragment, and no path beyond an `/api` segment -- the refusal naming `OPENWEBUI_URL`.
+The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `OPENWEBUI_MODEL` are all set, and the offline model when none is. When only some are set the choice SHALL be refused, naming each one missing -- never a silent fall back to the offline model -- and so SHALL a URL that is not Open WebUI's address -- `http` or `https`, a host, a port from 1 to 65535 if it names one, no user or password, no query or fragment, and no path beyond an `/api` segment -- the refusal naming `OPENWEBUI_URL`.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_model_choice.py::TestModelChoice`
@@ -17,7 +17,10 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 | `https://webui.lan` | `sk-local` | `llama3.1:8b` | `openwebui` |
 | `http://[::1]:3000` | `sk-local` | `llama3.1:8b` | `openwebui` |
 | `https://webui.lan/openwebui` (behind a proxy, under a path) | `sk-local` | `llama3.1:8b` | `openwebui` |
-| `http://localhost:3000/api` (the API's address) | `sk-local` | `llama3.1:8b` | `openwebui` |
+| `http://localhost:3000/api` or `http://localhost:3000/api/` (the API's address) | `sk-local` | `llama3.1:8b` | `openwebui` |
+| `https://webui.lan/tools/openwebui` (two segments) | `sk-local` | `llama3.1:8b` | `openwebui` |
+| `http://api/openwebui` (a host named `api`) | `sk-local` | `llama3.1:8b` | `openwebui` |
+| `http://localhost:1` or `http://localhost:65535` (the lowest and highest ports) | `sk-local` | `llama3.1:8b` | `openwebui` |
 | empty | empty | empty | `offline` |
 
 #### Scenario: Counter-example -- partly or wrongly configured is refused, not defaulted
@@ -32,7 +35,8 @@ The model SHALL be Open WebUI's when `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` and `O
 | all three, the URL `http://localhost:99999`, `http://localhost:abc`, `http://localhost:0` or `http://localhost:` (no valid port) | `OPENWEBUI_URL` |
 | all three, the URL `http://[::1` (not a URL at all) | `OPENWEBUI_URL` |
 | all three, the URL `http://localhost:3000/?x=1` or `http://localhost:3000/#top` | `OPENWEBUI_URL` |
-| all three, the URL `http://localhost:3000/api/chat/completions` (an endpoint, not the address) | `OPENWEBUI_URL` |
+| all three, the URL `http://localhost:3000/api/chat/completions` or `https://webui.lan/openwebui/api/chat/completions` (an endpoint, not the address) | `OPENWEBUI_URL` |
+| all three, the URL `http://owner:secret@localhost:3000` (a user and password) | `OPENWEBUI_URL` |
 
 ### Requirement: MODEL-TRANSIENT-FAILURES
 A failed model call SHALL be transient exactly when it timed out, its connection failed, or the server answered HTTP 408, 429, 500, 502, 503 or 504.

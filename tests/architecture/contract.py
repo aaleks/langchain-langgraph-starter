@@ -425,7 +425,8 @@ MODEL_CLASS = re.compile(
     r"|\w*LLM|\w*Embeddings|(Azure)?OpenAI)$"
 )
 # A provider's own SDK: every client it makes is a model client, whatever its
-# name (`ollama.Client`) -- imported from the SDK, or called through it.
+# name (`ollama.Client`) -- imported from the SDK, or called through it; its
+# error classes (`openai.APITimeoutError`) are not.
 PROVIDER_SDKS = frozenset({"openai", "anthropic", "ollama", "mistralai", "cohere"})
 
 
@@ -449,7 +450,7 @@ def models_built_outside_models(source: Path) -> list[str]:
                 from_sdk = node.module.split(".")[0] in PROVIDER_SDKS
                 for alias in node.names:
                     if (
-                        from_sdk
+                        (from_sdk and not alias.name.endswith("Error"))
                         or alias.name in INLINE_MODEL_BUILDERS
                         or MODEL_CLASS.match(alias.name)
                     ):
@@ -469,6 +470,7 @@ def models_built_outside_models(source: Path) -> list[str]:
                     isinstance(func.value, ast.Name)
                     and func.value.id in sdk_modules
                     and name[:1].isupper()
+                    and not name.endswith("Error")
                 )
             else:
                 name, through_sdk = getattr(func, "id", None), False
