@@ -1,11 +1,12 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 1. First fix: prove the transient
-  classification at the domain's tier, and classify a streamed call's timeout
-  as transient (findings 1, 6).
-- **Reviewed at:** `4dc2516` -- the staged tree the lenses read, committed
-  unchanged after they reported.
-- **Evidence:** `bash scripts/check.sh live` on the reviewed tree: all checks
+- **Verdict:** DO NOT SHIP -- pass 2 (two MAJOR). First fix: run the server
+  with Open WebUI configured under the probe (finding 18). Pass 1: DO NOT SHIP
+  (six MAJOR).
+- **Reviewed at:** pass 2: `bd4bc4e`, the fix diff `6dd2700..bd4bc4e` -- the
+  staged tree the lenses read, committed unchanged after they reported. Pass 1:
+  `4dc2516`, likewise.
+- **Evidence (pass 1):** `bash scripts/check.sh live` on the reviewed tree: all checks
   passed -- architecture 50, method 117 OK, suite 89, live 7 passed and 1
   skipped (Open WebUI not configured in `.env` yet). Seven mutations red
   (tasks.md). Three fresh-context lenses over `git diff --cached main`: proof
@@ -40,3 +41,47 @@
 - A live run through Open WebUI: `.env` does not configure it yet.
 - The graph-architecture and durability lenses: no graph topology, registration
   or state changed.
+
+## Pass 2 -- the fix diff `6dd2700..bd4bc4e`
+
+- **Evidence:** `bash scripts/check.sh live` at `bd4bc4e`: `all checks
+  passed`, exit 0 -- architecture 51, OpenSpec 3 passed, `sdd check` OK (11
+  requirements in flight, 8 test files, 8 claimed), method 117 OK, manifest
+  matches, suite 121 passed, live 7 passed and 1 skipped (Open WebUI not
+  configured in `.env`). Eight mutations red (tasks.md 8.5).
+- **Lenses:** proof (`spec-compliance`) and defects (`code-reviewer`), fresh
+  context, over `git diff --cached main` with the pass-1 fix in focus. The
+  defects lens stopped twice on a session limit before reporting and was
+  re-run in full. Its probes and mutations ran on scratch copies; no `.env`
+  read; nothing left running.
+- **Pass 1 resolved:** 1, 2, 3, 4, 6, 9, 10, 11 and 13 rechecked by the
+  defects lens and holding; 5 holds as written but is unproved (18); 7 is
+  half done (23); 8 holds but is incomplete (21); 12 is incomplete (27).
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 18 | MAJOR | proof | LOCAL-SERVER-STAYS-LOCAL's one exception -- a configured Open WebUI -- never runs under the probe: every live server test inherits the suite's empty settings, so a configured server reaching anything else (a tokenizer download, a gateway) would pass | `test_local_server.py`; spec `local-server` | A live run of `serve.sh` with Open WebUI configured -- a stand-in on 127.0.0.1 -- under the probe |
+| 19 | MAJOR | proof, defects | "A value of only spaces reads as empty" cannot fail: python-dotenv strips an unquoted value before `read_settings` sees it; with `.strip()` removed the suite stays green (mutation) | `settings.py:57`; `test_settings.py:42` | An environment value of spaces, and a quoted `.env` value `"   "`, which dotenv keeps (probed) |
+| 20 | MINOR | defects, proof | The URL refusal quotes the value: an owner who swapped two lines (`OPENWEBUI_URL=sk-...`) sees the key in the start-up traceback; no scenario has a key beside a refused URL | `domain/models.py:31` | Name the variable and the expected form, never the value; a scenario |
+| 21 | MINOR | defects, proof | The URL check is untested for a missing host (`http://:3000`), passes a bad port (`http://localhost:99999`, `:abc` -- failing only at run time), and lets `urlsplit`'s own error (`http://[::1`) escape without naming `OPENWEBUI_URL` | `domain/models.py:28-29` | Read the port inside the check; any `ValueError` becomes the refusal; rows for each |
+| 22 | MINOR | proof | The transient counter-example has no 5xx outside the set: adding 501 or 505 (or 409) to `TRANSIENT_STATUSES` stays green | `test_retries.py` | 409, 501, 505 in the counter-example |
+| 23 | MINOR | proof, defects | Finding 7 half done: the frame's Failure and Cost rows still say "a deadline on every call" and "x (1 + `MODEL_RETRIES`) per call"; design's Budgets say "per call" -- a model that sends a chunk every 119 s is never cut off | `frame.md:67-68`; `design.md:85-86` | Reword: per wait, per turn |
+| 24 | MINOR | proof | The retry timing is unclaimed -- the factory could pass any delay or backoff and stay green -- and design still says the middleware's defaults apply | `factory.py`; `design.md:37-39` | Record it in the design: passed from the domain, not asserted (the middleware's jitter is random) |
+| 25 | MINOR | defects | A permanent connection failure -- a self-signed certificate -- is retried like a transient one: three handshakes, ~10 s, then "Connection error." naming no URL. The code matches MODEL-TRANSIENT-FAILURES; the requirement is broad | `models.py:93` | Recorded: accepted for now (below) |
+| 26 | MINOR | defects | A streamed attempt cut off mid-answer and retried leaves its partial text in the `messages` stream under its own id; the final state holds only the retried answer (reproduced) | `models.py:88` | Recorded: accepted for now (below) |
+| 27 | MINOR | defects | The models check misses `init_chat_model` imported under another name, and flags any `langchain_*` class as a model -- `Chroma()` in a store would fail the build | `contract.py:55, 436, 453` | Track aliases of the inline builders; provider classes only by the chat-model name pattern |
+
+Also noted, not counted: on Windows a child started with `env=None` sees an
+empty variable as absent, and would fall back to the owner's `.env` -- every
+subprocess the tests start passes `env`, and empty values were probed through
+Python, Git bash and `uv run`; the server's log renders tracebacks without
+frame locals, so the key in `choose_model`'s locals is not printed.
+
+**Pass 2 verdict:** DO NOT SHIP -- 18 and 19 are MAJOR. Fixed in a separate
+commit with the MINORs, and that diff is read in pass 3.
+
+## Not checked -- pass 2
+
+- The placement lens (`architecture-guardian`): not re-run on the fix diff;
+  pass 3 runs all three lenses over the whole change.
+- A live run through Open WebUI: `.env` does not configure it yet.
