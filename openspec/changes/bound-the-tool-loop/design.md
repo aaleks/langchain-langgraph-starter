@@ -36,6 +36,8 @@ returns.
   transient, so it propagates.
 - **The prompt is sent, not stored.** `create_agent` puts it in each request;
   the thread's state holds no system message.
+- **Both paths, sync and async.** The local server runs graphs with `astream`. A middleware with only `wrap_model_call` raises `NotImplementedError` there, so `ContextBudget` implements `awrap_model_call` too. `after_model` runs on both paths as it is (measured), and the default suite exercises the async path.
+- **The middleware's order matters.** `after_model` hooks run last-first. `AnswerInvalidCalls` is listed first, so its jump back to the model comes after the model-call budget has counted the turn. Listed last, an endless malformed reply looped past the budget (measured: 13 calls in 40 steps).
 - **The step ceiling** moves again with the new `after_model` node. Measured:
   60 supersteps end at the ceiling, 61 in the budget's error
   (ASSISTANT-MODEL-CALL-BUDGET, modified).

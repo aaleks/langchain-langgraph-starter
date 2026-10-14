@@ -20,7 +20,6 @@ results.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -32,6 +31,7 @@ from starter.config.settings import settings_from_process
 from starter.domain.models import choose_model
 from starter.domain.tasks import new_task
 from starter.infrastructure.agents.factory import build_assistant
+from starter.infrastructure.agents.middleware import call_chars
 from starter.infrastructure.agents.tools import list_tasks, search_tasks
 from starter.infrastructure.models import build_model, is_transient_failure
 from starter.infrastructure.stores.tasks import TaskStore
@@ -58,18 +58,6 @@ SEED = [
 ] + [(f"Archive old document batch {n}", "", "Scan, name and file. " * 30) for n in range(1, 21)]
 
 
-def message_chars(batch: list) -> int:
-    """What one model call is sent, counted the way the assistant's budget will
-    count it: every message's text, and every tool call's arguments."""
-    total = 0
-    for message in batch:
-        content = message.content
-        total += len(content if isinstance(content, str) else json.dumps(content))
-        for call in getattr(message, "tool_calls", None) or []:
-            total += len(json.dumps(call.get("args", {})))
-    return total
-
-
 class Recorder(BaseCallbackHandler):
     def __init__(self) -> None:
         self.model_calls = 0
@@ -78,7 +66,7 @@ class Recorder(BaseCallbackHandler):
 
     def on_chat_model_start(self, serialized, messages, **kwargs) -> None:
         self.model_calls += 1
-        self.largest_input = max(self.largest_input, max(message_chars(b) for b in messages))
+        self.largest_input = max(self.largest_input, max(call_chars(b) for b in messages))
 
     def on_tool_start(self, serialized, input_str, **kwargs) -> None:
         self.tool_calls += 1

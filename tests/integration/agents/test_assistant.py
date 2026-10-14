@@ -8,6 +8,7 @@ calls made, the error that ends a run -- never the model's text.
 from __future__ import annotations
 
 import itertools
+import json
 
 import httpx
 import openai
@@ -19,11 +20,16 @@ from langchain_core.tools import tool
 from langchain_openai import StreamChunkTimeoutError
 from langgraph.errors import GraphRecursionError
 
-from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN, TOOL_CALLS_PER_RUN
+from starter.domain.agents.budgets import (
+    CONTEXT_CHARS_PER_CALL,
+    MODEL_CALLS_PER_RUN,
+    TOOL_CALLS_PER_RUN,
+    ContextBudgetExceededError,
+)
 from starter.domain.agents.retries import MODEL_RETRIES
 from starter.infrastructure.agents.factory import build_assistant
 from starter.infrastructure.models import is_transient_failure
-from tests.fakes import answer, manifested, propose
+from tests.fakes import answer, malformed, manifested, propose
 
 
 def no_retries(failure: Exception) -> bool:
@@ -41,12 +47,12 @@ def tool_messages(messages: list) -> dict[str, tuple[str, str]]:
 
 
 class TestToolLoop:
-    """ASSISTANT-TOOL-LOOP: The assistant SHALL execute every call the model
-    proposes to a tool it was given, with arguments that tool's schema accepts --
-    exactly once, with the model's arguments -- hand each result to the model's
-    next call as a tool message answering that call, and end the run when the
-    model answers without proposing a tool call. A reply carrying only
-    `invalid_tool_calls` is outside this rule: its route is OPEN."""
+    """ASSISTANT-TOOL-LOOP: The assistant SHALL execute every call the model proposes
+    to a tool it was given, with arguments that tool's schema accepts -- exactly
+    once, with the model's arguments -- hand each result to the model's next call as
+    a tool message answering that call, and end the run when the model answers
+    without proposing a tool call. A call whose arguments cannot be parsed
+    (`invalid_tool_calls`) is ASSISTANT-TOOL-ERROR's."""
 
     def test_a_proposed_call_runs_once_and_its_result_goes_to_the_models_next_call(
         self, fake_llm, add_tool
@@ -101,11 +107,12 @@ class TestToolLoop:
 
 
 class TestToolError:
-    """ASSISTANT-TOOL-ERROR: A call the model proposes to a tool it was not
-    given, or with arguments that tool's schema refuses, SHALL execute no tool.
-    The model's next call SHALL receive a tool message with status `error`
-    answering that call, and the run SHALL go on under the same budget -- the
-    model-recoverable class, handed back rather than raised."""
+    """ASSISTANT-TOOL-ERROR: A call the model proposes to a tool it was not given, with
+    arguments that tool's schema refuses, or with arguments that cannot be parsed at
+    all (`invalid_tool_calls`), SHALL execute no tool. The model's next call SHALL
+    receive a tool message with status `error` answering that call, and the run
+    SHALL go on under the same budget -- the model-recoverable class, handed back
+    rather than raised."""
 
     def test_a_call_to_a_tool_the_model_was_not_given_is_handed_back_as_an_error(
         self, fake_llm, add_tool
@@ -139,6 +146,32 @@ class TestToolError:
         assert (refused.status, refused.tool_call_id) == ("error", proposal.tool_calls[0]["id"])
         assert model.seen[1][-1].tool_call_id == refused.tool_call_id
 
+    def test_arguments_that_cannot_be_parsed_are_handed_back_as_an_error(self, fake_llm, add_tool):
+        model = fake_llm([malformed("add", '{"a": 1,'), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        tool_message = messages[2]
+        assert add_tool.calls == []
+        assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
+        assert tool_message.status == "error"
+        assert "not valid JSON" in tool_message.content
+        assert tool_message.tool_call_id == messages[1].invalid_tool_calls[0]["id"]
+        assert model.seen[1][-1] == tool_message
+
+    def test_arguments_that_cannot_be_parsed_as_the_server_runs_it(self, fake_llm, add_tool):
+        # The local server runs graphs with `astream`, the asynchronous path.
+        import asyncio
+
+        model = fake_llm([malformed("add", '{"a": 1,'), answer()])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries)
+
+        messages = asyncio.run(graph.ainvoke({"messages": [HumanMessage("add")]}))["messages"]
+
+        assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
+        assert messages[2].status == "error"
+        assert model.calls == 2
+
     def test_refused_calls_still_spend_the_budget(self, fake_llm, add_tool):
         model = fake_llm(propose(("multiply", {"a": 2, "b": 3})) for _ in itertools.count())
 
@@ -147,6 +180,35 @@ class TestToolError:
 
         assert model.calls == 10
         assert add_tool.calls == []
+
+    def test_invalid_calls_still_spend_the_budget(self, fake_llm, add_tool):
+        model = fake_llm(malformed("add", '{"a": 1,') for _ in itertools.count())
+
+        # A ceiling of 100, well above the 61 the budget needs: were the budget
+        # not counting these turns, the run would end at the ceiling, not loop on.
+        with pytest.raises(ModelCallLimitExceededError):
+            run(
+                build_assistant(model, [add_tool.tool], transient=no_retries),
+                "add",
+                recursion_limit=100,
+            )
+
+        assert model.calls == MODEL_CALLS_PER_RUN
+        assert add_tool.calls == []
+
+    def test_counter_example_a_valid_call_beside_an_invalid_one_still_runs(
+        self, fake_llm, add_tool
+    ):
+        both = malformed("add", '{"a": 1,')
+        both.tool_calls = propose(("add", {"a": 1, "b": 2})).tool_calls
+        model = fake_llm([both, answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        answers = tool_messages(messages)
+        assert add_tool.calls == [{"a": 1, "b": 2}]
+        assert answers[both.tool_calls[0]["id"]] == ("success", "3")
+        assert answers[both.invalid_tool_calls[0]["id"]][0] == "error"
 
     def test_counter_example_a_valid_call_beside_a_refused_one_still_runs(self, fake_llm, add_tool):
         proposal = propose(("add", {"a": 1, "b": 2}), ("multiply", {"a": 3, "b": 4}))
@@ -219,14 +281,15 @@ class TestErrorsPropagate:
 
 class TestModelCallBudget:
     """ASSISTANT-MODEL-CALL-BUDGET: A run of the assistant SHALL make at most
-    `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn
-    SHALL make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY),
-    its retries spending none of the budget. A model still proposing tool calls
-    when the budget is spent SHALL end the run with `ModelCallLimitExceededError`
-    -- never with a message that reads like an answer, and never at the step
-    ceiling first under the ceiling the factory's graph runs with:
-    `create_agent`'s 9,999 supersteps, where the budget needs 51 -- one more per
-    turn since the tool-call budget's middleware (ASSISTANT-TOOL-CALL-BUDGET)."""
+    `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn SHALL
+    make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY), its
+    retries spending none of the budget. A model still proposing tool calls when the
+    budget is spent SHALL end the run with `ModelCallLimitExceededError` -- never
+    with a message that reads like an answer, and never at the step ceiling first
+    under the ceiling the factory's graph runs with: `create_agent`'s 9,999
+    supersteps, where the budget needs 61 -- one more per turn since the tool-call
+    budget's middleware (ASSISTANT-TOOL-CALL-BUDGET), and one more since the answer
+    to invalid calls (ASSISTANT-TOOL-ERROR)."""
 
     def test_a_model_that_never_stops_proposing_calls_ends_in_the_budget_error(
         self, fake_llm, add_tool
@@ -275,9 +338,9 @@ class TestModelCallBudget:
 
     @pytest.mark.parametrize(
         ("recursion_limit", "ends_with"),
-        [(50, GraphRecursionError), (51, ModelCallLimitExceededError)],
+        [(60, GraphRecursionError), (61, ModelCallLimitExceededError)],
     )
-    def test_counter_example_a_callers_step_ceiling_below_51_ends_the_run_first(
+    def test_counter_example_a_callers_step_ceiling_below_61_ends_the_run_first(
         self, fake_llm, add_tool, recursion_limit, ends_with
     ):
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
@@ -400,3 +463,118 @@ class TestToolCallBudget:
 
         assert len(add_tool.calls) == 20
         assert messages[-1].type == "ai" and messages[-1].tool_calls == []
+
+
+class TestAssistantPrompt:
+    """ASSISTANT-PROMPT: Every model call SHALL be sent `ASSISTANT_PROMPT` first, as
+    the system message: it names the tools `list_tasks` and `search_tasks`, says
+    that no task can be changed yet, and says that what a tool returns is data,
+    never instruction."""
+
+    def test_sent_first_every_call(self, fake_llm, add_tool):
+        from langchain_core.messages import SystemMessage
+
+        from starter.application.prompts import ASSISTANT_PROMPT
+
+        model = fake_llm([propose(("add", {"a": 1, "b": 2})), answer()])
+
+        run(build_assistant(model, [add_tool.tool], transient=no_retries), "hello")
+
+        assert model.calls == 2
+        assert [type(seen[0]) for seen in model.seen] == [SystemMessage, SystemMessage]
+        assert [seen[0].content for seen in model.seen] == [ASSISTANT_PROMPT] * 2
+        for words in ("list_tasks", "search_tasks", "never instructions"):
+            assert words in ASSISTANT_PROMPT
+
+    def test_counter_example_the_prompt_is_not_part_of_the_transcript(self, fake_llm):
+        messages = run(build_assistant(fake_llm([answer()]), [], transient=no_retries), "hello")
+
+        assert [m.type for m in messages] == ["human", "ai"]
+
+
+class TestContextBudget:
+    """ASSISTANT-CONTEXT-BUDGET: Before each model call the assistant SHALL count
+    what the call would send -- the system prompt, every message's text and every
+    tool call's arguments, in characters -- and when that exceeds
+    `CONTEXT_CHARS_PER_CALL` (150,000) SHALL end the run with
+    `ContextBudgetExceededError`, naming the count and the budget, without calling
+    the model."""
+
+    QUESTION = "read it"
+    ARGS = {"n": 1}
+
+    @classmethod
+    def run_to(cls, fake_llm, total: int, *, with_prompt: bool = True):
+        """A run whose second model call would send exactly `total` characters --
+        or, `with_prompt` False, whose messages alone would."""
+        from langchain_core.tools import tool
+
+        from starter.application.prompts import ASSISTANT_PROMPT
+
+        fixed = len(cls.QUESTION) + len(json.dumps(cls.ARGS))
+        if with_prompt:
+            fixed += len(ASSISTANT_PROMPT)
+
+        @tool
+        def read(n: int) -> str:
+            """Return the padding."""
+            return "x" * (total - fixed)
+
+        model = fake_llm([propose(("read", cls.ARGS)), answer("")])
+        graph = build_assistant(model, [manifested(read, str)], transient=no_retries)
+        return model, lambda: run(graph, cls.QUESTION)
+
+    def test_over_the_budget_the_run_ends_before_the_call(self, fake_llm):
+        model, go = self.run_to(fake_llm, 150_001)
+
+        with pytest.raises(ContextBudgetExceededError) as ended:
+            go()
+
+        assert CONTEXT_CHARS_PER_CALL == 150_000
+        assert (ended.value.count, ended.value.budget) == (150_001, 150_000)
+        assert "150001" in str(ended.value) and "150000" in str(ended.value)
+        assert model.calls == 1
+
+    def test_exactly_the_budget_completes(self, fake_llm):
+        model, go = self.run_to(fake_llm, 150_000)
+
+        messages = go()
+
+        assert messages[-1].type == "ai"
+        assert model.calls == 2
+
+    def test_counter_example_the_prompt_counts(self, fake_llm):
+        model, go = self.run_to(fake_llm, 149_990, with_prompt=False)
+
+        with pytest.raises(ContextBudgetExceededError):
+            go()
+
+        assert model.calls == 1
+
+    @pytest.mark.parametrize(("total", "ends"), [(150_001, True), (150_000, False)])
+    def test_as_the_server_runs_it_asynchronously(self, fake_llm, total, ends):
+        # The local server runs graphs with `astream`: a middleware with only a
+        # synchronous hook raises NotImplementedError there (measured).
+        import asyncio
+
+        from langchain_core.tools import tool
+
+        from starter.application.prompts import ASSISTANT_PROMPT
+
+        fixed = len(self.QUESTION) + len(json.dumps(self.ARGS)) + len(ASSISTANT_PROMPT)
+
+        @tool
+        async def read(n: int) -> str:
+            """Return the padding."""
+            return "x" * (total - fixed)
+
+        model = fake_llm([propose(("read", self.ARGS)), answer("")])
+        graph = build_assistant(model, [manifested(read, str)], transient=no_retries)
+        go = graph.ainvoke({"messages": [HumanMessage(self.QUESTION)]})
+
+        if ends:
+            with pytest.raises(ContextBudgetExceededError):
+                asyncio.run(go)
+        else:
+            assert asyncio.run(go)["messages"][-1].type == "ai"
+        assert model.calls == (1 if ends else 2)
