@@ -1,8 +1,10 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 2 (one MAJOR). First fix: never stream a
-  call with tools bound (finding 14). Pass 1: DO NOT SHIP (four MAJOR).
-- **Reviewed at:** pass 2: `26d897b`, the fix diff `d604dee..26d897b`. Pass
+- **Verdict:** DO NOT SHIP -- pass 3 (one MAJOR). First fix: size the timeout
+  for a whole reply (finding 25). Pass 2: DO NOT SHIP (one MAJOR). Pass 1: DO
+  NOT SHIP (four MAJOR).
+- **Reviewed at:** pass 3: `476b80e`, the fix diff `bceaebe..476b80e`. Pass
+  2: `26d897b`, the fix diff `d604dee..26d897b`. Pass
   1: `d941831`, the whole change (`git diff
   main..d941831`), committed before the lenses read it.
 - **Evidence (pass 1):**
@@ -100,3 +102,41 @@ commit with the MINORs, and that diff is read in pass 3.
 ## Not checked -- pass 2
 
 - The live measurement by a lens: it calls a paid model.
+
+## Pass 3 -- the fix diff `bceaebe..476b80e`
+
+- **Evidence:** `bash scripts/check.sh live` at `476b80e`:
+  - Every check passed; suite 281, live 9.
+  - Six pass-2 mutations red (tasks.md 7.5).
+  - The measurement: at most 344 output tokens a reply (N = 20).
+- **Lenses:** fresh context, over the fix diff:
+  - proof (`spec-compliance`): 13 mutations, 10 red and 3 survived;
+  - defects (`code-reviewer`);
+  - capabilities (`agent-capability-auditor`): the stall is gone on every
+    path, against a control that streams. Every request with tools went out
+    with `stream: false`.
+- **After the lenses, a measurement by the agent** -- one non-streamed reply
+  of about 1,200 tokens from each model:
+
+  | Model | Speed | A full 4,096-token reply |
+  |---|---|---|
+  | `qwen3:1.7b` (local) | 15.8 tokens/s | about 259 s |
+  | `gpt-5.4-mini` (cloud) | 260.4 tokens/s | about 16 s |
+
+  Both report usage on a non-streamed reply.
+- **Pass 2 resolved:** 14-23 fixed, 24 accepted.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 25 | MAJOR | defects, capabilities | Not streaming calls with tools turns the 120 s timeout into a bound on the whole reply. A healthy local model writing a long reply -- 259 s at the cap, measured -- times out and is regenerated twice, ending in a timeout. The comments say the opposite | `budgets.py`; `models.py` | The timeout sized from the measurement, for a whole capped reply on the slower model; the comments and the requirement say what it bounds; the per-run time stated |
+| 26 | MINOR | defects | Leaving a reply with an id-less call unanswered stores it as it is: the next turn sends that call with no answer, and the endpoint refuses every later turn on the thread | `middleware.py` | Store the reply without its unanswerable calls; a row with a second turn |
+| 27 | MINOR | proof | `== cap` in place of `>= cap` stays green: no row past the cap. The error's text is no longer checked. The id-less call is always last in the fixture | `test_assistant.py` | Rows: 4,097 tokens; the exact message; the id-less call first or last |
+| 28 | MINOR | capabilities | That a graph run sends `stream: false` is proved by an attribute, not by a request | `test_models.py` | The registered graph streamed against the stand-in, the request read |
+| 29 | MINOR | defects | The script records a reply with no usage as 0 output tokens | script | None, outside N |
+
+**Pass 3 verdict:** DO NOT SHIP -- 25 is MAJOR. It is fixed in a separate
+commit with the MINORs, and that diff is read in pass 4.
+
+## Not checked -- pass 3
+
+- The number 344 by a lens: it needs the paid script.
