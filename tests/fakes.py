@@ -32,6 +32,38 @@ def propose(*calls: tuple[str, dict[str, Any]]) -> AIMessage:
     )
 
 
+def malformed(
+    name: str,
+    raw_arguments: str,
+    *,
+    count: int = 1,
+    with_id: bool = True,
+    content: str = "",
+    recorded_error: bool = True,
+) -> AIMessage:
+    """An AI message proposing `count` calls of `name` whose arguments cannot be
+    parsed, as langchain-core records them from a model's reply: invalid tool
+    calls -- each with an id, unless `with_id` is False, and with a parse error
+    recorded, unless `recorded_error` is False: a streamed reply records none."""
+    return AIMessage(
+        content=content,
+        invalid_tool_calls=[
+            {
+                "name": name,
+                "args": raw_arguments,
+                "id": f"call_{next(_call_ids)}" if with_id else None,
+                "error": (
+                    f"Function {name} arguments:\n\n{raw_arguments}\n\nare not valid JSON."
+                    if recorded_error
+                    else None
+                ),
+                "type": "invalid_tool_call",
+            }
+            for _ in range(count)
+        ],
+    )
+
+
 def answer(text: str = "done") -> AIMessage:
     """An AI message proposing no tool call. Its text is never asserted."""
     return AIMessage(content=text)

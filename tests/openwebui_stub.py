@@ -26,18 +26,24 @@ def tool_call(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
     return {"name": name, "arguments": arguments or {}}
 
 
-def _message(reply: str | dict[str, Any], number: int) -> dict[str, Any]:
+Reply = str | dict[str, Any] | list[dict[str, Any]]
+
+
+def _message(reply: Reply, number: int) -> dict[str, Any]:
+    """Text, one `tool_call(...)`, or a list of them proposed in one turn."""
     if isinstance(reply, str):
         return {"role": "assistant", "content": reply}
+    calls = reply if isinstance(reply, list) else [reply]
     return {
         "role": "assistant",
         "content": None,
         "tool_calls": [
             {
-                "id": f"call_stub_{number}",
+                "id": f"call_stub_{number}_{index}",
                 "type": "function",
-                "function": {"name": reply["name"], "arguments": json.dumps(reply["arguments"])},
+                "function": {"name": call["name"], "arguments": json.dumps(call["arguments"])},
             }
+            for index, call in enumerate(calls)
         ],
     }
 
@@ -49,9 +55,7 @@ class Stub:
 
 
 @contextmanager
-def openwebui_stub(
-    failures: Iterable[int] = (), replies: Iterable[str | dict[str, Any]] = ()
-) -> Iterator[Stub]:
+def openwebui_stub(failures: Iterable[int] = (), replies: Iterable[Reply] = ()) -> Iterator[Stub]:
     """`failures`: HTTP statuses to answer the first requests with, in order.
     `replies`: what the requests after them are answered with, in order -- text,
     or a `tool_call(...)` -- then `STUB_ANSWER` for every one after those."""

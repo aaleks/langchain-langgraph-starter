@@ -59,19 +59,24 @@ durability, safety) arrives in the slice whose requirement asks for it.
      - A tool-call budget of 20 per run.
      - What one read hands the model is bounded, whatever wrote the file:
        132,713 characters measured.
-   - **3b** (structural):
-     - `MODEL_CALLS_PER_RUN` and `TOOL_CALLS_PER_RUN` re-measured against real
-       runs with tools.
-     - A decision on `invalid_tool_calls` (moved from slice 2: no tool, no
-       malformed call).
-     - A run's budget on what reaches the model, with a terminal outcome. A
-       read is bounded, a run is not (3a, frame.md question 6; review by
-       2026-10-31).
-     - Task text and tool output as **untrusted data, never instruction**,
-       with an adversarial case asserting no unauthorised effect.
+   - **3b, `bound-the-tool-loop`** (#10) -- landed after four verify passes.
+     Every route of the tool loop now ends in a stated outcome:
+     - The budgets were measured on the owner's model: N = 20 on
+       `gpt-5.4-mini`, at most 2 turns, 2 calls, 16,582 characters and 344
+       output tokens. `scripts/measure_tool_loop.py` re-runs it.
+     - A malformed call goes back to the model, never ends the run as an
+       empty answer.
+     - A model call is limited to 150,000 characters.
+     - A reply is capped at 4,096 tokens, and a cut-off reply ends the run.
+       A local Ollama model needs `num_predict` set in Open WebUI.
+     - Calls carrying tools are not streamed: streamed arguments are
+       re-parsed worse than linearly. The timeout of 300 s covers a whole
+       reply.
+     - A short prompt is sent first. Task text giving orders is proved to
+       change nothing.
 
-     It needs the owner's Open WebUI answering: `OPENWEBUI_MODEL` must be a
-     model id it lists.
+     Not done: search by assignee -- the measurement found it missing, and
+     it would be a change of its own.
 4. **Approval-gated writes** (structural). Create, close and reassign, each
    proposed by the model and executed only after the person approves:
    `interrupt()` with the proposal as payload, `Command(resume=...)` on the

@@ -17,7 +17,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from starter.config.settings import Settings
-from starter.domain.agents.budgets import MODEL_CALL_TIMEOUT_SECONDS
+from starter.domain.agents.budgets import MODEL_CALL_TIMEOUT_SECONDS, MODEL_OUTPUT_TOKENS
 from starter.domain.agents.retries import is_transient
 from starter.domain.models import api_base, choose_model
 
@@ -40,9 +40,10 @@ def build_model(settings: Settings) -> BaseChatModel:
 def build_openwebui_model(settings: Settings) -> BaseChatModel:
     """An OpenAI-compatible client addressed to Open WebUI's `/api`.
 
-    - `timeout` and `stream_chunk_timeout`: the domain's wait, on every request
-      and on every streamed chunk -- the server streams, and langchain-openai's
-      own chunk timer would otherwise apply.
+    - `timeout` and `stream_chunk_timeout`: the domain's wait. A call carrying
+      tools is not streamed (`disable_streaming`, below), so for it the wait is
+      the whole reply; a call without tools streams, and the chunk timer -- else
+      langchain-openai's own -- applies to each chunk.
     - `max_retries=0`: the openai client would otherwise retry twice on its own,
       under the assistant's policy (ModelRetryMiddleware in the factory).
     - `use_responses_api=False`: some model ids switch ChatOpenAI to
@@ -61,6 +62,13 @@ def build_openwebui_model(settings: Settings) -> BaseChatModel:
         model=settings.openwebui_model,
         timeout=MODEL_CALL_TIMEOUT_SECONDS,
         stream_chunk_timeout=MODEL_CALL_TIMEOUT_SECONDS,
+        # Open WebUI honours it: a capped reply comes back with finish_reason
+        # `length` (checked on the owner's server); ASSISTANT-OUTPUT-BUDGET.
+        max_tokens=MODEL_OUTPUT_TOKENS,
+        # A streamed call's arguments are re-parsed at every chunk, worse than
+        # linearly: 2,000 characters that never repair took 3.2 s, blocking the
+        # server (measured). The assistant's calls always carry tools.
+        disable_streaming="tool_calling",
         max_retries=0,
         use_responses_api=False,
     )

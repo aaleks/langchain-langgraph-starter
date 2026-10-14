@@ -14,12 +14,18 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
+from starter.application.prompts import ASSISTANT_PROMPT
 from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN, TOOL_CALLS_PER_RUN
 from starter.domain.agents.capabilities import check_capability
 from starter.domain.agents.retries import (
     MODEL_RETRIES,
     RETRY_BACKOFF_FACTOR,
     RETRY_INITIAL_DELAY_SECONDS,
+)
+from starter.infrastructure.agents.middleware import (
+    AnswerInvalidCalls,
+    ContextBudget,
+    OutputBudget,
 )
 
 
@@ -59,4 +65,21 @@ def build_assistant(
         initial_delay=initial_delay,
         backoff_factor=RETRY_BACKOFF_FACTOR,
     )
-    return create_agent(model=model, tools=list(tools), middleware=[budget, tool_budget, retry])
+    return create_agent(
+        model=model,
+        tools=list(tools),
+        system_prompt=ASSISTANT_PROMPT,
+        # AnswerInvalidCalls first: `after_model` hooks run last-first, and its
+        # jump back to the model must come after the budget has counted the turn
+        # -- placed last, an endless malformed reply loops past the budget.
+        # OutputBudget next: it runs before AnswerInvalidCalls, so a call cut off
+        # at the cap ends the run rather than being handed back.
+        middleware=[
+            AnswerInvalidCalls(),
+            OutputBudget(),
+            budget,
+            tool_budget,
+            retry,
+            ContextBudget(),
+        ],
+    )
