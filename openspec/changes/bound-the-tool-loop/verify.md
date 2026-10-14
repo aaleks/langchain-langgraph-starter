@@ -1,8 +1,9 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 1 (four MAJOR). First fix: count every
-  argument a call sends, malformed calls' included (finding 1).
-- **Reviewed at:** pass 1: `d941831`, the whole change (`git diff
+- **Verdict:** DO NOT SHIP -- pass 2 (one MAJOR). First fix: never stream a
+  call with tools bound (finding 14). Pass 1: DO NOT SHIP (four MAJOR).
+- **Reviewed at:** pass 2: `26d897b`, the fix diff `d604dee..26d897b`. Pass
+  1: `d941831`, the whole change (`git diff
   main..d941831`), committed before the lenses read it.
 - **Evidence (pass 1):**
   - `bash scripts/check.sh live` at `d941831`: every check passed; suite 266,
@@ -48,3 +49,54 @@ commit with the MINORs, and that diff is read in pass 2.
 - An evaluated score for resisting prompt injection: a non-goal (frame.md).
 - The live measurement with a lens: it calls a paid model, and only the
   agent runs it.
+
+## Pass 2 -- the fix diff `d604dee..26d897b`
+
+- **Evidence:** `bash scripts/check.sh live` at `26d897b`:
+  - Every check passed; suite 277, live 9.
+  - Ten pass-1 mutations red (tasks.md 6.7).
+  - The measurement re-run through `task_tools`: N = 20, unchanged maxima.
+- **Lenses:** fresh context, over the fix diff:
+  - proof (`spec-compliance`): 18 mutations, 15 red and 3 survived;
+  - defects (`code-reviewer`);
+  - capabilities (`agent-capability-auditor`), which drove the real
+    `ChatOpenAI` against a fake OpenAI server, invoked and streamed.
+
+  The proof lens's scratch venv broke on Windows' path length. While it was
+  replacing it, one chained command ran `uv sync -q` and a read-only pytest
+  in the repository. The repository was left clean.
+- **After the lenses, checks by the agent:**
+  - On the owner's server, `qwen3:1.7b` -- an Ollama model -- ignored the
+    cap. Sent as `max_completion_tokens` or as `max_tokens`, it wrote 1,272
+    and 1,694 tokens and reported `stop`. Only `options.num_predict` capped it
+    (20 tokens), and it still reported `stop`.
+  - The cloud route refuses `options` (400) and honours the cap, streamed
+    too: `length`, with 20 output tokens reported.
+  - Merging streamed chunks of arguments that never repair took 0.14 s for
+    500 characters, 0.58 s for 1,000 and 3.19 s for 2,000. That confirms
+    finding 14.
+- **Pass 1 resolved:**
+  - 1-4, 6, 9 and 13 fixed and proved.
+  - 5, 7 and 8 fixed in code but only partly proved (below).
+  - 10-12 recorded.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 14 | MAJOR | capabilities | A streamed reply's tool-call arguments are re-parsed at every chunk merge, worse than linearly. Arguments that never repair stall the event loop: 2,000 characters took 3.2-8.1 s, and a capped reply can be about 16,000. No budget covers time | `models.py`; langchain-core | Never stream a call that has tools bound (`disable_streaming="tool_calling"`), proved on the client |
+| 15 | MINOR | defects | The output cap holds only where the backend honours it. An Ollama model behind Open WebUI ignores it, and reports `stop` even when capped by its own `num_predict` | `middleware.py`; `models.py` | A reply whose output tokens reach the cap counts as cut off too. A local model needs `num_predict` set in Open WebUI (`.env.example`). The requirement says so |
+| 16 | MINOR | defects | The 4,096 cap is unmeasured, and on a reasoning model it counts hidden reasoning tokens | `budgets.py` | Record output tokens in the measurement, and re-run it |
+| 17 | MINOR | proof | The retry-predicate row cannot fail: the budget refuses before the model either way | `test_assistant.py` | Assert the predicate itself: neither budget error is transient |
+| 18 | MINOR | proof | "Streamed or not" is unproved: every fixture carries an error | `test_assistant.py` | A row with no error recorded, the same sentence |
+| 19 | MINOR | proof | "Naming the cap" is a substring check: 40960 contains 4096 | `test_assistant.py` | `ended.value.cap == 4096` |
+| 20 | MINOR | proof | "Every call asks for at most 4,096" is proved only by MODEL-OPENWEBUI-CLIENT's test | spec | The cap is the client's requirement; the output budget names it |
+| 21 | MINOR | capabilities | The cap test checks the client's attribute, not the request it sends | `test_models.py` | Assert the request's `max_completion_tokens` |
+| 22 | MINOR | defects | A malformed call without an id beside one with an id: the answered one jumps back, and the request then holds an unanswered call, which the endpoint refuses | `middleware.py` | Answer none unless every malformed call has an id; a row |
+| 23 | MINOR | capabilities, defects, proof | The script's maxima leave out runs that ended in a budget error, under an N for every run. The worst case per run is stated in characters, not the tokens adversarial text could reach, and the output's is not stated. `.env.example` misses Open WebUI's global filters | script; `budgets.py`; `.env.example` | N per statistic; both worst cases stated; filters named |
+| 24 | MINOR | proof | `check_context_chars` has no unit test of its own, and the fallback name "the tool" is untested | `budgets.py`; `middleware.py` | Accepted: the domain function is proved through ASSISTANT-CONTEXT-BUDGET's tests, and a call always carries a name from Open WebUI |
+
+**Pass 2 verdict:** DO NOT SHIP -- 14 is MAJOR. It is fixed in a separate
+commit with the MINORs, and that diff is read in pass 3.
+
+## Not checked -- pass 2
+
+- The live measurement by a lens: it calls a paid model.
