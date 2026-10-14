@@ -6,6 +6,11 @@ from __future__ import annotations
 # by the first change that installs a provider (docs/decisions/0005).
 MODEL_CALLS_PER_RUN = 10
 
+# Tool calls a run may execute, every tool together: a turn that would pass it
+# ends the run with an error, none of its calls run. A starting policy, twice
+# the model turns; re-measured against real runs with tools (slice 3b).
+TOOL_CALLS_PER_RUN = 20
+
 # How long the assistant waits on the model at any one point -- to connect, for
 # the next part of an answer, for the next streamed chunk -- before abandoning
 # the call as timed out, and so transient (retries.py). Not a cap on a whole

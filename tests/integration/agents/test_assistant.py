@@ -13,16 +13,17 @@ import httpx
 import openai
 import pytest
 from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from langchain_openai import StreamChunkTimeoutError
 from langgraph.errors import GraphRecursionError
 
-from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN
+from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN, TOOL_CALLS_PER_RUN
 from starter.domain.agents.retries import MODEL_RETRIES
 from starter.infrastructure.agents.factory import build_assistant
 from starter.infrastructure.models import is_transient_failure
-from tests.fakes import answer, propose
+from tests.fakes import answer, manifested, propose
 
 
 def no_retries(failure: Exception) -> bool:
@@ -180,7 +181,7 @@ class TestErrorsPropagate:
         model = fake_llm([propose(("explode", {"a": 1})), answer()])
 
         with pytest.raises(RuntimeError) as raised:
-            run(build_assistant(model, [explode], transient=no_retries), "explode")
+            run(build_assistant(model, [manifested(explode)], transient=no_retries), "explode")
 
         assert raised.value is failure
         assert model.calls == 1
@@ -206,7 +207,9 @@ class TestErrorsPropagate:
         proposal = propose(("explain", {"a": 1}))
         model = fake_llm([proposal, answer()])
 
-        messages = run(build_assistant(model, [explain], transient=no_retries), "explain")
+        messages = run(
+            build_assistant(model, [manifested(explain, str)], transient=no_retries), "explain"
+        )
 
         assert tool_messages(messages) == {
             proposal.tool_calls[0]["id"]: ("success", "error: nothing to explain")
@@ -222,7 +225,8 @@ class TestModelCallBudget:
     when the budget is spent SHALL end the run with `ModelCallLimitExceededError`
     -- never with a message that reads like an answer, and never at the step
     ceiling first under the ceiling the factory's graph runs with:
-    `create_agent`'s 9,999 supersteps, where the budget needs 41."""
+    `create_agent`'s 9,999 supersteps, where the budget needs 51 -- one more per
+    turn since the tool-call budget's middleware (ASSISTANT-TOOL-CALL-BUDGET)."""
 
     def test_a_model_that_never_stops_proposing_calls_ends_in_the_budget_error(
         self, fake_llm, add_tool
@@ -271,9 +275,9 @@ class TestModelCallBudget:
 
     @pytest.mark.parametrize(
         ("recursion_limit", "ends_with"),
-        [(40, GraphRecursionError), (41, ModelCallLimitExceededError)],
+        [(50, GraphRecursionError), (51, ModelCallLimitExceededError)],
     )
-    def test_counter_example_a_callers_step_ceiling_below_41_ends_the_run_first(
+    def test_counter_example_a_callers_step_ceiling_below_51_ends_the_run_first(
         self, fake_llm, add_tool, recursion_limit, ends_with
     ):
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
@@ -357,3 +361,42 @@ class TestTransientRetry:
 
         assert raised.value.status_code == code
         assert model.calls == 1
+
+
+class TestToolCallBudget:
+    """ASSISTANT-TOOL-CALL-BUDGET: A run SHALL execute at most `TOOL_CALLS_PER_RUN`
+    (20) tool calls: a turn whose proposed calls would take the run past it SHALL
+    end the run with an error naming the run's limit, none of that turn's calls
+    executed."""
+
+    @staticmethod
+    def turns(per_turn: int, count: int) -> list:
+        return [propose(*[("add", {"a": 1, "b": 2})] * per_turn) for _ in range(count)]
+
+    def test_four_calls_a_turn_for_five_turns_completes(self, fake_llm, add_tool):
+        model = fake_llm([*self.turns(4, 5), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert TOOL_CALLS_PER_RUN == 20
+        assert len(add_tool.calls) == 20
+        assert messages[-1].type == "ai" and messages[-1].tool_calls == []
+
+    def test_a_turn_that_would_pass_the_budget_ends_the_run_none_of_its_calls_run(
+        self, fake_llm, add_tool
+    ):
+        model = fake_llm([*self.turns(3, 7), answer()])
+
+        with pytest.raises(ToolCallLimitExceededError) as ended:
+            run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert "run limit" in str(ended.value) and "/20 calls" in str(ended.value)
+        assert len(add_tool.calls) == 18
+
+    def test_counter_example_exactly_the_budget_is_not_past_it(self, fake_llm, add_tool):
+        model = fake_llm([*self.turns(20, 1), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert len(add_tool.calls) == 20
+        assert messages[-1].type == "ai" and messages[-1].tool_calls == []

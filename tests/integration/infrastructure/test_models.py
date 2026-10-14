@@ -30,6 +30,7 @@ class TestOpenWebUIClient:
             openwebui_url="http://localhost:3000/",
             openwebui_api_key="sk-local",
             openwebui_model="llama3.1:8b",
+            tasks_db="",
         )
 
         model = build_model(settings)
@@ -59,7 +60,7 @@ class TestOpenWebUIClient:
         ],
     )
     def test_the_api_is_addressed_under_open_webuis_address(self, url, base):
-        model = build_model(Settings(url, "sk-local", "llama3.1:8b"))
+        model = build_model(Settings(url, "sk-local", "llama3.1:8b", ""))
 
         assert model.openai_api_base == base
 
@@ -71,6 +72,6 @@ class TestOpenWebUIClient:
         monkeypatch.delitem(sys.modules, "starter.infrastructure.models")
         models = importlib.import_module("starter.infrastructure.models")
 
-        model = models.build_model(Settings("", "", ""))
+        model = models.build_model(Settings("", "", "", ""))
 
         assert model.invoke("hello").content == models.OFFLINE_ANSWER

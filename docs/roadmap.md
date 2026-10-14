@@ -47,18 +47,31 @@ durability, safety) arrives in the slice whose requirement asks for it.
    - a `live` test of a real run through Open WebUI -- it reaches the owner's
      server, which has yet to answer it: the model id in `.env` is not one
      that server lists.
-3. **The task store, read only** (structural). A local SQLite task list -- its
-   schema an ADR -- and the first real tools: list and search. With them:
-   - the capability-manifest format, decided with the first real tool, and the
-     fixture-proven check that no tool registers without one (the old Safety
-     slice's requirement);
-   - a tool-call budget beside the model-call budget, and
-     `MODEL_CALLS_PER_RUN` re-measured against real runs with tools (moved
-     from slice 2: without tools a run is one model turn);
-   - a decision on `invalid_tool_calls` (moved from slice 2: no tool, no
-     malformed call);
-   - task text and tool output as **untrusted data, never instruction**, with
-     an adversarial case asserting no unauthorised effect.
+3. **The task store, read only** -- split in two by the owner.
+   - **3a, `task-store-read-only`** (#9) -- landed after five verify passes.
+     - The task list: one SQLite file at `TASKS_DB`, through the standard
+       library. Its schema is versioned from the first, and an interrupted
+       write is recovered (ADR 0006).
+     - The owner's `starter tasks add`.
+     - `list_tasks` and `search_tasks`, each with a capability manifest the
+       factory checks. A write, or a manifest nothing enforces, is refused.
+       Each tool holds a reader its holder cannot make write.
+     - A tool-call budget of 20 per run.
+     - What one read hands the model is bounded, whatever wrote the file:
+       132,713 characters measured.
+   - **3b** (structural):
+     - `MODEL_CALLS_PER_RUN` and `TOOL_CALLS_PER_RUN` re-measured against real
+       runs with tools.
+     - A decision on `invalid_tool_calls` (moved from slice 2: no tool, no
+       malformed call).
+     - A run's budget on what reaches the model, with a terminal outcome. A
+       read is bounded, a run is not (3a, frame.md question 6; review by
+       2026-10-31).
+     - Task text and tool output as **untrusted data, never instruction**,
+       with an adversarial case asserting no unauthorised effect.
+
+     It needs the owner's Open WebUI answering: `OPENWEBUI_MODEL` must be a
+     model id it lists.
 4. **Approval-gated writes** (structural). Create, close and reassign, each
    proposed by the model and executed only after the person approves:
    `interrupt()` with the proposal as payload, `Command(resume=...)` on the

@@ -5,12 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware, ModelRetryMiddleware
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
+    ToolCallLimitMiddleware,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
-from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN
+from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN, TOOL_CALLS_PER_RUN
+from starter.domain.agents.capabilities import check_capability
 from starter.domain.agents.retries import (
     MODEL_RETRIES,
     RETRY_BACKOFF_FACTOR,
@@ -36,9 +41,15 @@ def build_assistant(
     makes at most `MODEL_CALLS_PER_RUN` turns of at most `1 + MODEL_RETRIES`
     attempts each (ASSISTANT-MODEL-CALL-BUDGET).
     """
+    # Every tool's manifest, before anything is compiled (TOOLS-MANIFEST).
+    for given in tools:
+        check_capability(given.name, (given.metadata or {}).get("capability"), TOOL_CALLS_PER_RUN)
     # exit_behavior="error": the default, "end", injects an AI message saying the
     # limit was reached -- an exhausted budget that reads like an answer.
     budget = ModelCallLimitMiddleware(run_limit=MODEL_CALLS_PER_RUN, exit_behavior="error")
+    # Every tool together; "error" raises before any call of the turn that would
+    # pass it runs (measured: ASSISTANT-TOOL-CALL-BUDGET).
+    tool_budget = ToolCallLimitMiddleware(run_limit=TOOL_CALLS_PER_RUN, exit_behavior="error")
     # on_failure="error": the default, "continue", turns the last failure into a
     # message that reads like an answer.
     retry = ModelRetryMiddleware(
@@ -48,4 +59,4 @@ def build_assistant(
         initial_delay=initial_delay,
         backoff_factor=RETRY_BACKOFF_FACTOR,
     )
-    return create_agent(model=model, tools=list(tools), middleware=[budget, retry])
+    return create_agent(model=model, tools=list(tools), middleware=[budget, tool_budget, retry])

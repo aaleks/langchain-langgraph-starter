@@ -9,7 +9,7 @@ cli  ->  infrastructure  ->  (application | config)  ->  domain
 | `domain/` | pure decisions: precedence, validation, routing, budgets, approval and retry policy | the standard library | `tests/architecture/test_imports.py` (allowlist) |
 | `config/` | locating and loading configuration; the only reader of `os.environ` and `.env` | `domain`, `dotenv` | `test_imports.py` (allowlist), `test_layers.py`, `test_conventions.py` |
 | `application/` | use cases, prompts, output contracts | `domain`, `langchain_core`, `pydantic` | `test_imports.py` (allowlist), `test_layers.py` |
-| `infrastructure/` | adapters: model builders, stores, tracing; graphs in `agents/` | `domain`, `config`, `application` | `test_layers.py`; `langgraph` only in `agents/` by `test_imports.py` |
+| `infrastructure/` | adapters: model builders, stores, tracing; graphs in `agents/` | `domain`, `config`, `application` | `test_layers.py`; `langgraph` only in `agents/` by `test_imports.py`; a database opened (`sqlite3.connect`) only in `stores/` by `test_conventions.py` |
 | `cli/` | arguments, output, exit codes; the only `sys.exit` | everything | `test_conventions.py` |
 
 Every rule above is also run against a fixture package built to break it, and
@@ -65,5 +65,5 @@ environment in which nothing reaches LangSmith. See
 | a model -- a chat or completion model, embeddings, a provider SDK's client -- built only in `infrastructure/models.py`. Caught by the names a model goes by, not every way of reaching one: a class passed to `partial`, bound to another name by assignment, built by a classmethod (`ChatOpenAI.model_validate`), or named like no model (`langchain_community`'s `Ollama`) is not seen | `tests/architecture/test_graphs.py` |
 | the server starts only through `scripts/serve.sh`; nothing reaches LangSmith | `.claude/settings.json` (deny rules and env), `scripts/serve.sh` |
 
-Each `test_graphs.py` check skips, with its reason, until the first graph
-exists -- and each is proved, on fixtures, to fail when it should.
+Each `test_graphs.py` check runs on the registered graph, and each is proved,
+on fixtures, to fail when it should.

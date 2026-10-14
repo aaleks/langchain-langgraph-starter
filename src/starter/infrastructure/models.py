@@ -11,6 +11,7 @@ provider's exception types.
 from __future__ import annotations
 
 import itertools
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
@@ -72,7 +73,16 @@ def build_offline_model() -> BaseChatModel:
     a fresh message, so no two answers share an id -- a reused message would
     replace the earlier answer in a thread's history instead of following it.
     """
-    return GenericFakeChatModel(messages=itertools.repeat(OFFLINE_ANSWER))
+    return OfflineChatModel(messages=itertools.repeat(OFFLINE_ANSWER))
+
+
+class OfflineChatModel(GenericFakeChatModel):
+    """The fake, able to be offered tools: the assistant now has some, and the
+    stock fake's `bind_tools` raises NotImplementedError. Offered or not, it
+    proposes no call -- it only answers."""
+
+    def bind_tools(self, tools: Any, *, tool_choice: Any = None, **kwargs: Any) -> Any:
+        return self
 
 
 def is_transient_failure(failure: Exception) -> bool:

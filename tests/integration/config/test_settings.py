@@ -9,11 +9,18 @@ from pathlib import Path
 import pytest
 
 from starter.config import settings as settings_module
-from starter.config.settings import NAMES, Settings, read_settings, settings_from_process
+from starter.config.settings import (
+    Settings,
+    read_settings,
+    settings_from_process,
+    tasks_db_path,
+)
 from starter.domain.models import choose_model
 
 REPO = Path(__file__).resolve().parents[3]
-ALL_THREE = {"OPENWEBUI_URL": "", "OPENWEBUI_API_KEY": "", "OPENWEBUI_MODEL": ""}
+# Every setting the specification names, spelled out: NAMES is what is tested.
+SPECIFIED = ("OPENWEBUI_URL", "OPENWEBUI_API_KEY", "OPENWEBUI_MODEL", "TASKS_DB")
+EVERY_SETTING = dict.fromkeys(SPECIFIED, "")
 
 
 def dotenv(tmp_path, text: str, encoding: str = "utf-8") -> Path:
@@ -65,12 +72,12 @@ class TestEnvironmentWins:
 
         assert settings.openwebui_model == "${PROBE}"
 
-    @pytest.mark.parametrize("name", NAMES)
+    @pytest.mark.parametrize("name", SPECIFIED)
     @pytest.mark.parametrize(
         ("given", "read"), [("   ", ""), ("  sk-local\t", "sk-local")], ids=["spaces", "padded"]
     )
     def test_every_setting_is_read_without_the_spaces_around_it(self, tmp_path, name, given, read):
-        settings = read_settings({**ALL_THREE, name: given}, tmp_path / ".env")
+        settings = read_settings({**EVERY_SETTING, name: given}, tmp_path / ".env")
 
         assert getattr(settings, name.lower()) == read
 
@@ -112,7 +119,7 @@ class TestEnvironmentWins:
     def test_a_dotenv_is_not_opened_when_the_environment_holds_every_setting(self, tmp_path):
         path = dotenv(tmp_path, "OPENWEBUI_MODEL=llama3.1:8b\n", encoding="utf-16")
 
-        settings = read_settings(ALL_THREE, path)
+        settings = read_settings(EVERY_SETTING, path)
 
         assert settings.openwebui_model == ""
 
@@ -131,12 +138,46 @@ class TestEnvironmentWins:
         assert path.read_text(encoding="utf-8") == "OPENWEBUI_URL=http://localhost:3000\n"
 
 
+class TestTasksDb:
+    """SETTINGS-TASKS-DB: The task list's file SHALL be the setting `TASKS_DB` --
+    a relative path taken from the repository's root, an absolute one as it is --
+    and `.data/tasks.sqlite3` under the repository's root when the setting is
+    empty."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("", REPO / ".data" / "tasks.sqlite3"),
+            ("lists/home.sqlite3", REPO / "lists" / "home.sqlite3"),
+        ],
+        ids=["empty-is-the-default", "relative-from-the-repository"],
+    )
+    def test_where_the_task_list_is(self, tmp_path, value, expected):
+        settings = read_settings({**EVERY_SETTING, "TASKS_DB": value}, tmp_path / ".env")
+
+        assert tasks_db_path(settings) == expected
+
+    def test_an_absolute_path_is_taken_as_it_is(self, tmp_path):
+        absolute = tmp_path / "tasks.sqlite3"
+        settings = read_settings({**EVERY_SETTING, "TASKS_DB": str(absolute)}, tmp_path / ".env")
+
+        assert tasks_db_path(settings) == absolute
+
+    def test_counter_example_the_working_directory_does_not_decide(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        settings = read_settings(
+            {**EVERY_SETTING, "TASKS_DB": "lists/home.sqlite3"}, tmp_path / ".env"
+        )
+
+        assert tasks_db_path(settings) == REPO / "lists" / "home.sqlite3"
+
+
 class TestKeyNeverShown:
     """SETTINGS-KEY-NEVER-SHOWN: The Open WebUI API key SHALL appear neither in a
     settings object's text nor in the message of a configuration refused."""
 
     def test_a_settings_object_printed_hides_the_key(self):
-        settings = Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b")
+        settings = Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b", "")
 
         for text in (repr(settings), str(settings), f"{settings}"):
             assert "sk-secret-123" not in text
@@ -159,6 +200,6 @@ class TestKeyNeverShown:
         assert "sk-secret-123" not in str(refused.value)
 
     def test_counter_example_what_is_not_secret_is_shown(self):
-        text = repr(Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b"))
+        text = repr(Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b", ""))
 
         assert "http://localhost:3000" in text and "llama3.1:8b" in text

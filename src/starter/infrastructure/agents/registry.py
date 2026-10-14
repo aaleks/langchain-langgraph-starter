@@ -8,21 +8,28 @@ from __future__ import annotations
 
 from langgraph.graph.state import CompiledStateGraph
 
-from starter.config.settings import Settings, settings_from_process
+from starter.config.settings import Settings, settings_from_process, tasks_db_path
 from starter.infrastructure.agents.factory import build_assistant
+from starter.infrastructure.agents.tools import list_tasks, search_tasks
 from starter.infrastructure.models import build_model, is_transient_failure
+from starter.infrastructure.stores.tasks import TaskStore
 
 
 def registered_assistant(settings: Settings | None = None) -> CompiledStateGraph:
     """The assistant the server serves: the settings, read now -- `.env` included,
-    so nothing is read before it is loaded -- then the model they choose. A
-    partial or malformed configuration is refused here, at the server's start.
+    so nothing is read before it is loaded -- then the model they choose and the
+    task list they name, opened now. A partial or malformed configuration, or a
+    task list this version cannot read, is refused here, at the server's start.
 
-    No tools until the first real one arrives with its capability manifest
-    (docs/decisions/0005; .claude/rules/langgraph/graphs.md, "Tools").
+    Its tools read the task list (docs/decisions/0006); each carries its
+    capability manifest, which the factory checks.
     """
     settings = settings if settings is not None else settings_from_process()
-    return build_assistant(build_model(settings), tools=[], transient=is_transient_failure)
+    model = build_model(settings)
+    store = TaskStore(tasks_db_path(settings))
+    store.open()
+    tools = [list_tasks.build(store), search_tasks.build(store)]
+    return build_assistant(model, tools=tools, transient=is_transient_failure)
 
 
 assistant = registered_assistant()

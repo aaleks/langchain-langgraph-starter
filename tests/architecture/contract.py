@@ -203,6 +203,94 @@ def exits_outside_cli(source: Path) -> list[str]:
     return found
 
 
+STORES_PREFIX = "infrastructure/stores/"
+
+
+SQLITE_MODULES = frozenset({"sqlite3", "sqlite3.dbapi2", "_sqlite3"})
+
+
+def _of_module(attribute: ast.Attribute, modules: set[str]) -> bool:
+    """Whether `attribute` is reached from one of `modules`, through `dbapi2` or not."""
+    owner = attribute.value
+    if isinstance(owner, ast.Attribute) and owner.attr == "dbapi2":
+        owner = owner.value
+    return isinstance(owner, ast.Name) and owner.id in modules
+
+
+def databases_opened_outside_stores(source: Path) -> list[str]:
+    """A database opened outside infrastructure/stores/, the only place one is
+    (ADR 0006): any reference to `connect` of `sqlite3`, its `dbapi2` or the C
+    module `_sqlite3` or their `Connection` -- called, subclassed or bound to
+    another name, however the module or the name is bound -- or a star import
+    from them. Importing `sqlite3` for its error classes, or naming
+    `Connection` in a type annotation or as `isinstance`'s or `issubclass`'s
+    class, opens nothing. Out of reach: a module imported by `importlib` from
+    a string."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel.startswith(STORES_PREFIX):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        # Names bound to one of the modules, and to an opener imported by name.
+        modules: set[str] = set()
+        connects: set[str] = set()
+        classes: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name in SQLITE_MODULES:
+                        # `import sqlite3.dbapi2` binds `sqlite3`; with `as`, the module itself.
+                        modules.add(a.asname or a.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom) and node.module in SQLITE_MODULES:
+                for a in node.names:
+                    if a.name == "*":
+                        found.append(f"{rel}:{node.lineno} from {node.module} import *")
+                    elif a.name == "connect":
+                        connects.add(a.asname or a.name)
+                    elif a.name == "Connection":
+                        classes.add(a.asname or a.name)
+                    elif a.name == "dbapi2":
+                        modules.add(a.asname or a.name)
+
+        typing_only = _typing_only_nodes(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and _of_module(node, modules):
+                if node.attr == "connect" or (
+                    node.attr == "Connection" and id(node) not in typing_only
+                ):
+                    found.append(f"{rel}:{node.lineno} sqlite3.{node.attr}")
+            elif isinstance(node, ast.Name) and (
+                node.id in connects or (node.id in classes and id(node) not in typing_only)
+            ):
+                found.append(f"{rel}:{node.lineno} {node.id}")
+    return found
+
+
+def _typing_only_nodes(tree: ast.AST) -> set[int]:
+    """The nodes that name a class without using it: inside a type annotation,
+    or the class argument of `isinstance` and `issubclass` -- but never a class
+    called there, since Python evaluates annotations and that call opens a
+    database. A type alias outside an annotation (`Callable[[],
+    sqlite3.Connection]`) is not spared: a false positive, stated."""
+    roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg | ast.AnnAssign) and node.annotation is not None:
+            roots.append(node.annotation)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.returns:
+            roots.append(node.returns)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in ("isinstance", "issubclass")
+            and len(node.args) == 2
+        ):
+            roots.append(node.args[1])
+    inside = [inner for root in roots for inner in ast.walk(root)]
+    called = {id(node.func) for node in inside if isinstance(node, ast.Call)}
+    return {id(node) for node in inside} - called
+
+
 def agents_dir(source: Path) -> Path:
     return source / "infrastructure" / "agents"
 
