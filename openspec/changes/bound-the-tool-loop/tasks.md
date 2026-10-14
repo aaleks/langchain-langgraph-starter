@@ -91,3 +91,25 @@
 - [x] 6.7 Proved by mutation, ten in a full-suite run. Nine were red at once.
   The survivor -- `OutputBudget` placed after `AnswerInvalidCalls` -- turned
   red with a row added: a call cut off mid-arguments is not handed back
+
+## 7. Verify pass 2 -- the fixes (`verify.md`, reviewed at `26d897b`)
+
+- [x] 7.1 No call with tools bound is streamed (`disable_streaming=
+  "tool_calling"`): streamed arguments were re-parsed at every chunk, worse
+  than linearly (14). The cap asserted in the request,
+  `max_completion_tokens` (21). MODEL-OPENWEBUI-CLIENT amended
+- [x] 7.2 A reply whose output tokens reach the cap is cut off too: an Ollama
+  model reports `stop`. A local model needs `num_predict` set in Open WebUI
+  (`.env.example`); the requirement says so (15, 20)
+- [x] 7.3 The cap measured: at most 344 output tokens a reply, reasoning
+  included (N = 20 on `gpt-5.4-mini`), in the script with an N per statistic
+  (16, 23). A third measured batch: a few cents
+- [x] 7.4 Rows: the predicate classes both budget errors as not transient
+  (17); a streamed malformed call, the same sentence (18); the cap named
+  exactly (19); one without an id beside one with an id, none answered (22).
+  Both worst cases stated; global filters named (23). `check_context_chars`'s
+  own unit test and the name fallback accepted (24)
+- [x] 7.5 Proved by mutation, six in a full-suite run, each red: tool calls
+  streamed; the token count ignored or off by one; the call with an id
+  answered beside one without; the recorded error repeated; the output
+  budget's error made transient

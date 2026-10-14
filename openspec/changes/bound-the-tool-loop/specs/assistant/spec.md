@@ -11,7 +11,7 @@ Before each model call the assistant SHALL count what the call would send -- the
 |---|---|---|
 | 150,001 characters, a tool's result making it so | not called again | raises `ContextBudgetExceededError`, naming 150,001 and 150,000 |
 | 150,000 characters | called | completes |
-| 150,001 characters, the registry's retry predicate in force | not called again: the error is not transient | raises `ContextBudgetExceededError` |
+| 150,001 characters, the registry's retry predicate in force -- which classes `ContextBudgetExceededError` and `OutputBudgetExceededError` as not transient | not called again | raises `ContextBudgetExceededError` |
 
 #### Scenario: Counter-example -- what the count includes
 | The call's other parts come to 149,990 characters, beside | The run |
@@ -57,7 +57,7 @@ Task text that gives the model orders SHALL reach it only inside a tool message,
 - **THEN** it reaches the model as a human message, not inside a tool message
 
 ### Requirement: ASSISTANT-OUTPUT-BUDGET
-Every model call SHALL ask for at most `MODEL_OUTPUT_TOKENS` (4,096) tokens, and a reply cut off at that cap -- its finish reason `length` -- SHALL end the run with `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor its calls run.
+A reply cut off at the client's cap of `MODEL_OUTPUT_TOKENS` (4,096) tokens (MODEL-OPENWEBUI-CLIENT) -- its finish reason `length`, or its output tokens reaching the cap -- SHALL end the run with `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor its calls run. A backend that ignores the cap -- an Ollama model behind Open WebUI without `num_predict` set there -- is outside this rule.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant.py::TestOutputBudget`
@@ -68,7 +68,8 @@ Every model call SHALL ask for at most `MODEL_OUTPUT_TOKENS` (4,096) tokens, and
 | text | `length` | raises `OutputBudgetExceededError`, naming 4,096; the model called once |
 | a call of `add` | `length` | raises it; the tool not called |
 | a call of `add` cut off mid-arguments -- not JSON | `length` | raises it; the call not handed back, the model called once |
-| text | `stop` | completes |
+| text, its output tokens 4,096 | `stop` -- an Ollama model capped by its own `num_predict` reports no cut-off | raises it |
+| text, its output tokens 4,095 | `stop` | completes |
 
 #### Scenario: Counter-example -- a reply with no finish reason
 - **GIVEN** the offline model, whose replies carry no finish reason
@@ -123,15 +124,18 @@ A call the model proposes to a tool it was not given, with arguments that tool's
 - **GIVEN** a scripted model whose first reply proposes `add` with the arguments `{"a": 1,` -- not JSON, so an invalid tool call and no other -- then answers
 - **WHEN** the assistant runs on the human message `add`
 - **THEN** no tool is called, and the transcript's message types are `human, ai, tool, ai` -- not an empty answer after `human, ai`
-- **AND** the tool message has status `error` and reads exactly `Error: the arguments for add are not valid JSON; send them again as a JSON object.` -- the model's output never repeated, streamed or not -- answers the invalid call's id, and is the last input of the model's second call
+- **AND** the tool message has status `error` and reads exactly `Error: the arguments for add are not valid JSON; send them again as a JSON object.` -- the model's output never repeated -- answers the invalid call's id, and is the last input of the model's second call
+- **AND** so it reads when the reply was streamed, and no parse error was recorded
 
 #### Scenario: Two malformed calls in one reply
 - **GIVEN** a scripted model whose first reply proposes two calls of `add`, each with arguments that are not JSON, then answers
 - **THEN** each invalid call's id is answered by its own error tool message, and the model is called 2 times
 
 #### Scenario: Counter-example -- a malformed call without an id
-- **GIVEN** a scripted model whose first reply proposes a call with arguments that are not JSON and no id, then answers
-- **THEN** no tool message answers it -- nothing could -- and the run ends as the model left it, without an error of its own
+| The first reply proposes, arguments not JSON | Tool messages | The run |
+|---|---|---|
+| one call without an id | none -- nothing could answer it | ends as the model left it, without an error of its own |
+| one call without an id, beside one with an id | none -- answering one would leave the other unanswered, and the endpoint refuses that | ends as the model left it |
 
 #### Scenario: Refused calls still spend the budget
 - **GIVEN** a scripted model that proposes `multiply(a=2, b=3)` on every call

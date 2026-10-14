@@ -19,8 +19,10 @@ class TestOpenWebUIClient:
     on the URL ignored, and a URL whose path already ends in `/api` taken as the API
     itself -- with the configured key and model, a timeout of
     `MODEL_CALL_TIMEOUT_SECONDS` on every wait for the model, a streamed chunk
-    included, an output cap of `MODEL_OUTPUT_TOKENS` tokens a reply, and no retries
-    of its own: retrying is the assistant's policy, not the client's."""
+    included, an output cap of `MODEL_OUTPUT_TOKENS` tokens a reply, no streamed
+    call while tools are bound -- a streamed call's arguments are re-parsed at every
+    chunk, worse than linearly -- and no retries of its own: retrying is the
+    assistant's policy, not the client's."""
 
     def test_the_client_the_settings_describe(self, no_network, monkeypatch):
         # langchain-openai's own chunk timer, which defaults to 120 too: set
@@ -45,6 +47,11 @@ class TestOpenWebUIClient:
         assert model.stream_chunk_timeout == MODEL_CALL_TIMEOUT_SECONDS
         assert MODEL_OUTPUT_TOKENS == 4096
         assert model.max_tokens == MODEL_OUTPUT_TOKENS
+        payload = model._get_request_payload([("human", "hello")])
+        assert payload["max_completion_tokens"] == MODEL_OUTPUT_TOKENS
+        # A streamed call's arguments are re-parsed at every chunk, worse than
+        # linearly: no call with tools bound is streamed.
+        assert model.disable_streaming == "tool_calling"
         assert model.max_retries == 0
         # Some model ids switch ChatOpenAI to /responses, which Open WebUI lacks.
         assert model.use_responses_api is False

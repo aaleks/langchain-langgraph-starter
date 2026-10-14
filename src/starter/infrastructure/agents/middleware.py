@@ -31,13 +31,17 @@ class AnswerInvalidCalls(AgentMiddleware):
 
     The message is fixed: the model's own output is never repeated -- it would
     double in the context -- and a streamed reply records no parse error to
-    quote. A call without an id cannot be answered, so it is left, as
-    LangChain's own patching leaves it."""
+    quote. A call without an id cannot be answered, so the reply is left as it
+    is, as LangChain's own patching leaves it -- answering the others would send
+    the endpoint a call with no answer, which it refuses."""
 
     @hook_config(can_jump_to=["model"])
     def after_model(self, state: AgentState, runtime: Any) -> dict[str, Any] | None:
         last = state["messages"][-1]
         if not isinstance(last, AIMessage) or not last.invalid_tool_calls or last.tool_calls:
+            return None
+        if not all(call.get("id") for call in last.invalid_tool_calls):
+            # One left unanswered, the next request would be refused by the endpoint.
             return None
         answers = [
             ToolMessage(
@@ -47,10 +51,7 @@ class AnswerInvalidCalls(AgentMiddleware):
                 status="error",
             )
             for call in last.invalid_tool_calls
-            if call.get("id")
         ]
-        if not answers:
-            return None
         return {"messages": answers, "jump_to": "model"}
 
 
@@ -66,9 +67,19 @@ class OutputBudget(AgentMiddleware):
 
     def after_model(self, state: AgentState, runtime: Any) -> dict[str, Any] | None:
         last = state["messages"][-1]
-        if isinstance(last, AIMessage) and last.response_metadata.get("finish_reason") == "length":
+        if isinstance(last, AIMessage) and _cut_off(last):
             raise OutputBudgetExceededError(MODEL_OUTPUT_TOKENS)
         return None
+
+
+def _cut_off(reply: AIMessage) -> bool:
+    """Stopped at the cap: its finish reason says so, or -- an Ollama model behind
+    Open WebUI reports `stop` even when its own `num_predict` stopped it
+    (measured) -- its output tokens reached the cap."""
+    if reply.response_metadata.get("finish_reason") == "length":
+        return True
+    usage = reply.usage_metadata or {}
+    return usage.get("output_tokens", 0) >= MODEL_OUTPUT_TOKENS
 
 
 class ContextBudget(AgentMiddleware):

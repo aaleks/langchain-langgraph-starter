@@ -167,6 +167,15 @@ class TestToolError:
         assert tool_message.tool_call_id == messages[1].invalid_tool_calls[0]["id"]
         assert model.seen[1][-1] == tool_message
 
+    def test_a_streamed_malformed_call_is_answered_with_the_same_sentence(self, fake_llm, add_tool):
+        model = fake_llm([malformed("add", "not json", recorded_error=False), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert messages[2].content == (
+            "Error: the arguments for add are not valid JSON; send them again as a JSON object."
+        )
+
     def test_two_malformed_calls_in_one_reply_are_each_answered(self, fake_llm, add_tool):
         reply = malformed("add", "not json", count=2)
         model = fake_llm([reply, answer()])
@@ -181,6 +190,16 @@ class TestToolError:
         self, fake_llm, add_tool
     ):
         model = fake_llm([malformed("add", "not json", with_id=False), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert [m.type for m in messages] == ["human", "ai"]
+        assert model.calls == 1
+
+    def test_counter_example_one_without_an_id_beside_one_with_an_id(self, fake_llm, add_tool):
+        reply = malformed("add", "not json", count=2)
+        reply.invalid_tool_calls[1]["id"] = None
+        model = fake_llm([reply, answer()])
 
         messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
 
@@ -642,6 +661,10 @@ class TestContextBudget:
         with pytest.raises(ContextBudgetExceededError):
             run(graph, self.QUESTION)
 
+        # Not transient, so never retried: the predicate itself, since the budget
+        # refuses before the model is called either way.
+        assert is_transient_failure(ContextBudgetExceededError(150_001, 150_000)) is False
+        assert is_transient_failure(OutputBudgetExceededError(4096)) is False
         assert model.calls == 1
 
     def test_counter_example_an_ai_messages_text_counts(self, fake_llm):
@@ -688,10 +711,12 @@ class TestContextBudget:
 
 
 class TestOutputBudget:
-    """ASSISTANT-OUTPUT-BUDGET: Every model call SHALL ask for at most
-    `MODEL_OUTPUT_TOKENS` (4,096) tokens, and a reply cut off at that cap -- its
-    finish reason `length` -- SHALL end the run with `OutputBudgetExceededError`,
-    naming the cap: never handed on as an answer, nor its calls run."""
+    """ASSISTANT-OUTPUT-BUDGET: A reply cut off at the client's cap of
+    `MODEL_OUTPUT_TOKENS` (4,096) tokens (MODEL-OPENWEBUI-CLIENT) -- its finish
+    reason `length`, or its output tokens reaching the cap -- SHALL end the run with
+    `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor
+    its calls run. A backend that ignores the cap -- an Ollama model behind Open
+    WebUI without `num_predict` set there -- is outside this rule."""
 
     @staticmethod
     def cut_off(message):
@@ -705,7 +730,7 @@ class TestOutputBudget:
             run(build_assistant(model, [], transient=no_retries), "hello")
 
         assert MODEL_OUTPUT_TOKENS == 4096
-        assert "4096" in str(ended.value)
+        assert ended.value.cap == 4096
         assert model.calls == 1
 
     def test_a_call_cut_off_at_the_cap_is_not_run(self, fake_llm, add_tool):
@@ -723,6 +748,25 @@ class TestOutputBudget:
             run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
 
         assert model.calls == 1
+
+    @pytest.mark.parametrize(("output_tokens", "ends"), [(4096, True), (4095, False)])
+    def test_a_reply_that_reached_the_cap_though_it_says_stop(self, fake_llm, output_tokens, ends):
+        # An Ollama model capped by its own num_predict reports `stop` (measured on
+        # the owner's server): the tokens are what show it was cut off.
+        reply = answer("cut")
+        reply.response_metadata = {"finish_reason": "stop"}
+        reply.usage_metadata = {
+            "input_tokens": 10,
+            "output_tokens": output_tokens,
+            "total_tokens": 10 + output_tokens,
+        }
+        graph = build_assistant(fake_llm([reply]), [], transient=no_retries)
+
+        if ends:
+            with pytest.raises(OutputBudgetExceededError):
+                run(graph, "hello")
+        else:
+            assert run(graph, "hello")[-1].type == "ai"
 
     def test_a_reply_that_stopped_completes(self, fake_llm):
         reply = answer("done")

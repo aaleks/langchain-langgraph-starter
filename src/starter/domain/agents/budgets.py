@@ -19,12 +19,14 @@ TOOL_CALLS_PER_RUN = 20
 CONTEXT_CHARS_PER_CALL = 150_000
 # Per call: each turn re-sends the conversation, and each retry re-sends the
 # turn, so a run's worst case is MODEL_CALLS_PER_RUN x (1 + MODEL_RETRIES) x
-# this -- 4.5M characters, about 1.1M tokens. A per-run total waits for a run
-# that needs one (bound-the-tool-loop, verify.md finding 10).
+# this -- 4.5M characters: about 1.1M tokens of English, and up to 4.5M of text
+# chosen to tokenize badly. What the model writes is MODEL_CALLS_PER_RUN x (1 +
+# MODEL_RETRIES) x MODEL_OUTPUT_TOKENS at most: 122,880 tokens. A per-run total
+# waits for a run that needs one (bound-the-tool-loop, verify.md 10 and 23).
 
 # What one reply may hold, in tokens: the owner chose a cap, and a reply cut off
-# at it ends the run (bound-the-tool-loop). The measured answers were short; this
-# is about 16,000 characters. A starting policy.
+# at it ends the run (bound-the-tool-loop). Measured: at most 344 output tokens a
+# reply, reasoning included (N = 20 on gpt-5.4-mini) -- twelve times that.
 MODEL_OUTPUT_TOKENS = 4096
 
 

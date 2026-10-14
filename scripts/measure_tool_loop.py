@@ -10,6 +10,8 @@ questions, repeated N times, it records what each budget counts:
 - tool calls proposed (TOOL_CALLS_PER_RUN), refused ones included;
 - the largest input sent to one model call, in characters
   (CONTEXT_CHARS_PER_CALL), counted with the assistant's own `call_chars`;
+- the most output tokens one reply took, reasoning included
+  (MODEL_OUTPUT_TOKENS);
 - how the run ended.
 
 It prints each run and the maxima, with N. Real model calls cost what the
@@ -101,7 +103,7 @@ def main() -> int:
         for round_ in range(args.repeat):
             for question in QUESTIONS:
                 recorder = Recorder()
-                turns = proposed = None
+                turns = proposed = output = None
                 try:
                     out = graph.invoke(
                         {"messages": [HumanMessage(question)]}, config={"callbacks": [recorder]}
@@ -109,21 +111,30 @@ def main() -> int:
                     replies = [m for m in out["messages"] if isinstance(m, AIMessage)]
                     turns = len(replies)
                     proposed = sum(len(m.tool_calls) + len(m.invalid_tool_calls) for m in replies)
+                    output = max((m.usage_metadata or {}).get("output_tokens", 0) for m in replies)
                     outcome = "completed"
                 except Exception as failure:  # recorded, never re-raised: a measurement
                     outcome = type(failure).__name__
-                runs.append((turns, proposed, recorder.largest_input, outcome))
+                runs.append((turns, proposed, recorder.largest_input, output, outcome))
                 print(
                     f"{round_} | {question[:40]:40} | turns {turns} | calls proposed {proposed} | "
-                    f"largest input {recorder.largest_input:6} | {outcome}"
+                    f"largest input {recorder.largest_input:6} | output tokens {output} | {outcome}"
                 )
 
     print(f"\nN = {len(runs)} runs, model {settings.openwebui_model!r}")
-    for label, column in [("model turns", 0), ("tool calls proposed", 1), ("largest input", 2)]:
+    # Each statistic with its own N: a run ended by a budget has no transcript,
+    # so it reports its outcome and its largest input only.
+    for label, column in [
+        ("model turns", 0),
+        ("tool calls proposed", 1),
+        ("largest input", 2),
+        ("output tokens, one reply", 3),
+    ]:
         values = [r[column] for r in runs if r[column] is not None]
         if values:
-            print(f"{label}: max {max(values)}, mean {sum(values) / len(values):.1f}")
-    print("outcomes:", {o: sum(1 for r in runs if r[3] == o) for o in {r[3] for r in runs}})
+            mean = sum(values) / len(values)
+            print(f"{label}: max {max(values)}, mean {mean:.1f} (N = {len(values)})")
+    print("outcomes:", {o: sum(1 for r in runs if r[4] == o) for o in {r[4] for r in runs}})
     return 0
 
 

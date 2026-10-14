@@ -64,6 +64,10 @@ def build_openwebui_model(settings: Settings) -> BaseChatModel:
         # Open WebUI honours it: a capped reply comes back with finish_reason
         # `length` (checked on the owner's server); ASSISTANT-OUTPUT-BUDGET.
         max_tokens=MODEL_OUTPUT_TOKENS,
+        # A streamed call's arguments are re-parsed at every chunk, worse than
+        # linearly: 2,000 characters that never repair took 3.2 s, blocking the
+        # server (measured). The assistant's calls always carry tools.
+        disable_streaming="tool_calling",
         max_retries=0,
         use_responses_api=False,
     )
