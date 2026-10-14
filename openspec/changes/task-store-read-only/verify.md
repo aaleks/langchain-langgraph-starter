@@ -1,9 +1,10 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 3 (one MAJOR). First fix: prove the
-  control-character rule in every field, at the write and at the read (finding
-  34). Pass 2: DO NOT SHIP (three MAJOR). Pass 1: DO NOT SHIP (eight MAJOR).
-- **Reviewed at:** pass 3: `98d4714`, the fix diff `de61389..98d4714`. Pass
+- **Verdict:** SHIP at `f95333f` -- pass 4 (no BLOCKER, no MAJOR; eight
+  MINOR, fixed after it and read in pass 5). Pass 3: DO NOT SHIP (one MAJOR).
+  Pass 2: DO NOT SHIP (three MAJOR). Pass 1: DO NOT SHIP (eight MAJOR).
+- **Reviewed at:** pass 4: `f95333f`, the fix diff `866dadf..f95333f`. Pass
+  3: `98d4714`, the fix diff `de61389..98d4714`. Pass
   2: `976d7c2`, the fix diff `0962b1d..976d7c2`. Pass
   1: `0a8b80f`, the whole change (`git diff
   main..0a8b80f`), committed before the lenses read it.
@@ -159,3 +160,40 @@ commit with the MINORs, and that diff is read in pass 4.
 - MODEL-OPENWEBUI-LIVE: the owner's model id.
 - The placement and graph lenses: their pass-1 findings were MINOR, and are
   answered.
+
+## Pass 4 -- the fix diff `866dadf..f95333f`
+
+- **Evidence:** `bash scripts/check.sh live` at `f95333f`:
+  - Every default check passed; suite 246.
+  - Live: 8 passed and 1 failed, on the owner's model id. No key-shaped
+    line, and no `.data/`.
+  - Fifteen pass-3 mutations red; the one survivor was dead code, removed
+    (tasks.md 10.6).
+- **Lenses:** proof (`spec-compliance`) and defects (`code-reviewer`), fresh
+  context, over the fix diff. The capability lens was not run: its pass-3
+  findings were MINOR, and are answered.
+- **A lens's slip, checked:** the defects lens reports its first experiment
+  wrote four `*.sqlite3` files and `src/domain/` into the repository, then
+  removed exactly those. `git status --porcelain --ignored` afterwards shows
+  only what was there before (`.env`, `.langgraph_api/`, caches).
+- **Pass 3 resolved:** 34-43 fixed and asserted; 44 accepted.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 45 | MINOR | defects | Narrowing the check to a called `Connection` lets a subclass (`class Mine(sqlite3.Connection)`) or an alias (`open_ = sqlite3.Connection`) through. Pass 3's rule caught both | `contract.py:263-270` | Flag any reference but a type annotation and `isinstance`/`issubclass`'s class argument; fixture rows |
+| 46 | MINOR | defects | One row holding bytes that are not UTF-8, typed as text, makes the whole list unreadable: `Could not decode to UTF-8` | `stores/tasks.py:_reading` | Decode with replacement characters; a row |
+| 47 | MINOR | defects | `_cut`'s docstring promises the limit's worth after control characters are dropped. A field of mostly control characters reads shorter, or empty | `stores/tasks.py:_cut` | State it honestly |
+| 48 | MINOR | proof | DEL and most of C0 are unproved. Allowing DEL, NUL, or U+001C-U+001F all stay green | `domain/tasks.py:43` | Rows for U+007F, U+001F, U+0000; U+0085 accepted |
+| 49 | MINOR | proof | The UTF-8 refusal is proved for `TITLE` only | `test_tasks_cli.py` | Rows for `--assignee` and `--notes` |
+| 50 | MINOR | proof | "A value that is not text as empty" is proved for a blob in the notes only. A `blob`-only guard stays green: an integer would read as `'123'`, a NULL would crash | `stores/tasks.py:_cut` | A NULL title, an integer assignee, a blob in every field |
+| 51 | MINOR | proof | The stated bound is asserted by no test, and 133,323 is neither worst case measured: 132,713 at ids 1-50, 133,572 at 19-digit ids | spec TASKS-LIST | A row at the bound; the figure restated with its ids |
+| 52 | MINOR | proof | "No store" stops at instances: a bound `add` method on the reader holds the store and stays green | `test_tool_manifests.py:106` | No method bound to a store either |
+
+**Pass 4 verdict:** SHIP at `f95333f` -- no BLOCKER, no MAJOR. The MINORs
+are cheap, and two touch code (45, 46), so they are fixed before the land,
+in a separate commit read in pass 5.
+
+## Not checked -- pass 4
+
+- MODEL-OPENWEBUI-LIVE: the owner's model id.
+- The capability, placement and graph lenses (above).
