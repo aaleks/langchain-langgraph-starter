@@ -31,9 +31,9 @@ class AnswerInvalidCalls(AgentMiddleware):
 
     The message is fixed: the model's own output is never repeated -- it would
     double in the context -- and a streamed reply records no parse error to
-    quote. A call without an id cannot be answered, so the reply is left as it
-    is, as LangChain's own patching leaves it -- answering the others would send
-    the endpoint a call with no answer, which it refuses."""
+    quote. A call without an id cannot be answered, and answering the others
+    would send the endpoint a call with no answer, which it refuses: the reply
+    is stored without its malformed calls instead, and the run ends on it."""
 
     @hook_config(can_jump_to=["model"])
     def after_model(self, state: AgentState, runtime: Any) -> dict[str, Any] | None:

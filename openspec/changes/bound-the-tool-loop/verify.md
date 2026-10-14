@@ -1,9 +1,10 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 3 (one MAJOR). First fix: size the timeout
-  for a whole reply (finding 25). Pass 2: DO NOT SHIP (one MAJOR). Pass 1: DO
-  NOT SHIP (four MAJOR).
-- **Reviewed at:** pass 3: `476b80e`, the fix diff `bceaebe..476b80e`. Pass
+- **Verdict:** SHIP at `13e00a7` -- pass 4 (no BLOCKER, no MAJOR; four MINOR,
+  fixed or stated after it). Pass 3: DO NOT SHIP (one MAJOR). Pass 2: DO NOT
+  SHIP (one MAJOR). Pass 1: DO NOT SHIP (four MAJOR).
+- **Reviewed at:** pass 4: `13e00a7`, the fix diff `8e78dde..13e00a7`. Pass
+  3: `476b80e`, the fix diff `bceaebe..476b80e`. Pass
   2: `26d897b`, the fix diff `d604dee..26d897b`. Pass
   1: `d941831`, the whole change (`git diff
   main..d941831`), committed before the lenses read it.
@@ -140,3 +141,35 @@ commit with the MINORs, and that diff is read in pass 4.
 ## Not checked -- pass 3
 
 - The number 344 by a lens: it needs the paid script.
+
+## Pass 4 -- the fix diff `8e78dde..13e00a7`
+
+- **Evidence:** `bash scripts/check.sh live` at `13e00a7`:
+  - Every check passed; suite 284, live 9.
+  - Six pass-3 mutations red (tasks.md 8.4).
+- **Lenses:** proof (`spec-compliance`) and defects (`code-reviewer`), fresh
+  context, over the fix diff:
+  - The proof lens ran 9 mutations, 8 killed.
+  - The defects lens checked 26 under `InMemorySaver`, on the sync and the
+    async path and across two turns. The stored reply replaces the original
+    by id, the run ends, and the next request sends no call.
+- **Pass 3 resolved:** 25-29 fixed.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 30 | MINOR | proof | The single id-less call's test never checks the stored reply: skipping the strip for one call stays green | `test_assistant.py:189` | The stored reply and a second turn asserted |
+| 31 | MINOR | proof | The docstring says the reply is "left as it is"; the code stores it stripped. A test comment still says 120 "too" | `middleware.py:33`; `test_models.py:29` | Reword |
+| 32 | MINOR | defects | The 300 s margin (41 s over 259) is extrapolated from a short prompt: a long context's processing on a CPU can eat it | `budgets.py` | Stated in the comment; re-measured with the owner's local model when it is the one in use |
+| 33 | MINOR | defects | 300 s also bounds connecting: a host that drops packets fails after 3 x 300 s | `models.py` | Stated in the comment. A separate connect timeout would be a new number nothing measures yet |
+
+**Pass 4 verdict:** SHIP at `13e00a7` -- no BLOCKER, no MAJOR.
+
+After the pass, and read by no lens:
+- 30: the rows were added. Removing the fix turns them red.
+- 31: reworded.
+- 32 and 33: stated in `budgets.py`.
+
+## Not checked -- pass 4
+
+- The capability lens: its pass-3 findings were MINOR, and are answered.
+- The post-pass edits for 30-33: proved as listed above.

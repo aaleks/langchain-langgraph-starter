@@ -60,6 +60,8 @@ class OutputBudgetExceededError(RuntimeError):
 # a call carrying tools is not streamed (MODEL-OPENWEBUI-CLIENT) -- for the
 # whole reply. Measured (bound-the-tool-loop, verify.md pass 3): a reply at
 # MODEL_OUTPUT_TOKENS takes about 259 s from the owner's local qwen3:1.7b (15.8
-# tokens/s) and 16 s from gpt-5.4-mini. A run waits at most MODEL_CALLS_PER_RUN x
+# tokens/s) and 16 s from gpt-5.4-mini -- measured with a short prompt: a long
+# context's processing on a CPU eats the 41 s of margin. Connecting waits as long:
+# an unreachable host fails after it, three times. A run waits at most MODEL_CALLS_PER_RUN x
 # (1 + MODEL_RETRIES) x this: 2.5 hours, every call slow to its limit.
 MODEL_CALL_TIMEOUT_SECONDS = 300

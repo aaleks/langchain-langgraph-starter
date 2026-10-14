@@ -129,3 +129,10 @@
   goes out with `stream: false` and `max_completion_tokens` 4,096 (28). The
   script records no usage as None (29)
 - [x] 8.4 Proved by mutation, six in a full-suite run, each red
+
+## 9. Verify pass 4 -- the MINORs, after the pass (`verify.md`, `13e00a7`)
+
+- [x] 9.1 The single id-less call: its stored reply and a second turn
+  asserted, red without the fix (30); the docstring and a test comment
+  reworded (31); the timeout's margin and its bound on connecting stated in
+  `budgets.py` (32, 33)

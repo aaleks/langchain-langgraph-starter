@@ -190,11 +190,16 @@ class TestToolError:
         self, fake_llm, add_tool
     ):
         model = fake_llm([malformed("add", "not json", with_id=False), answer()])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries)
 
-        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+        messages = run(graph, "add")
 
         assert [m.type for m in messages] == ["human", "ai"]
         assert model.calls == 1
+        assert messages[1].invalid_tool_calls == []
+        second = graph.invoke({"messages": [*messages, HumanMessage("again")]})["messages"]
+        assert second[-1].type == "ai"
+        assert all(not getattr(m, "invalid_tool_calls", None) for m in model.seen[1])
 
     @pytest.mark.parametrize("without_id", [0, 1], ids=["first", "second"])
     def test_counter_example_one_without_an_id_beside_one_with_an_id(

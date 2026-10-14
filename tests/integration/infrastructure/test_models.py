@@ -26,7 +26,7 @@ class TestOpenWebUIClient:
     policy, not the client's."""
 
     def test_the_client_the_settings_describe(self, no_network, monkeypatch):
-        # langchain-openai's own chunk timer, which defaults to 120 too: set
+        # langchain-openai's own chunk timer, which defaults to 120: set
         # elsewhere, so only an explicit setting passes this test.
         monkeypatch.setenv("LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S", "7")
         settings = Settings(
