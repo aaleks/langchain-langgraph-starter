@@ -164,3 +164,17 @@
   behind the SQL's; it is removed, and the SQL's guard alone turns the suite
   red. Accepted: search over an oversized field; the SQL cut a memory guard
   (44)
+
+## 11. Verify pass 4 -- the MINORs (`verify.md`, reviewed at `f95333f`)
+
+- [x] 11.1 The database check: a `Connection` subclassed or aliased caught
+  again; only a type annotation or `isinstance`'s and `issubclass`'s class
+  argument spared (45)
+- [x] 11.2 Text that is not UTF-8 reads with U+FFFD (46); `_cut`'s docstring
+  honest (47); a NULL, an integer and a blob in every field read as empty (50)
+- [x] 11.3 Rows: U+001F, DEL, U+D800 in the assignee and the notes refused;
+  U+0085 stored as given (48, 49); the bound measured and asserted, 132,713
+  characters (51); no method bound to a store on the reader (52). A NUL never
+  reaches the domain -- SQLite stops at it, a command line cannot carry it --
+  recorded in the design
+- [x] 11.4 Proved by mutation, ten in a full-suite run, each red

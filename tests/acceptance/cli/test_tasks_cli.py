@@ -73,9 +73,13 @@ class TestTasksAdd:
             (["Renew passport", "--notes", "n" * 1001], "--notes"),
             (["Pay\x01 rent"], "TITLE"),
             (["Pay\x1b rent"], "TITLE"),
+            (["Pay\x1f rent"], "TITLE"),
+            (["Renew passport", "--notes", "a\x7fb"], "--notes"),
             (["Renew passport", "--assignee", "sam\x1b"], "--assignee"),
             (["Renew passport", "--notes", "a\x07b"], "--notes"),
             (["Pay\ud800"], "TITLE"),
+            (["Renew passport", "--assignee", "sam\ud800"], "--assignee"),
+            (["Renew passport", "--notes", "a\ud800"], "--notes"),
         ],
         ids=[
             "spaces",
@@ -88,6 +92,10 @@ class TestTasksAdd:
             "escape-in-assignee",
             "bell-in-notes",
             "lone-surrogate",
+            "unit-separator-in-title",
+            "del-in-notes",
+            "surrogate-in-assignee",
+            "surrogate-in-notes",
         ],
     )
     def test_counter_example_refused_nothing_written(
@@ -108,6 +116,12 @@ class TestTasksAdd:
 
         assert (status, capsys.readouterr().out) == (0, "1\n")
         assert open_tasks(tasks_db)[0][3] == notes
+
+    def test_a_c1_control_character_is_stored_as_given(self, tasks_db, capsys):
+        status = main(["tasks", "add", "Renew passport", "--notes", "next\x85line"])
+
+        assert (status, capsys.readouterr().out) == (0, "1\n")
+        assert open_tasks(tasks_db)[0][3] == "next\x85line"
 
     def test_the_limits_themselves_are_accepted(self, tasks_db, capsys):
         status = main(["tasks", "add", "t" * 200, "--assignee", "a" * 100, "--notes", "n" * 1000])

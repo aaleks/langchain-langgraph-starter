@@ -103,7 +103,10 @@ class TestToolManifests:
             held = [cell.cell_contents for cell in built.func.__closure__ or ()]
             assert not any(isinstance(h, TaskStore) for h in held)
             reader = reader_of(built)
-            assert not any(isinstance(v, TaskStore) for v in vars(reader).values())
+            assert not any(
+                isinstance(v, TaskStore) or isinstance(getattr(v, "__self__", None), TaskStore)
+                for v in vars(reader).values()
+            )
             assert not hasattr(reader, "add")
             assert reader.timeout == built.metadata["capability"].timeout_seconds
             for statement in (

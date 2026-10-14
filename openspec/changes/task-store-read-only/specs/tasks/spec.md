@@ -19,6 +19,7 @@ The task list is what the assistant works on: one SQLite file on the owner's mac
 #### Scenario: Notes over several lines
 - **WHEN** the owner adds `Renew passport` with the notes `line one`, a carriage return and a newline, `line two`, a tab, `end`
 - **THEN** the script exits 0, and the task's notes are stored as given
+- **AND** notes holding U+0085, a C1 control character, are stored as given too
 
 #### Scenario: Counter-example -- refused, nothing written
 | Given | Exit | Standard error names | Afterwards |
@@ -30,16 +31,20 @@ The task list is what the assistant works on: one SQLite file on the owner's mac
 | notes of 1,001 characters | 2 | `--notes` | no file |
 | a title holding U+0001 | 2 | `TITLE` | no file |
 | a title holding U+001B | 2 | `TITLE` | no file |
+| a title holding U+001F | 2 | `TITLE` | no file |
+| notes holding U+007F (DEL) | 2 | `--notes` | no file |
 | an assignee holding U+001B | 2 | `--assignee` | no file |
 | notes holding U+0007 | 2 | `--notes` | no file |
 | a title holding a lone surrogate, U+D800 | 2 | `TITLE` | no file |
+| an assignee holding U+D800 | 2 | `--assignee` | no file |
+| notes holding U+D800 | 2 | `--notes` | no file |
 | `TASKS_DB` naming a task list at schema version 2 | 1 | the file | the file unchanged |
 | `TASKS_DB` naming a directory | 1 | the directory | the directory unchanged |
 | `TASKS_DB` naming a file under a file | 1 | the path | the file unchanged |
 | a `.env` saved as UTF-16, `TASKS_DB` not in the environment | 1 | the `.env` | no task list |
 
 ### Requirement: TASKS-LIST
-The tool `list_tasks`, taking no arguments, SHALL return the open tasks in the order they were added -- at most `TASK_RESULTS_LIMIT` (50) -- as the JSON object `{"tasks": [{"id", "title", "assignee", "notes"}, ...], "more": n}`, `n` being how many more open tasks there are -- the rows and `n` seeing one state of the list -- its text as written: a letter outside ASCII as itself, not escaped. Whatever the file holds, each field SHALL reach the model at most its limit long (TASKS-ADD), without a C0 control character or DEL but newline, carriage return and tab, and a value that is not text as empty: one read hands it at most 50 tasks of 1,300 characters, each at most doubled by JSON's escapes (measured worst case: 133,323 characters). A task list another process holds locked SHALL end the run with the store's error after waiting `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's own wait, which overshoots it (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s).
+The tool `list_tasks`, taking no arguments, SHALL return the open tasks in the order they were added -- at most `TASK_RESULTS_LIMIT` (50) -- as the JSON object `{"tasks": [{"id", "title", "assignee", "notes"}, ...], "more": n}`, `n` being how many more open tasks there are -- the rows and `n` seeing one state of the list -- its text as written: a letter outside ASCII as itself, not escaped. Whatever the file holds, each field SHALL reach the model at most its limit long (TASKS-ADD), without a C0 control character or DEL but newline, carriage return and tab, a value that is not text as empty, and text that is not UTF-8 with U+FFFD in place of what cannot be decoded: one read hands it at most 50 tasks of 1,300 characters, each at most doubled by JSON's escapes (measured: 132,713 characters, ids 1 to 50). A task list another process holds locked SHALL end the run with the store's error after waiting `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's own wait, which overshoots it (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/infrastructure/test_task_tools.py::TestListTasks`
@@ -56,11 +61,18 @@ The tool `list_tasks`, taking no arguments, SHALL return the open tasks in the o
 
 #### Scenario: A list written without the limits
 - **GIVEN** a version-1 list another program wrote without the schema's limits, holding two tasks:
-  - the first titled `Pay`, U+0001 and 300 `t`; its assignee U+001B and 2,000 `a`; its notes U+0007 and 2,000,000 `n`
+  - the first titled `Pay`, U+0001 and 300 `t`; its assignee U+001B and 2,000 `a`; its notes U+0007, U+007F and 2,000,000 `n`
   - the second with a blob for its notes
+  - a third with a NULL title, an integer assignee and notes that are text but not UTF-8 (the byte FF)
+  - a fourth with a blob in every field
 - **WHEN** `list_tasks` is called
 - **THEN** the first reaches the model titled `Pay` and 197 `t` (200 characters), assigned to 100 `a`, its notes 1,000 `n` -- no control character in any
-- **AND** the second's notes are empty
+- **AND** the second's notes are empty; the third's title and assignee are empty and its notes U+FFFD; every field of the fourth is empty
+
+#### Scenario: At the bound
+- **GIVEN** 51 open tasks, every field `"` repeated to its limit
+- **WHEN** `list_tasks` is called
+- **THEN** its result is 132,713 characters long
 
 #### Scenario: One state of the list
 - **GIVEN** the open tasks 1 and 2, and another process adding task 3 between the read's rows and its count

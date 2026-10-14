@@ -55,12 +55,13 @@ class TestListTasks:
     state of the list -- its text as written: a letter outside ASCII as itself, not
     escaped. Whatever the file holds, each field SHALL reach the model at most its
     limit long (TASKS-ADD), without a C0 control character or DEL but newline,
-    carriage return and tab, and a value that is not text as empty: one read hands
-    it at most 50 tasks of 1,300 characters, each at most doubled by JSON's escapes
-    (measured worst case: 133,323 characters). A task list another process holds
-    locked SHALL end the run with the store's error after waiting
-    `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's own wait, which overshoots it
-    (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s)."""
+    carriage return and tab, a value that is not text as empty, and text that is not
+    UTF-8 with U+FFFD in place of what cannot be decoded: one read hands it at most
+    50 tasks of 1,300 characters, each at most doubled by JSON's escapes (measured:
+    132,713 characters, ids 1 to 50). A task list another process holds locked SHALL
+    end the run with the store's error after waiting `TASK_STORE_TIMEOUT_SECONDS` --
+    SQLite's own wait, which overshoots it (measured: 1 s given, 1.8 s taken; 5 s,
+    7.4 s)."""
 
     def test_the_open_tasks_in_order(self, tmp_path):
         store = task_list(
@@ -133,27 +134,41 @@ class TestListTasks:
         path = tmp_path / "tasks.sqlite3"
         db = sqlite3.connect(path)
         db.execute(
-            "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, "
-            "assignee TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '', "
-            "status TEXT NOT NULL DEFAULT 'open', created_at TEXT)"
+            "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title, assignee, "
+            "notes, status TEXT NOT NULL DEFAULT 'open', created_at TEXT)"
         )
         db.execute("PRAGMA user_version = 1")
         db.execute(
             "INSERT INTO tasks (title, assignee, notes) VALUES (?, ?, ?)",
-            ("Pay\x01" + "t" * 300, "\x1b" + "a" * 2000, "\x07" + "n" * 2_000_000),
+            ("Pay\x01" + "t" * 300, "\x1b" + "a" * 2000, "\x07\x7f" + "n" * 2_000_000),
         )
-        db.execute("INSERT INTO tasks (title, notes) VALUES (?, ?)", ("Blob", b"\x00\x01"))
+        db.execute(
+            "INSERT INTO tasks (title, assignee, notes) VALUES (?, ?, ?)", ("Blob", "", b"\x00\x01")
+        )
+        db.execute(
+            "INSERT INTO tasks (title, assignee, notes) VALUES (NULL, 42, CAST(x'ff' AS TEXT))"
+        )
+        db.execute("INSERT INTO tasks (title, assignee, notes) VALUES (x'00', x'01', x'02')")
         db.commit()
         db.close()
         store = TaskStore(path)
         store.open()
 
-        first, second = json.loads(list_tasks.build(store).invoke({}))["tasks"]
+        first, second, third, fourth = json.loads(list_tasks.build(store).invoke({}))["tasks"]
 
         assert first["title"] == "Pay" + "t" * 197
         assert first["assignee"] == "a" * 100
         assert first["notes"] == "n" * 1000
         assert second["notes"] == ""
+        assert (third["title"], third["assignee"], third["notes"]) == ("", "", "\ufffd")
+        assert (fourth["title"], fourth["assignee"], fourth["notes"]) == ("", "", "")
+
+    def test_at_the_bound(self, tmp_path):
+        store = task_list(tmp_path / "tasks.sqlite3", *[('"' * 200, '"' * 100, '"' * 1000)] * 51)
+
+        result = list_tasks.build(store).invoke({})
+
+        assert len(result) == 132_713
 
     def test_the_rows_and_more_see_one_state_of_the_list(self, tmp_path, monkeypatch):
         path = tmp_path / "tasks.sqlite3"

@@ -220,10 +220,12 @@ def _of_module(attribute: ast.Attribute, modules: set[str]) -> bool:
 def databases_opened_outside_stores(source: Path) -> list[str]:
     """A database opened outside infrastructure/stores/, the only place one is
     (ADR 0006): any reference to `connect` of `sqlite3`, its `dbapi2` or the C
-    module `_sqlite3` -- called or not, however the module or the name is bound --
-    a `Connection` of theirs called, or a star import from them. Importing
-    `sqlite3` for its error classes, or naming `Connection` in a type, opens
-    nothing. Out of reach: a module imported by `importlib` from a string."""
+    module `_sqlite3` or their `Connection` -- called, subclassed or bound to
+    another name, however the module or the name is bound -- or a star import
+    from them. Importing `sqlite3` for its error classes, or naming
+    `Connection` in a type annotation or as `isinstance`'s or `issubclass`'s
+    class, opens nothing. Out of reach: a module imported by `importlib` from
+    a string."""
     found = []
     for path in sorted(source.rglob("*.py")):
         rel = path.relative_to(source).as_posix()
@@ -251,24 +253,37 @@ def databases_opened_outside_stores(source: Path) -> list[str]:
                     elif a.name == "dbapi2":
                         modules.add(a.asname or a.name)
 
+        typing_only = _typing_only_nodes(tree)
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Attribute)
-                and node.attr == "connect"
-                and _of_module(node, modules)
+            if isinstance(node, ast.Attribute) and _of_module(node, modules):
+                if node.attr == "connect" or (
+                    node.attr == "Connection" and id(node) not in typing_only
+                ):
+                    found.append(f"{rel}:{node.lineno} sqlite3.{node.attr}")
+            elif isinstance(node, ast.Name) and (
+                node.id in connects or (node.id in classes and id(node) not in typing_only)
             ):
-                found.append(f"{rel}:{node.lineno} sqlite3.connect")
-            elif isinstance(node, ast.Name) and node.id in connects:
                 found.append(f"{rel}:{node.lineno} {node.id}")
-            elif isinstance(node, ast.Call):
-                func = node.func
-                if (
-                    isinstance(func, ast.Attribute)
-                    and func.attr == "Connection"
-                    and _of_module(func, modules)
-                ) or (isinstance(func, ast.Name) and func.id in classes):
-                    found.append(f"{rel}:{node.lineno} sqlite3.Connection()")
     return found
+
+
+def _typing_only_nodes(tree: ast.AST) -> set[int]:
+    """The nodes that name a class without using it: inside a type annotation,
+    or the class argument of `isinstance` and `issubclass`."""
+    roots: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg | ast.AnnAssign) and node.annotation is not None:
+            roots.append(node.annotation)
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.returns:
+            roots.append(node.returns)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in ("isinstance", "issubclass")
+            and len(node.args) == 2
+        ):
+            roots.append(node.args[1])
+    return {id(inner) for root in roots for inner in ast.walk(root)}
 
 
 def agents_dir(source: Path) -> Path:

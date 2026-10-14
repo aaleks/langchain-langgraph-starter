@@ -165,14 +165,18 @@ def _reading(path: Path, timeout: float) -> Iterator[sqlite3.Connection]:
         # query_only is a pragma its holder could switch off; the authorizer
         # cannot be removed from SQL, and lets nothing but reading through.
         db.set_authorizer(_reads_only)
+        # Text another program stored as text but not UTF-8 reads with U+FFFD:
+        # without this, one such row makes the whole list unreadable.
+        db.text_factory = lambda raw: raw.decode("utf-8", "replace")
         yield db
 
 
 def _cut(column: str, limit: int) -> str:
     """A column as the read fetches it: text only, and never whole -- a file
-    written without the limits could hold megabytes. Four times the limit, so
-    the domain's `readable` still has the limit's worth once it drops control
-    characters; it makes the final cut."""
+    written without the limits could hold megabytes. Four times the limit, then
+    the domain's `readable` drops control characters and makes the final cut:
+    text past four times the limit is never read, so a field made mostly of
+    control characters reads shorter than its limit, or empty."""
     return f"CASE WHEN typeof({column}) = 'text' THEN substr({column}, 1, {4 * limit}) ELSE '' END"
 
 

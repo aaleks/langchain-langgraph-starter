@@ -82,6 +82,11 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
             "config/k.py": "from sqlite3 import *\ndb = connect('x')\n",
             "domain/l.py": "from sqlite3.dbapi2 import connect\ndb = connect('x')\n",
             "cli/m.py": "from sqlite3 import Connection as C\ndb = C('x')\n",
+            # a connection subclassed, and bound to another name before the call
+            "application/o.py": (
+                "import sqlite3\nclass Mine(sqlite3.Connection):\n    pass\ndb = Mine('x')\n"
+            ),
+            "domain/p.py": "import sqlite3\nopen_ = sqlite3.Connection\ndb = open_('x')\n",
             "infrastructure/stores/tasks.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
             # counter-examples: the module imported for its errors; another connect
             "infrastructure/agents/tools/d.py": "import sqlite3\nerrors = (sqlite3.Error,)\n",
@@ -98,6 +103,7 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
     assert sorted({f.split(":")[0] for f in found}) == [
         "application/f.py",
         "application/j.py",
+        "application/o.py",
         "cli/c.py",
         "cli/m.py",
         "config/g.py",
@@ -105,6 +111,7 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
         "domain/a.py",
         "domain/h.py",
         "domain/l.py",
+        "domain/p.py",
         "infrastructure/agents/tools/b.py",
         "infrastructure/i.py",
     ], found

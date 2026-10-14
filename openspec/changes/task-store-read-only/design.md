@@ -132,6 +132,19 @@ setting those names empty in its environment.
     but returns it cut; the SQL cut is a memory guard no test can see. Both
     concern only lists written without the limits.
 
+- **Verify pass 4's corrections** (`verify.md`):
+  - *A connection subclassed or aliased* is caught again. Only a type
+    annotation, or `isinstance`'s or `issubclass`'s class argument, names
+    `Connection` without opening anything.
+  - *Text that is not UTF-8* reads with U+FFFD rather than making the whole
+    list unreadable.
+  - *The bound per read is measured and asserted:* 132,713 characters, ids 1
+    to 50.
+  - *Accepted and recorded:* a NUL never reaches the domain. SQLite's string
+    functions stop at the first one, so text after a NUL in a list another
+    program wrote is not read, and a command line cannot carry one. Keeping
+    NUL in `CONTROL` costs nothing, and no entry point can prove it.
+
 ## Orchestration design
 
 N-A for the node table: the tool loop is unchanged, with one more middleware.
