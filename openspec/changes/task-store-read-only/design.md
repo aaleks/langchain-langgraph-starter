@@ -93,6 +93,27 @@ setting those names empty in its environment.
     - No tier streams a tool call on the served path, because the fake cannot
       stream a proposal. The live server test streams an answer.
 
+- **Verify pass 2's corrections** (`verify.md`):
+  - *Bounded at the read, whatever the file holds.* Each field is cut in SQL
+    (`substr`) and made `readable` in the domain: no control character but
+    newline and tab, at most its limit long. The schema's CHECKs guard writes
+    through this code; the read guards everything else, including a list
+    another program wrote, or one written before the CHECKs.
+  - *Control characters refused before a write,* since JSON would send each
+    as six characters.
+  - *The reader's guard is an authorizer.* SQL cannot remove it, and it lets
+    through reading and reading a pragma only. `query_only` stays as the
+    second wall.
+  - *A run's budget on what reaches the model* is OPEN for 3b (frame,
+    question 6).
+  - *The database check sees any reference* to `connect` or `Connection` of
+    `sqlite3` or its `dbapi2`, called or not.
+  - *Accepted and recorded:*
+    - The timeout overshoots: SQLite's busy wait, measured and stated in
+      TASKS-LIST.
+    - A list on a network share is unsupported: SQLite refuses the URI's
+      authority after the first add.
+
 ## Orchestration design
 
 N-A for the node table: the tool loop is unchanged, with one more middleware.

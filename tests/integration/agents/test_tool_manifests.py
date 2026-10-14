@@ -100,11 +100,19 @@ class TestToolManifests:
         store.open()
 
         for built in (list_tasks.build(store), search_tasks.build(store)):
+            held = [cell.cell_contents for cell in built.func.__closure__ or ()]
+            assert not any(isinstance(h, TaskStore) for h in held)
             reader = reader_of(built)
             assert not hasattr(reader, "add")
             assert reader.timeout == built.metadata["capability"].timeout_seconds
-            with reader.connection() as db, pytest.raises(sqlite3.OperationalError):
-                db.execute("INSERT INTO tasks (title) VALUES ('sneaked in')")
+            for statement in (
+                "INSERT INTO tasks (title) VALUES ('sneaked in')",
+                "PRAGMA query_only = OFF",
+                f"ATTACH DATABASE '{tmp_path / 'other.sqlite3'}' AS other",
+            ):
+                with reader.connection() as db, pytest.raises(sqlite3.DatabaseError):
+                    db.execute(statement)
+            assert not (tmp_path / "other.sqlite3").exists()
 
     @pytest.mark.parametrize(
         ("tools", "named"),
@@ -115,7 +123,9 @@ class TestToolManifests:
             ([plain(capability=replace(READ, side_effect="write"))], ["add", "write"]),
             ([plain(capability=replace(READ, side_effect="network"))], ["add", "network"]),
             ([plain(capability=replace(READ, retry="transient"))], ["add", "transient"]),
+            ([plain(capability=replace(READ, retry="always"))], ["add", "always"]),
             ([plain(capability=replace(READ, calls_per_run=5))], ["add", "5"]),
+            ([plain(capability=replace(READ, calls_per_run=21))], ["add", "21"]),
             ([plain(capability=READ), plain("sub")], ["sub"]),
         ],
         ids=[
@@ -125,7 +135,9 @@ class TestToolManifests:
             "a-write",
             "another-side-effect",
             "a-retry",
+            "another-retry-class",
             "a-rate-limit-not-enforced",
+            "a-rate-limit-over-the-budget",
             "the-second-tool-unmanifested",
         ],
     )

@@ -118,3 +118,26 @@
   repository. It now runs with the owner's model and a temporary task list,
   and no `.data/` is left. Every default check passed, suite 225; live 8
   passed, 1 failed on the owner's model id, as before
+
+## 9. Verify pass 2 -- the fixes (`verify.md`, reviewed at `976d7c2`)
+
+- [x] 9.1 Bounded at the read, whatever the file holds: each field cut in SQL
+  and made `readable` by the domain -- no control character but newline and
+  tab, at most its limit; control characters refused before a write; a list
+  written without the limits proved (21, 22). A run's budget on what reaches
+  the model: OPEN for 3b, frame question 6
+- [x] 9.2 The CLI's unreadable-`.env` row sealed: the default list redirected
+  and asserted absent (23); a file under a file exits 1 (31)
+- [x] 9.3 The reader's authorizer: an INSERT, `PRAGMA query_only = OFF` and an
+  `ATTACH` refused, the tool holding no store (24, 30)
+- [x] 9.4 The database check: any reference to `connect` or `Connection` of
+  `sqlite3` or `dbapi2`, on fixture rows (25)
+- [x] 9.5 Rows: one state of the list, with a writer between the rows and the
+  count (26); the assignee's and notes' CHECKs, a creation failing midway, a
+  list another opener made, a busy list not "not a task list" (27, 31); the
+  locked list's one model call and its bound under 3 s (28); notes matched
+  with ESCAPE, a query at the limit, text as written in a search (29); retry
+  `always`, a rate limit of 21 (30)
+- [x] 9.6 Proved by mutation, twenty-two in a full-suite run, each red --
+  every survivor of the proof lens among them (M1-M5, M7-M16). Accepted and
+  recorded: the timeout's overshoot (32); a list on a network share (33)

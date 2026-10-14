@@ -37,17 +37,18 @@ def tasks_db(tmp_path, monkeypatch) -> Path:
 
 
 class TestTasksAdd:
-    """TASKS-ADD: `starter tasks add TITLE [--assignee NAME] [--notes TEXT]` SHALL
-    add one open task to the task list `TASKS_DB` names -- its title (at most
+    """TASKS-ADD: `starter tasks add TITLE [--assignee NAME] [--notes TEXT]` SHALL add
+    one open task to the task list `TASKS_DB` names -- its title (at most
     `TITLE_MAX`, 200 characters), assignee (at most `ASSIGNEE_MAX`, 100) and notes
-    (at most `NOTES_MAX`, 1,000), each with the spaces around it removed -- print
-    its id alone on standard output, and exit 0. A blank title, or a field over
-    its limit, SHALL be refused with exit status 2 and a message on standard
-    error naming it -- `TITLE`, `--assignee`, `--notes` -- nothing written, the
-    file not even created. A task list that cannot be opened or written --
-    TASKS-SCHEMA refusing it, or the file system -- and settings that cannot be
-    read SHALL end the command with exit status 1 and a message on standard
-    error naming the file, never a traceback."""
+    (at most `NOTES_MAX`, 1,000), each with the spaces around it removed and free of
+    control characters but newline and tab -- print its id alone on standard output,
+    and exit 0. A blank title, or a field over its limit or holding another control
+    character, SHALL be refused with exit status 2 and a message on standard error
+    naming it -- `TITLE`, `--assignee`, `--notes` -- nothing written, the file not
+    even created. A task list that cannot be opened or written -- TASKS-SCHEMA
+    refusing it, or the file system -- and settings that cannot be read SHALL end
+    the command with exit status 1 and a message on standard error naming the file,
+    never a traceback."""
 
     def test_two_tasks_added(self, tasks_db, capsys, monkeypatch):
         first = script(monkeypatch, "tasks", "add", "  Renew passport ", "--assignee", " sam ")
@@ -70,8 +71,9 @@ class TestTasksAdd:
             (["t" * 201], "TITLE"),
             (["Renew passport", "--assignee", "a" * 101], "--assignee"),
             (["Renew passport", "--notes", "n" * 1001], "--notes"),
+            (["Pay\x01 rent"], "TITLE"),
         ],
-        ids=["spaces", "empty", "title-201", "assignee-101", "notes-1001"],
+        ids=["spaces", "empty", "title-201", "assignee-101", "notes-1001", "control-character"],
     )
     def test_counter_example_refused_nothing_written(
         self, tasks_db, capsys, monkeypatch, args, named
@@ -121,6 +123,21 @@ class TestTasksAdd:
         assert printed.out == ""
         assert list(tmp_path.iterdir()) == []
 
+    def test_counter_example_a_task_list_under_a_file_is_refused(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        blocker = tmp_path / "not-a-directory"
+        blocker.write_text("kept\n", encoding="utf-8")
+        monkeypatch.setenv("TASKS_DB", str(blocker / "tasks.sqlite3"))
+
+        status = main(["tasks", "add", "Renew passport"])
+        printed = capsys.readouterr()
+
+        assert status == 1
+        assert str(blocker / "tasks.sqlite3") in printed.err
+        assert "Traceback" not in printed.err
+        assert blocker.read_text(encoding="utf-8") == "kept\n"
+
     def test_counter_example_settings_that_cannot_be_read_are_refused(
         self, tmp_path, capsys, monkeypatch
     ):
@@ -130,6 +147,9 @@ class TestTasksAdd:
         dotenv.write_text("OPENWEBUI_MODEL=llama3.1:8b\n", encoding="utf-16")
         monkeypatch.setattr(settings_module, "DOTENV", dotenv)
         monkeypatch.delenv("TASKS_DB")
+        # Where the list would be, were the settings read: never the repository's.
+        default = tmp_path / "default.sqlite3"
+        monkeypatch.setattr(settings_module, "DEFAULT_TASKS_DB", default)
 
         status = main(["tasks", "add", "Renew passport"])
         printed = capsys.readouterr()
@@ -137,3 +157,4 @@ class TestTasksAdd:
         assert status == 1
         assert str(dotenv) in printed.err
         assert printed.out == ""
+        assert not default.exists()

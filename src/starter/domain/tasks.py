@@ -37,16 +37,32 @@ class NewTask:
     notes: str
 
 
+# Control characters but newline and tab: JSON sends each as six characters
+# (`\u0001`), so they would slip past the length limits on the way to the model.
+CONTROL = frozenset(chr(c) for c in [*range(32), 127] if chr(c) not in "\n\t")
+LIMITS: dict[Field, int] = {"title": TITLE_MAX, "assignee": ASSIGNEE_MAX, "notes": NOTES_MAX}
+
+
 def new_task(title: str, assignee: str = "", notes: str = "") -> NewTask:
-    """A task to add, each field without the spaces around it. A blank title, or
-    a field over its limit, is refused, naming the field."""
+    """A task to add, each field without the spaces around it. A blank title, a
+    field over its limit, or one holding a control character, is refused,
+    naming the field."""
     task = NewTask(title=title.strip(), assignee=assignee.strip(), notes=notes.strip())
     if not task.title:
         raise TaskRefused("title", "is blank")
-    for field, limit in (("title", TITLE_MAX), ("assignee", ASSIGNEE_MAX), ("notes", NOTES_MAX)):
-        if len(getattr(task, field)) > limit:
+    for field, limit in LIMITS.items():
+        value = getattr(task, field)
+        if len(value) > limit:
             raise TaskRefused(field, f"is longer than {limit} characters")
+        if CONTROL.intersection(value):
+            raise TaskRefused(field, "holds a control character")
     return task
+
+
+def readable(text: str, field: Field) -> str:
+    """A field as it may reach the model, whatever wrote it: no control character
+    but newline and tab, and at most its limit long."""
+    return "".join(c for c in text if c not in CONTROL)[: LIMITS[field]]
 
 
 class TaskRow(TypedDict):

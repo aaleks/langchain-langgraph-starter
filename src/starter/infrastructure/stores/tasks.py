@@ -16,6 +16,7 @@ from starter.domain.tasks import (
     NewTask,
     TaskPage,
     TaskRow,
+    readable,
 )
 
 SCHEMA_VERSION = 1
@@ -131,13 +132,20 @@ class TaskReader:
         with self.connection() as db:
             db.execute("BEGIN")
             rows = db.execute(
-                f"SELECT id, title, assignee, notes FROM tasks WHERE {where} ORDER BY id LIMIT ?",
+                # Cut in SQL too: a file written without the limits is never read whole.
+                f"SELECT id, substr(title, 1, {TITLE_MAX}), substr(assignee, 1, {ASSIGNEE_MAX}), "
+                f"substr(notes, 1, {NOTES_MAX}) FROM tasks WHERE {where} ORDER BY id LIMIT ?",
                 (*params, limit),
             ).fetchall()
             matched = db.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}", params).fetchone()[0]
             db.execute("COMMIT")
         tasks: list[TaskRow] = [
-            {"id": id_, "title": title, "assignee": assignee, "notes": notes}
+            {
+                "id": id_,
+                "title": readable(title, "title"),
+                "assignee": readable(assignee, "assignee"),
+                "notes": readable(notes, "notes"),
+            }
             for id_, title, assignee, notes in rows
         ]
         return {"tasks": tasks, "more": matched - len(tasks)}
@@ -155,7 +163,28 @@ def _reading(path: Path, timeout: float) -> Iterator[sqlite3.Connection]:
     uri = path.resolve().as_uri() + "?mode=rw"
     with closing(sqlite3.connect(uri, uri=True, timeout=timeout, isolation_level=None)) as db:
         db.execute("PRAGMA query_only = ON")
+        # query_only is a pragma its holder could switch off; the authorizer
+        # cannot be removed from SQL, and lets nothing but reading through.
+        db.set_authorizer(_reads_only)
         yield db
+
+
+_READING = frozenset(
+    {
+        sqlite3.SQLITE_READ,
+        sqlite3.SQLITE_SELECT,
+        sqlite3.SQLITE_TRANSACTION,
+        sqlite3.SQLITE_FUNCTION,
+    }
+)
+
+
+def _reads_only(action: int, first: str | None, second: str | None, *_: object) -> int:
+    """Reading, and reading a pragma (`PRAGMA user_version`); nothing else --
+    no write, no `PRAGMA query_only = OFF`, no `ATTACH`."""
+    if action in _READING or (action == sqlite3.SQLITE_PRAGMA and second is None):
+        return sqlite3.SQLITE_OK
+    return sqlite3.SQLITE_DENY
 
 
 def _version_and_tables(db: sqlite3.Connection) -> tuple[int, set[str]]:

@@ -71,6 +71,12 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
             "domain/a.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
             "infrastructure/agents/tools/b.py": "import sqlite3 as lite\ndb = lite.connect('x')\n",
             "cli/c.py": "from sqlite3 import connect as opened\ndb = opened('x')\n",
+            # bound to another name before the call; a connection's own class;
+            # the DB-API module, reached two ways
+            "application/f.py": "import sqlite3\nopener = sqlite3.connect\ndb = opener('x')\n",
+            "config/g.py": "import sqlite3\ndb = sqlite3.Connection('x')\n",
+            "domain/h.py": "import sqlite3.dbapi2\ndb = sqlite3.dbapi2.connect('x')\n",
+            "infrastructure/i.py": "from sqlite3 import dbapi2\ndb = dbapi2.connect('x')\n",
             "infrastructure/stores/tasks.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
             # counter-examples: the module imported for its errors; another connect
             "infrastructure/agents/tools/d.py": "import sqlite3\nerrors = (sqlite3.Error,)\n",
@@ -78,8 +84,12 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
         },
     )
     found = databases_opened_outside_stores(source)
-    assert [f.split(":")[0] for f in found] == [
+    assert sorted({f.split(":")[0] for f in found}) == [
+        "application/f.py",
         "cli/c.py",
+        "config/g.py",
         "domain/a.py",
+        "domain/h.py",
         "infrastructure/agents/tools/b.py",
+        "infrastructure/i.py",
     ], found

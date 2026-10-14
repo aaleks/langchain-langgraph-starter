@@ -33,10 +33,18 @@ over sqlite-utils, SQLAlchemy and LangChain's SQL toolkit
   `TASK_STORE_TIMEOUT_SECONDS`, which the tools' manifests declare and their
   readers take from them.
 - **A tool is given a reader, never the store.** Its connections are
-  read-write but `query_only`: they refuse every write except SQLite's own
-  recovery of an interrupted one. A read-only connection cannot roll a journal
-  back, and would refuse a list of tasks. A read is one transaction, so its
-  rows and its count see one state of the list.
+  read-write, for one reason: a read-only connection cannot roll back an
+  interrupted write's journal, and would refuse a list of tasks. Two guards
+  keep them reading:
+  - an authorizer, which SQL cannot remove, lets through reading and reading
+    a pragma only;
+  - `query_only` refuses every write except SQLite's own recovery.
+
+  A read is one transaction, so its rows and its count see one state of the
+  list. Each field is cut to its limit and stripped of control characters at
+  the read, whatever wrote the file.
+- **Not on a network share.** SQLite refuses the authority in a share's URI,
+  so a list there is created once, then refused.
 - **Schema version 1**, held in `PRAGMA user_version`:
 
   ```sql

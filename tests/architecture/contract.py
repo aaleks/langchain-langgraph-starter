@@ -206,8 +206,13 @@ def exits_outside_cli(source: Path) -> list[str]:
 STORES_PREFIX = "infrastructure/stores/"
 
 
+SQLITE_MODULES = frozenset({"sqlite3", "sqlite3.dbapi2"})
+SQLITE_OPENERS = frozenset({"connect", "Connection"})
+
+
 def databases_opened_outside_stores(source: Path) -> list[str]:
-    """`sqlite3.connect`, however `sqlite3` or `connect` is bound -- outside
+    """Any reference to `connect` or `Connection` of `sqlite3` or `sqlite3.dbapi2`,
+    called or not, however the module or the name is bound -- outside
     infrastructure/stores/, the only place a database file is opened (ADR 0006).
     Importing `sqlite3` for its error classes is not opening anything."""
     found = []
@@ -216,25 +221,30 @@ def databases_opened_outside_stores(source: Path) -> list[str]:
         if rel.startswith(STORES_PREFIX):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        # Names bound to sqlite3 or its dbapi2, and to an opener imported by name.
         modules: set[str] = set()
-        connects: set[str] = set()
+        openers: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                modules |= {a.asname or a.name for a in node.names if a.name == "sqlite3"}
-            elif isinstance(node, ast.ImportFrom) and node.module == "sqlite3":
-                connects |= {a.asname or a.name for a in node.names if a.name == "connect"}
+                for a in node.names:
+                    if a.name in SQLITE_MODULES:
+                        # `import sqlite3.dbapi2` binds `sqlite3`; with `as`, the module itself.
+                        modules.add(a.asname or a.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom) and node.module in SQLITE_MODULES:
+                for a in node.names:
+                    if a.name in SQLITE_OPENERS:
+                        openers.add(a.asname or a.name)
+                    elif a.name == "dbapi2":
+                        modules.add(a.asname or a.name)
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            through_module = (
-                isinstance(func, ast.Attribute)
-                and func.attr == "connect"
-                and isinstance(func.value, ast.Name)
-                and func.value.id in modules
-            )
-            if through_module or (isinstance(func, ast.Name) and func.id in connects):
-                found.append(f"{rel}:{node.lineno} sqlite3.connect")
+            if isinstance(node, ast.Attribute) and node.attr in SQLITE_OPENERS:
+                owner = node.value
+                if isinstance(owner, ast.Attribute) and owner.attr == "dbapi2":
+                    owner = owner.value
+                if isinstance(owner, ast.Name) and owner.id in modules:
+                    found.append(f"{rel}:{node.lineno} sqlite3.{node.attr}")
+            elif isinstance(node, ast.Name) and node.id in openers:
+                found.append(f"{rel}:{node.lineno} {node.id}")
     return found
 
 

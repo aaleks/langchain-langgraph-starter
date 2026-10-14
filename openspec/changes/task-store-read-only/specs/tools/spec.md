@@ -16,7 +16,7 @@ Every tool the factory is given SHALL carry a capability manifest -- the tool's 
 | `list_tasks` | none | `read` | yes | `none` | `TOOL_CALLS_PER_RUN` | `sqlite3.Error` | none |
 | `search_tasks` | `query` | `read` | yes | `none` | `TOOL_CALLS_PER_RUN` | `sqlite3.Error` | none |
 
-- **AND** each reads through a view of the list that has no method to add, whose connection refuses an `INSERT`, and whose wait is its manifest's timeout
+- **AND** each holds a view of the list and no store: the view has no method to add, its connection refuses an `INSERT`, `PRAGMA query_only = OFF` and an `ATTACH`, and its wait is its manifest's timeout
 - **AND** the factory compiles a graph given both, offering the model exactly `list_tasks` and `search_tasks`
 
 #### Scenario: Counter-example -- a tool the assistant cannot honour is refused
@@ -28,5 +28,7 @@ Every tool the factory is given SHALL carry a capability manifest -- the tool's 
 | a manifest declaring the side effect `write` | `add` and `write` |
 | a manifest declaring the side effect `network` | `add` and `network` |
 | a manifest declaring the retry class `transient` | `add` and `transient` |
+| a manifest declaring the retry class `always` | `add` and `always` |
 | a manifest declaring a rate limit of 5 calls a run | `add` and `5` |
+| a manifest declaring a rate limit of 21 calls a run | `add` and `21` |
 | a manifest declaring `read`, beside a second tool with none | the second tool |

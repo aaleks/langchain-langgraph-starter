@@ -88,12 +88,59 @@ class TestTaskSchema:
         assert version_and_tasks(crashed) == (1, 1)
         assert not journal.exists()
 
-    def test_the_schema_holds_the_limits(self, tmp_path):
+    @pytest.mark.parametrize(
+        "insert",
+        [
+            f"INSERT INTO tasks (title) VALUES ('{'t' * 201}')",
+            f"INSERT INTO tasks (title, assignee) VALUES ('t', '{'a' * 101}')",
+            f"INSERT INTO tasks (title, notes) VALUES ('t', '{'n' * 1001}')",
+        ],
+        ids=["title-201", "assignee-101", "notes-1001"],
+    )
+    def test_the_schema_holds_the_limits(self, tmp_path, insert):
         path = tmp_path / "tasks.sqlite3"
         TaskStore(path).open()
 
         with pytest.raises(sqlite3.IntegrityError):
-            sqlite_file(path, f"INSERT INTO tasks (title) VALUES ('{'t' * 201}')")
+            sqlite_file(path, insert)
+
+    def test_a_creation_that_fails_midway_leaves_the_file_blank(self, tmp_path, monkeypatch):
+        from starter.infrastructure.stores import tasks as stores
+
+        class FailsAtTheVersion:
+            def __init__(self, db):
+                self.db = db
+
+            def execute(self, sql, *args):
+                if sql.startswith("PRAGMA user_version ="):
+                    raise sqlite3.OperationalError("interrupted before the version")
+                return self.db.execute(sql, *args)
+
+            def close(self):
+                self.db.close()
+
+        real = stores._connect
+        monkeypatch.setattr(stores, "_connect", lambda *a, **k: FailsAtTheVersion(real(*a, **k)))
+        path = tmp_path / "tasks.sqlite3"
+
+        with pytest.raises(sqlite3.OperationalError):
+            TaskStore(path).open()
+
+        db = sqlite3.connect(path)
+        tables = db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        db.close()
+        assert (version, tables) == (0, [])
+
+    def test_a_list_another_opener_made_first_is_left_as_it_is(self, tmp_path):
+        path = tmp_path / "tasks.sqlite3"
+        TaskStore(path).open()
+        sqlite_file(path, "INSERT INTO tasks (title) VALUES ('Renew passport')")
+
+        # As if this opener had looked at the file before the other made it.
+        TaskStore(path)._create()
+
+        assert version_and_tasks(path) == (1, 1)
 
     def test_a_version_1_list_is_left_as_it_is(self, tmp_path):
         path = tmp_path / "tasks.sqlite3"
@@ -133,3 +180,15 @@ class TestTaskSchema:
         if named:
             assert f"version {named}" in str(refused.value)
         assert path.read_bytes() == before
+
+    def test_counter_example_a_busy_list_is_not_called_not_a_task_list(self, tmp_path):
+        path = tmp_path / "tasks.sqlite3"
+        TaskStore(path).open()
+        holder = sqlite3.connect(path, isolation_level=None)
+        holder.execute("BEGIN EXCLUSIVE")
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                TaskStore(path, timeout=1.0).open()
+        finally:
+            holder.execute("ROLLBACK")
+            holder.close()

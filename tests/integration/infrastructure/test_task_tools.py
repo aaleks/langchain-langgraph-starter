@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -47,14 +48,17 @@ def run_proposing(fake_llm, tool, args: dict) -> tuple[list, object]:
 
 
 class TestListTasks:
-    """TASKS-LIST: The tool `list_tasks`, taking no arguments, SHALL return the
-    open tasks in the order they were added -- at most `TASK_RESULTS_LIMIT` (50)
-    -- as the JSON object `{"tasks": [{"id", "title", "assignee", "notes"}, ...],
-    "more": n}`, `n` being how many more open tasks there are, its text as
-    written: a letter outside ASCII as itself, not escaped. A task list another
-    process holds locked SHALL end the run with the store's error after waiting
-    `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's own wait, which overshoots it
-    (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s)."""
+    """TASKS-LIST: The tool `list_tasks`, taking no arguments, SHALL return the open
+    tasks in the order they were added -- at most `TASK_RESULTS_LIMIT` (50) -- as
+    the JSON object `{"tasks": [{"id", "title", "assignee", "notes"}, ...], "more":
+    n}`, `n` being how many more open tasks there are -- the rows and `n` seeing one
+    state of the list -- its text as written: a letter outside ASCII as itself, not
+    escaped. Whatever the file holds, each field SHALL reach the model at most its
+    limit long (TASKS-ADD) and without a control character but newline and tab: one
+    read hands it at most 50 tasks of 1,300 characters, before JSON escapes a
+    newline or a tab. A task list another process holds locked SHALL end the run
+    with the store's error after waiting `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's
+    own wait, which overshoots it (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s)."""
 
     def test_the_open_tasks_in_order(self, tmp_path):
         store = task_list(
@@ -97,24 +101,70 @@ class TestListTasks:
     def test_a_list_another_process_holds_locked_ends_the_run(
         self, tmp_path, fake_llm, monkeypatch
     ):
+        from starter.infrastructure.agents.factory import build_assistant
+
         path = tmp_path / "tasks.sqlite3"
         store = task_list(path, ("Renew passport", "", ""))
         monkeypatch.setattr(
             list_tasks, "CAPABILITY", replace(list_tasks.CAPABILITY, timeout_seconds=1.0)
         )
-        tool = list_tasks.build(store)
+        model = fake_llm([propose(("list_tasks", {})), answer()])
+        graph = build_assistant(model, [list_tasks.build(store)], transient=lambda failure: False)
         holder = sqlite3.connect(path, isolation_level=None)
         holder.execute("BEGIN EXCLUSIVE")
         try:
             started = time.monotonic()
             with pytest.raises(sqlite3.OperationalError):
-                run_proposing(fake_llm, tool, {})
+                graph.invoke({"messages": [HumanMessage("go")]})
             waited = time.monotonic() - started
         finally:
             holder.execute("ROLLBACK")
             holder.close()
 
-        assert 1.0 <= waited < 4.0
+        # Measured: 1 s given, 1.8 s taken. Under 3 s: one wait, not two.
+        assert 1.0 <= waited < 3.0
+        assert model.calls == 1
+
+    def test_a_list_written_without_the_limits_reaches_the_model_within_them(self, tmp_path):
+        path = tmp_path / "tasks.sqlite3"
+        db = sqlite3.connect(path)
+        db.execute(
+            "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, "
+            "assignee TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '', "
+            "status TEXT NOT NULL DEFAULT 'open', created_at TEXT)"
+        )
+        db.execute("PRAGMA user_version = 1")
+        db.execute(
+            "INSERT INTO tasks (title, notes) VALUES (?, ?)",
+            ("Pay\x01" + "t" * 300, "n" * 2_000_000),
+        )
+        db.commit()
+        db.close()
+        store = TaskStore(path)
+        store.open()
+
+        task = json.loads(list_tasks.build(store).invoke({}))["tasks"][0]
+
+        assert "\x01" not in task["title"]
+        assert task["title"].startswith("Pay") and len(task["title"]) <= 200
+        assert len(task["notes"]) == 1000
+
+    def test_the_rows_and_more_see_one_state_of_the_list(self, tmp_path, monkeypatch):
+        path = tmp_path / "tasks.sqlite3"
+        store = task_list(path, ("One", "", ""), ("Two", "", ""))
+        original = TaskReader.connection
+
+        @contextmanager
+        def interleaved(self):
+            with original(self) as db:
+                yield AddsAfterTheRows(db, path)
+
+        monkeypatch.setattr(TaskReader, "connection", interleaved)
+
+        result = json.loads(list_tasks.build(store).invoke({}))
+
+        assert [t["id"] for t in result["tasks"]] == [1, 2]
+        assert result["more"] == 0
 
     def test_counter_example_a_closed_task_is_not_listed(self, tmp_path):
         path = tmp_path / "tasks.sqlite3"
@@ -127,6 +177,38 @@ class TestListTasks:
         assert json.loads(result)["more"] == 0
 
 
+class AddsAfterTheRows:
+    """A connection that lets another process add a task once the read's rows
+    are fetched, before its count: what a writer between the two would do."""
+
+    def __init__(self, db: sqlite3.Connection, path: Path) -> None:
+        self.db, self.path, self.done = db, path, False
+
+    def execute(self, sql: str, *args):
+        cursor = self.db.execute(sql, *args)
+        if sql.startswith("SELECT id") and not self.done:
+            self.done = True
+            rows = cursor.fetchall()
+            other = sqlite3.connect(self.path, timeout=0)
+            try:
+                other.execute("INSERT INTO tasks (title) VALUES ('Three')")
+                other.commit()
+            except sqlite3.OperationalError:
+                pass  # held off by the read's own transaction: what it is for
+            finally:
+                other.close()
+            return Fetched(rows)
+        return cursor
+
+
+class Fetched:
+    def __init__(self, rows: list) -> None:
+        self.rows = rows
+
+    def fetchall(self) -> list:
+        return self.rows
+
+
 SEARCHED = [
     ("Renew passport", "", ""),
     ("Call the plumber", "", "bring the PASSPORT copy"),
@@ -136,17 +218,20 @@ SEARCHED = [
     ("file tax", "", ""),
     ("copy a\\b", "", ""),
     ("copy ab", "", ""),
+    ("Sale", "", "save 50% off"),
+    ("Promo", "", "save 500 off"),
+    ("Čestitka", "", ""),
 ]
 
 
 class TestSearchTasks:
-    r"""TASKS-SEARCH: The tool `search_tasks(query)` SHALL return the open tasks
-    whose title or notes contain the query -- the spaces around it removed,
-    ASCII letters matched regardless of case, every other character as itself,
-    `%`, `_` and `\` included -- in the order they were added, at most
-    `TASK_RESULTS_LIMIT`, in `list_tasks`' shape. A blank query, or one over
-    `TITLE_MAX` characters, SHALL be handed back to the model as an error
-    answering its call, the list not read."""
+    r"""TASKS-SEARCH: The tool `search_tasks(query)` SHALL return the open tasks whose
+    title or notes contain the query -- the spaces around it removed, ASCII letters
+    matched regardless of case, every other character as itself, `%`, `_` and `\`
+    included -- in the order they were added, at most `TASK_RESULTS_LIMIT`, in
+    `list_tasks`' shape and bounds, its text as written. A blank query, or one over
+    `TITLE_MAX` characters, SHALL be handed back to the model as an error answering
+    its call, the list not read."""
 
     @pytest.mark.parametrize(
         ("query", "expected"),
@@ -156,6 +241,10 @@ class TestSearchTasks:
             ("100%", [3]),
             ("file_tax", [5]),
             ("a\\b", [7]),
+            ("50% off", [9]),
+            ("čestitka", []),
+            ("Čestitka", [11]),
+            ("x" * 200, []),
             ("plumber", [2]),
             ("holiday", []),
         ],
@@ -167,6 +256,13 @@ class TestSearchTasks:
 
         assert ids(result) == expected
         assert json.loads(result)["more"] == 0
+
+    def test_text_as_written(self, tmp_path):
+        store = task_list(tmp_path / "tasks.sqlite3", *SEARCHED)
+
+        result = search_tasks.build(store).invoke({"query": "Čestitka"})
+
+        assert '"Čestitka"' in result
 
     def test_past_the_limit(self, tmp_path):
         store = task_list(
