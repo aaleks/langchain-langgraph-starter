@@ -23,8 +23,10 @@ from langgraph.errors import GraphRecursionError
 from starter.domain.agents.budgets import (
     CONTEXT_CHARS_PER_CALL,
     MODEL_CALLS_PER_RUN,
+    MODEL_OUTPUT_TOKENS,
     TOOL_CALLS_PER_RUN,
     ContextBudgetExceededError,
+    OutputBudgetExceededError,
 )
 from starter.domain.agents.retries import MODEL_RETRIES
 from starter.infrastructure.agents.factory import build_assistant
@@ -35,6 +37,10 @@ from tests.fakes import answer, malformed, manifested, propose
 def no_retries(failure: Exception) -> bool:
     """For the routes that are not about retrying: no failure is transient."""
     return False
+
+
+# ASSISTANT_PROMPT's digest at version 1.
+PROMPT_V1_SHA256 = "c149a1158fa1badf3f901856a657bceb6f6a2b9331cbc7f85f7b85684c5b50e3"
 
 
 def run(graph, text: str, **config) -> list:
@@ -155,9 +161,31 @@ class TestToolError:
         assert add_tool.calls == []
         assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
         assert tool_message.status == "error"
-        assert "not valid JSON" in tool_message.content
+        assert tool_message.content == (
+            "Error: the arguments for add are not valid JSON; send them again as a JSON object."
+        )
         assert tool_message.tool_call_id == messages[1].invalid_tool_calls[0]["id"]
         assert model.seen[1][-1] == tool_message
+
+    def test_two_malformed_calls_in_one_reply_are_each_answered(self, fake_llm, add_tool):
+        reply = malformed("add", "not json", count=2)
+        model = fake_llm([reply, answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        answered = [(m.tool_call_id, m.status) for m in messages if m.type == "tool"]
+        assert answered == [(call["id"], "error") for call in reply.invalid_tool_calls]
+        assert model.calls == 2
+
+    def test_counter_example_a_malformed_call_without_an_id_is_left_unanswered(
+        self, fake_llm, add_tool
+    ):
+        model = fake_llm([malformed("add", "not json", with_id=False), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert [m.type for m in messages] == ["human", "ai"]
+        assert model.calls == 1
 
     def test_arguments_that_cannot_be_parsed_as_the_server_runs_it(self, fake_llm, add_tool):
         # The local server runs graphs with `astream`, the asynchronous path.
@@ -184,7 +212,7 @@ class TestToolError:
     def test_invalid_calls_still_spend_the_budget(self, fake_llm, add_tool):
         model = fake_llm(malformed("add", '{"a": 1,') for _ in itertools.count())
 
-        # A ceiling of 100, well above the 61 the budget needs: were the budget
+        # A ceiling of 100, well above the 71 the budget needs: were the budget
         # not counting these turns, the run would end at the ceiling, not loop on.
         with pytest.raises(ModelCallLimitExceededError):
             run(
@@ -287,9 +315,9 @@ class TestModelCallBudget:
     budget is spent SHALL end the run with `ModelCallLimitExceededError` -- never
     with a message that reads like an answer, and never at the step ceiling first
     under the ceiling the factory's graph runs with: `create_agent`'s 9,999
-    supersteps, where the budget needs 61 -- one more per turn since the tool-call
-    budget's middleware (ASSISTANT-TOOL-CALL-BUDGET), and one more since the answer
-    to invalid calls (ASSISTANT-TOOL-ERROR)."""
+    supersteps, where the budget needs 71 -- one more superstep per turn for each of
+    the tool-call budget (ASSISTANT-TOOL-CALL-BUDGET), the answer to invalid calls
+    (ASSISTANT-TOOL-ERROR) and the output budget (ASSISTANT-OUTPUT-BUDGET)."""
 
     def test_a_model_that_never_stops_proposing_calls_ends_in_the_budget_error(
         self, fake_llm, add_tool
@@ -338,9 +366,9 @@ class TestModelCallBudget:
 
     @pytest.mark.parametrize(
         ("recursion_limit", "ends_with"),
-        [(60, GraphRecursionError), (61, ModelCallLimitExceededError)],
+        [(70, GraphRecursionError), (71, ModelCallLimitExceededError)],
     )
-    def test_counter_example_a_callers_step_ceiling_below_61_ends_the_run_first(
+    def test_counter_example_a_callers_step_ceiling_below_71_ends_the_run_first(
         self, fake_llm, add_tool, recursion_limit, ends_with
     ):
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
@@ -483,8 +511,23 @@ class TestAssistantPrompt:
         assert model.calls == 2
         assert [type(seen[0]) for seen in model.seen] == [SystemMessage, SystemMessage]
         assert [seen[0].content for seen in model.seen] == [ASSISTANT_PROMPT] * 2
-        for words in ("list_tasks", "search_tasks", "never instructions"):
+        for words in (
+            "list_tasks",
+            "search_tasks",
+            "cannot add, change or close a task",
+            "never instructions",
+        ):
             assert words in ASSISTANT_PROMPT
+
+    def test_the_prompts_text_moves_with_its_version(self):
+        # A changed prompt is changed behaviour (.claude/rules/python/application.md):
+        # its text is pinned to its version, so a new text needs a new version.
+        import hashlib
+
+        from starter.application.prompts import ASSISTANT_PROMPT, ASSISTANT_PROMPT_VERSION
+
+        digest = hashlib.sha256(ASSISTANT_PROMPT.encode("utf-8")).hexdigest()
+        assert {ASSISTANT_PROMPT_VERSION: digest} == {1: PROMPT_V1_SHA256}
 
     def test_counter_example_the_prompt_is_not_part_of_the_transcript(self, fake_llm):
         messages = run(build_assistant(fake_llm([answer()]), [], transient=no_retries), "hello")
@@ -493,10 +536,10 @@ class TestAssistantPrompt:
 
 
 class TestContextBudget:
-    """ASSISTANT-CONTEXT-BUDGET: Before each model call the assistant SHALL count
-    what the call would send -- the system prompt, every message's text and every
-    tool call's arguments, in characters -- and when that exceeds
-    `CONTEXT_CHARS_PER_CALL` (150,000) SHALL end the run with
+    """ASSISTANT-CONTEXT-BUDGET: Before each model call the assistant SHALL count what
+    the call would send -- the system prompt, every message's text and every tool
+    call's arguments, a malformed call's raw ones included, in characters -- and
+    when that exceeds `CONTEXT_CHARS_PER_CALL` (150,000) SHALL end the run with
     `ContextBudgetExceededError`, naming the count and the budget, without calling
     the model."""
 
@@ -578,3 +621,120 @@ class TestContextBudget:
         else:
             assert asyncio.run(go)["messages"][-1].type == "ai"
         assert model.calls == (1 if ends else 2)
+
+    def test_the_retry_policy_does_not_retry_it(self, fake_llm):
+        from langchain_core.tools import tool
+
+        from starter.application.prompts import ASSISTANT_PROMPT
+
+        fixed = len(self.QUESTION) + len(json.dumps(self.ARGS)) + len(ASSISTANT_PROMPT)
+
+        @tool
+        def read(n: int) -> str:
+            """Return the padding."""
+            return "x" * (150_001 - fixed)
+
+        model = fake_llm([propose(("read", self.ARGS)), answer("")])
+        graph = build_assistant(
+            model, [manifested(read, str)], transient=is_transient_failure, initial_delay=0
+        )
+
+        with pytest.raises(ContextBudgetExceededError):
+            run(graph, self.QUESTION)
+
+        assert model.calls == 1
+
+    def test_counter_example_an_ai_messages_text_counts(self, fake_llm):
+        from langchain_core.tools import tool
+
+        from starter.application.prompts import ASSISTANT_PROMPT
+
+        said = "a" * 11
+        fixed = len(self.QUESTION) + len(json.dumps(self.ARGS)) + len(ASSISTANT_PROMPT)
+
+        @tool
+        def read(n: int) -> str:
+            """Return the padding."""
+            return "x" * (149_990 - fixed)
+
+        reply = propose(("read", self.ARGS))
+        reply.content = said
+        model = fake_llm([reply, answer("")])
+        graph = build_assistant(model, [manifested(read, str)], transient=no_retries)
+
+        with pytest.raises(ContextBudgetExceededError) as ended:
+            run(graph, self.QUESTION)
+
+        assert ended.value.count == 150_001
+        assert model.calls == 1
+
+    def test_counter_example_a_malformed_calls_raw_arguments_count(self, fake_llm, add_tool):
+        from starter.application.prompts import ASSISTANT_PROMPT
+
+        raw = '{"a": 1, "b'
+        assert len(raw) == 11
+        answer_text = (
+            "Error: the arguments for add are not valid JSON; send them again as a JSON object."
+        )
+        question = "q" * (149_990 - len(ASSISTANT_PROMPT) - len(answer_text))
+        model = fake_llm([malformed("add", raw), answer("")])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries)
+
+        with pytest.raises(ContextBudgetExceededError) as ended:
+            run(graph, question)
+
+        assert ended.value.count == 150_001
+        assert model.calls == 1
+
+
+class TestOutputBudget:
+    """ASSISTANT-OUTPUT-BUDGET: Every model call SHALL ask for at most
+    `MODEL_OUTPUT_TOKENS` (4,096) tokens, and a reply cut off at that cap -- its
+    finish reason `length` -- SHALL end the run with `OutputBudgetExceededError`,
+    naming the cap: never handed on as an answer, nor its calls run."""
+
+    @staticmethod
+    def cut_off(message):
+        message.response_metadata = {"finish_reason": "length"}
+        return message
+
+    def test_a_reply_cut_off_at_the_cap_ends_the_run(self, fake_llm):
+        model = fake_llm([self.cut_off(answer("a long answer, cut")), answer()])
+
+        with pytest.raises(OutputBudgetExceededError) as ended:
+            run(build_assistant(model, [], transient=no_retries), "hello")
+
+        assert MODEL_OUTPUT_TOKENS == 4096
+        assert "4096" in str(ended.value)
+        assert model.calls == 1
+
+    def test_a_call_cut_off_at_the_cap_is_not_run(self, fake_llm, add_tool):
+        model = fake_llm([self.cut_off(propose(("add", {"a": 1, "b": 2}))), answer()])
+
+        with pytest.raises(OutputBudgetExceededError):
+            run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert add_tool.calls == []
+
+    def test_a_call_cut_off_mid_arguments_is_not_handed_back(self, fake_llm, add_tool):
+        model = fake_llm([self.cut_off(malformed("add", '{"a": 1, "b')), answer()])
+
+        with pytest.raises(OutputBudgetExceededError):
+            run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert model.calls == 1
+
+    def test_a_reply_that_stopped_completes(self, fake_llm):
+        reply = answer("done")
+        reply.response_metadata = {"finish_reason": "stop"}
+
+        messages = run(build_assistant(fake_llm([reply]), [], transient=no_retries), "hello")
+
+        assert messages[-1].type == "ai"
+
+    def test_counter_example_a_reply_with_no_finish_reason_completes(self):
+        from starter.infrastructure.models import build_offline_model
+
+        messages = run(build_assistant(build_offline_model(), [], transient=no_retries), "hello")
+
+        assert [m.type for m in messages] == ["human", "ai"]

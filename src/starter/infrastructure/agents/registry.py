@@ -10,7 +10,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from starter.config.settings import Settings, settings_from_process, tasks_db_path
 from starter.infrastructure.agents.factory import build_assistant
-from starter.infrastructure.agents.tools import list_tasks, search_tasks
+from starter.infrastructure.agents.tools import task_tools
 from starter.infrastructure.models import build_model, is_transient_failure
 from starter.infrastructure.stores.tasks import TaskStore
 
@@ -28,7 +28,7 @@ def registered_assistant(settings: Settings | None = None) -> CompiledStateGraph
     model = build_model(settings)
     store = TaskStore(tasks_db_path(settings))
     store.open()
-    tools = [list_tasks.build(store), search_tasks.build(store)]
+    tools = task_tools(store)
     return build_assistant(model, tools=tools, transient=is_transient_failure)
 
 

@@ -17,6 +17,15 @@ TOOL_CALLS_PER_RUN = 20
 # the prompt and a question fit beside it. Measured runs peaked at 16,148
 # (N = 20). Characters, not tokens: no tokenizer for a model `.env` can change.
 CONTEXT_CHARS_PER_CALL = 150_000
+# Per call: each turn re-sends the conversation, and each retry re-sends the
+# turn, so a run's worst case is MODEL_CALLS_PER_RUN x (1 + MODEL_RETRIES) x
+# this -- 4.5M characters, about 1.1M tokens. A per-run total waits for a run
+# that needs one (bound-the-tool-loop, verify.md finding 10).
+
+# What one reply may hold, in tokens: the owner chose a cap, and a reply cut off
+# at it ends the run (bound-the-tool-loop). The measured answers were short; this
+# is about 16,000 characters. A starting policy.
+MODEL_OUTPUT_TOKENS = 4096
 
 
 class ContextBudgetExceededError(RuntimeError):
@@ -27,6 +36,21 @@ class ContextBudgetExceededError(RuntimeError):
         super().__init__(f"a model call would send {count} characters; the budget is {budget}")
         self.count = count
         self.budget = budget
+
+
+def check_context_chars(count: int) -> None:
+    """Refuse a model call that would send more than CONTEXT_CHARS_PER_CALL."""
+    if count > CONTEXT_CHARS_PER_CALL:
+        raise ContextBudgetExceededError(count, CONTEXT_CHARS_PER_CALL)
+
+
+class OutputBudgetExceededError(RuntimeError):
+    """A reply was cut off at MODEL_OUTPUT_TOKENS: the run ends, its text never
+    taken for an answer, its calls never run."""
+
+    def __init__(self, cap: int) -> None:
+        super().__init__(f"a reply was cut off at its cap of {cap} tokens")
+        self.cap = cap
 
 
 # How long the assistant waits on the model at any one point -- to connect, for

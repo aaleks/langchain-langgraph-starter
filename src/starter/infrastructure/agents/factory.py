@@ -22,7 +22,11 @@ from starter.domain.agents.retries import (
     RETRY_BACKOFF_FACTOR,
     RETRY_INITIAL_DELAY_SECONDS,
 )
-from starter.infrastructure.agents.middleware import AnswerInvalidCalls, ContextBudget
+from starter.infrastructure.agents.middleware import (
+    AnswerInvalidCalls,
+    ContextBudget,
+    OutputBudget,
+)
 
 
 def build_assistant(
@@ -68,5 +72,14 @@ def build_assistant(
         # AnswerInvalidCalls first: `after_model` hooks run last-first, and its
         # jump back to the model must come after the budget has counted the turn
         # -- placed last, an endless malformed reply loops past the budget.
-        middleware=[AnswerInvalidCalls(), budget, tool_budget, retry, ContextBudget()],
+        # OutputBudget next: it runs before AnswerInvalidCalls, so a call cut off
+        # at the cap ends the run rather than being handed back.
+        middleware=[
+            AnswerInvalidCalls(),
+            OutputBudget(),
+            budget,
+            tool_budget,
+            retry,
+            ContextBudget(),
+        ],
     )

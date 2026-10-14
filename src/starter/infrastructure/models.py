@@ -17,7 +17,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
 from starter.config.settings import Settings
-from starter.domain.agents.budgets import MODEL_CALL_TIMEOUT_SECONDS
+from starter.domain.agents.budgets import MODEL_CALL_TIMEOUT_SECONDS, MODEL_OUTPUT_TOKENS
 from starter.domain.agents.retries import is_transient
 from starter.domain.models import api_base, choose_model
 
@@ -61,6 +61,9 @@ def build_openwebui_model(settings: Settings) -> BaseChatModel:
         model=settings.openwebui_model,
         timeout=MODEL_CALL_TIMEOUT_SECONDS,
         stream_chunk_timeout=MODEL_CALL_TIMEOUT_SECONDS,
+        # Open WebUI honours it: a capped reply comes back with finish_reason
+        # `length` (checked on the owner's server); ASSISTANT-OUTPUT-BUDGET.
+        max_tokens=MODEL_OUTPUT_TOKENS,
         max_retries=0,
         use_responses_api=False,
     )

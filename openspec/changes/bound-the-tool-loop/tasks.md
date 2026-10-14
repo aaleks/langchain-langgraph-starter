@@ -66,3 +66,28 @@
   malformed call. Removing the async hook turns them red.
   `bash scripts/check.sh live`: every check passed -- suite 266, live 9
   passed, the Open WebUI test among them. No key-shaped line, and no `.data/`
+
+## 6. Verify pass 1 -- the fixes (`verify.md`, reviewed at `d941831`)
+
+- [x] 6.1 `call_chars` counts malformed calls' raw arguments; the answer to
+  one is a fixed sentence, asserted exactly; rows for AI text and raw
+  arguments near the bound (1, 4, 5)
+- [x] 6.2 Two malformed calls in one reply, each answered; one without an
+  id left, the run not crashing (3, 6)
+- [x] 6.3 ASSISTANT-OUTPUT-BUDGET: `max_tokens` 4,096 on the client
+  (MODEL-OPENWEBUI-CLIENT, modified), `OutputBudget` ending a cut-off reply.
+  Open WebUI honours the cap, checked on the owner's server (2). The step
+  ceiling re-measured: 70 and 71
+- [x] 6.4 `check_context_chars` in the domain (7); the context error not
+  retried under the registry's predicate (8); the prompt's clause asserted,
+  its text pinned to version 1 by a digest (9); the per-run worst case stated
+  (10)
+- [x] 6.5 The script: turns and proposed calls from the transcript,
+  `--repeat` of at least 1, `task_tools` shared with the registry (11).
+  Re-run: N = 20 on `gpt-5.4-mini`, at most 2 turns, 2 calls proposed, 16,582
+  characters, all completed. An earlier run used the old script by mistake --
+  20 paid calls, the same results
+- [x] 6.6 Open WebUI-side tools recorded in `.env.example` (12)
+- [x] 6.7 Proved by mutation, ten in a full-suite run. Nine were red at once.
+  The survivor -- `OutputBudget` placed after `AnswerInvalidCalls` -- turned
+  red with a row added: a call cut off mid-arguments is not handed back

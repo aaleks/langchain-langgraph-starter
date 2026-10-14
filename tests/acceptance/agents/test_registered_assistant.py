@@ -202,7 +202,7 @@ class TestAssistantIsRegistered:
         assert set(registry.assistant.nodes) == set(built.nodes)
         assert any(node.startswith("ModelCallLimitMiddleware") for node in built.nodes)
         assert any(node.startswith("ToolCallLimitMiddleware") for node in built.nodes)
-        # The budget needs 61 supersteps: an export with its own lower ceiling
+        # The budget needs 71 supersteps: an export with its own lower ceiling
         # would end a runaway loop there first.
         assert registry.assistant.config["recursion_limit"] == built.config["recursion_limit"]
 

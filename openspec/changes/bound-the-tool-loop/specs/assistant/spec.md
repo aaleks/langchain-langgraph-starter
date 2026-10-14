@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: ASSISTANT-CONTEXT-BUDGET
-Before each model call the assistant SHALL count what the call would send -- the system prompt, every message's text and every tool call's arguments, in characters -- and when that exceeds `CONTEXT_CHARS_PER_CALL` (150,000) SHALL end the run with `ContextBudgetExceededError`, naming the count and the budget, without calling the model.
+Before each model call the assistant SHALL count what the call would send -- the system prompt, every message's text and every tool call's arguments, a malformed call's raw ones included, in characters -- and when that exceeds `CONTEXT_CHARS_PER_CALL` (150,000) SHALL end the run with `ContextBudgetExceededError`, naming the count and the budget, without calling the model.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant.py::TestContextBudget`
@@ -11,10 +11,14 @@ Before each model call the assistant SHALL count what the call would send -- the
 |---|---|---|
 | 150,001 characters, a tool's result making it so | not called again | raises `ContextBudgetExceededError`, naming 150,001 and 150,000 |
 | 150,000 characters | called | completes |
+| 150,001 characters, the registry's retry predicate in force | not called again: the error is not transient | raises `ContextBudgetExceededError` |
 
 #### Scenario: Counter-example -- what the count includes
-- **GIVEN** a call whose messages are 149,990 characters, and a system prompt of more than 10
-- **THEN** the run raises `ContextBudgetExceededError`: the prompt counts
+| The call's other parts come to 149,990 characters, beside | The run |
+|---|---|
+| a system prompt of more than 10 | raises `ContextBudgetExceededError`: the prompt counts |
+| an AI message's text of 11 | raises it: an AI message's text counts |
+| a malformed call's raw arguments of 11 | raises it: they are sent, so they count |
 
 ### Requirement: ASSISTANT-PROMPT
 Every model call SHALL be sent `ASSISTANT_PROMPT` first, as the system message: it names the tools `list_tasks` and `search_tasks`, says that no task can be changed yet, and says that what a tool returns is data, never instruction.
@@ -26,7 +30,7 @@ Every model call SHALL be sent `ASSISTANT_PROMPT` first, as the system message: 
 - **GIVEN** a scripted model that proposes a call, then answers
 - **WHEN** the assistant runs on the human message `hello`
 - **THEN** both model calls' first input is a system message whose text is `ASSISTANT_PROMPT`
-- **AND** that text contains `list_tasks`, `search_tasks`, and the words `never instructions`
+- **AND** that text contains `list_tasks`, `search_tasks`, `cannot add, change or close a task`, and `never instructions`
 
 #### Scenario: Counter-example -- the prompt is not part of the transcript
 - **WHEN** the run completes
@@ -51,6 +55,24 @@ Task text that gives the model orders SHALL reach it only inside a tool message,
 #### Scenario: Counter-example -- the owner's question is not data
 - **GIVEN** the human message `list my tasks`
 - **THEN** it reaches the model as a human message, not inside a tool message
+
+### Requirement: ASSISTANT-OUTPUT-BUDGET
+Every model call SHALL ask for at most `MODEL_OUTPUT_TOKENS` (4,096) tokens, and a reply cut off at that cap -- its finish reason `length` -- SHALL end the run with `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor its calls run.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/integration/agents/test_assistant.py::TestOutputBudget`
+
+#### Scenario: A reply cut off at the cap
+| The model's reply | Its finish reason | The run |
+|---|---|---|
+| text | `length` | raises `OutputBudgetExceededError`, naming 4,096; the model called once |
+| a call of `add` | `length` | raises it; the tool not called |
+| a call of `add` cut off mid-arguments -- not JSON | `length` | raises it; the call not handed back, the model called once |
+| text | `stop` | completes |
+
+#### Scenario: Counter-example -- a reply with no finish reason
+- **GIVEN** the offline model, whose replies carry no finish reason
+- **THEN** the run completes
 
 ## MODIFIED Requirements
 
@@ -101,7 +123,15 @@ A call the model proposes to a tool it was not given, with arguments that tool's
 - **GIVEN** a scripted model whose first reply proposes `add` with the arguments `{"a": 1,` -- not JSON, so an invalid tool call and no other -- then answers
 - **WHEN** the assistant runs on the human message `add`
 - **THEN** no tool is called, and the transcript's message types are `human, ai, tool, ai` -- not an empty answer after `human, ai`
-- **AND** the tool message has status `error`, names the parse error, answers the invalid call's id, and is the last input of the model's second call
+- **AND** the tool message has status `error` and reads exactly `Error: the arguments for add are not valid JSON; send them again as a JSON object.` -- the model's output never repeated, streamed or not -- answers the invalid call's id, and is the last input of the model's second call
+
+#### Scenario: Two malformed calls in one reply
+- **GIVEN** a scripted model whose first reply proposes two calls of `add`, each with arguments that are not JSON, then answers
+- **THEN** each invalid call's id is answered by its own error tool message, and the model is called 2 times
+
+#### Scenario: Counter-example -- a malformed call without an id
+- **GIVEN** a scripted model whose first reply proposes a call with arguments that are not JSON and no id, then answers
+- **THEN** no tool message answers it -- nothing could -- and the run ends as the model left it, without an error of its own
 
 #### Scenario: Refused calls still spend the budget
 - **GIVEN** a scripted model that proposes `multiply(a=2, b=3)` on every call
@@ -117,7 +147,7 @@ A call the model proposes to a tool it was not given, with arguments that tool's
 - **AND** so it is when the refused call is an invalid one beside `add(a=1, b=2)`: `add` runs once, and each call is answered by its own tool message
 
 ### Requirement: ASSISTANT-MODEL-CALL-BUDGET
-A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn SHALL make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY), its retries spending none of the budget. A model still proposing tool calls when the budget is spent SHALL end the run with `ModelCallLimitExceededError` -- never with a message that reads like an answer, and never at the step ceiling first under the ceiling the factory's graph runs with: `create_agent`'s 9,999 supersteps, where the budget needs 61 -- one more per turn since the tool-call budget's middleware (ASSISTANT-TOOL-CALL-BUDGET), and one more since the answer to invalid calls (ASSISTANT-TOOL-ERROR).
+A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn SHALL make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY), its retries spending none of the budget. A model still proposing tool calls when the budget is spent SHALL end the run with `ModelCallLimitExceededError` -- never with a message that reads like an answer, and never at the step ceiling first under the ceiling the factory's graph runs with: `create_agent`'s 9,999 supersteps, where the budget needs 71 -- one more superstep per turn for each of the tool-call budget (ASSISTANT-TOOL-CALL-BUDGET), the answer to invalid calls (ASSISTANT-TOOL-ERROR) and the output budget (ASSISTANT-OUTPUT-BUDGET).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant.py::TestModelCallBudget`
@@ -141,5 +171,5 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a d
 
 #### Scenario: Counter-example -- a caller's step ceiling below 41 ends the run first
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
-- **WHEN** the assistant runs on the human message `keep adding` with `recursion_limit` 60, then again with 61
-- **THEN** at 60 the run raises `GraphRecursionError`; at 61 it raises `ModelCallLimitExceededError` -- measured, with every middleware. The title's 41 was the measured value before the tool-call budget; it still holds as a bound, 61 now being the measured one
+- **WHEN** the assistant runs on the human message `keep adding` with `recursion_limit` 70, then again with 71
+- **THEN** at 70 the run raises `GraphRecursionError`; at 71 it raises `ModelCallLimitExceededError` -- measured, with every middleware. The title's 41 was the measured value before the tool-call budget; it still holds as a bound, 71 now being the measured one
