@@ -177,7 +177,7 @@ class TestKeyNeverShown:
     settings object's text nor in the message of a configuration refused."""
 
     def test_a_settings_object_printed_hides_the_key(self):
-        settings = Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b")
+        settings = Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b", "")
 
         for text in (repr(settings), str(settings), f"{settings}"):
             assert "sk-secret-123" not in text
@@ -200,6 +200,6 @@ class TestKeyNeverShown:
         assert "sk-secret-123" not in str(refused.value)
 
     def test_counter_example_what_is_not_secret_is_shown(self):
-        text = repr(Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b"))
+        text = repr(Settings("http://localhost:3000", "sk-secret-123", "llama3.1:8b", ""))
 
         assert "http://localhost:3000" in text and "llama3.1:8b" in text

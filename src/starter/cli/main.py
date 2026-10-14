@@ -4,38 +4,53 @@ the assistant reads -- the owner's own write, not a proposal the model makes."""
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from collections.abc import Sequence
 
 from starter.config.settings import settings_from_process, tasks_db_path
-from starter.domain.tasks import new_task
+from starter.domain.tasks import TaskRefused, new_task
 from starter.infrastructure.stores.tasks import TaskStore
 
-# Exit statuses: 2 is a usage error, as argparse has it; 1 a task list that
-# cannot be opened.
+# Exit statuses: 2 is a usage error, as argparse has it; 1 settings or a task
+# list that cannot be read or written.
 USAGE, UNREADABLE = 2, 1
+# How the command line names each field the domain refuses.
+ARGUMENT = {"title": "TITLE", "assignee": "--assignee", "notes": "--notes"}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         task = new_task(args.title, args.assignee, args.notes)
-    except ValueError as refused:
-        print(f"starter tasks add: {refused}", file=sys.stderr)
+    except TaskRefused as refused:
+        _say(f"{ARGUMENT[refused.field]}: {refused}")
         return USAGE
     try:
-        store = TaskStore(tasks_db_path(settings_from_process()))
-        store.open()
-    except ValueError as refused:
-        print(f"starter tasks add: {refused}", file=sys.stderr)
+        path = tasks_db_path(settings_from_process())
+    except ValueError as unreadable:  # the message names the .env
+        _say(str(unreadable))
         return UNREADABLE
-    print(store.add(task))
+    try:
+        store = TaskStore(path)
+        store.open()
+        print(store.add(task))
+    except ValueError as refused:  # TASKS-SCHEMA's refusal names the file
+        _say(str(refused))
+        return UNREADABLE
+    except (sqlite3.Error, OSError) as failed:
+        _say(f"{path}: {failed}")
+        return UNREADABLE
     return 0
 
 
 def run() -> None:
     """The `starter` script: the one place a process exits."""
     sys.exit(main())
+
+
+def _say(message: str) -> None:
+    print(f"starter tasks add: {message}", file=sys.stderr)
 
 
 def _parser() -> argparse.ArgumentParser:

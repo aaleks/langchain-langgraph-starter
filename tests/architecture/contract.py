@@ -203,6 +203,41 @@ def exits_outside_cli(source: Path) -> list[str]:
     return found
 
 
+STORES_PREFIX = "infrastructure/stores/"
+
+
+def databases_opened_outside_stores(source: Path) -> list[str]:
+    """`sqlite3.connect`, however `sqlite3` or `connect` is bound -- outside
+    infrastructure/stores/, the only place a database file is opened (ADR 0006).
+    Importing `sqlite3` for its error classes is not opening anything."""
+    found = []
+    for path in sorted(source.rglob("*.py")):
+        rel = path.relative_to(source).as_posix()
+        if rel.startswith(STORES_PREFIX):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        modules: set[str] = set()
+        connects: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules |= {a.asname or a.name for a in node.names if a.name == "sqlite3"}
+            elif isinstance(node, ast.ImportFrom) and node.module == "sqlite3":
+                connects |= {a.asname or a.name for a in node.names if a.name == "connect"}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            through_module = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "connect"
+                and isinstance(func.value, ast.Name)
+                and func.value.id in modules
+            )
+            if through_module or (isinstance(func, ast.Name) and func.id in connects):
+                found.append(f"{rel}:{node.lineno} sqlite3.connect")
+    return found
+
+
 def agents_dir(source: Path) -> Path:
     return source / "infrastructure" / "agents"
 

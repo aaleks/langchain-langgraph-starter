@@ -32,8 +32,9 @@ class Settings:
     openwebui_url: str
     openwebui_api_key: str
     openwebui_model: str
-    # Last, with a default: three-setting call sites predate it.
-    tasks_db: str = ""
+    # No default: a settings object built in code names its task list, or it
+    # would open the repository's own -- a test among them (task-store-read-only).
+    tasks_db: str
 
     def __repr__(self) -> str:
         # Never the key: a settings object ends up in tracebacks and logs.

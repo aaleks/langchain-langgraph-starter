@@ -43,7 +43,7 @@ def build_assistant(
     """
     # Every tool's manifest, before anything is compiled (TOOLS-MANIFEST).
     for given in tools:
-        check_capability(given.name, (given.metadata or {}).get("capability"))
+        check_capability(given.name, (given.metadata or {}).get("capability"), TOOL_CALLS_PER_RUN)
     # exit_behavior="error": the default, "end", injects an AI message saying the
     # limit was reached -- an exhausted budget that reads like an answer.
     budget = ModelCallLimitMiddleware(run_limit=MODEL_CALLS_PER_RUN, exit_behavior="error")

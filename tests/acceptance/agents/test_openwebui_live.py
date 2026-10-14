@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 
 import pytest
 from langchain_core.messages import HumanMessage
@@ -39,7 +40,7 @@ class TestAnsweredByOpenWebUI:
     not the offline model's."""
 
     @pytest.mark.live
-    def test_a_real_answer_through_open_webui(self):
+    def test_a_real_answer_through_open_webui(self, tmp_path):
         from starter.infrastructure.agents.registry import registered_assistant
 
         with reported_by_message_only():
@@ -52,7 +53,11 @@ class TestAnsweredByOpenWebUI:
             ):
                 pytest.skip(f"{DOTENV} does not configure Open WebUI -- see .env.example")
 
-            graph = registered_assistant(settings)
+            # The owner's model, never the owner's task list: a run creates one
+            # where TASKS_DB points, so it points at a temporary one.
+            graph = registered_assistant(
+                replace(settings, tasks_db=str(tmp_path / "tasks.sqlite3"))
+            )
             messages = graph.invoke({"messages": [HumanMessage("Reply with one word.")]})[
                 "messages"
             ]

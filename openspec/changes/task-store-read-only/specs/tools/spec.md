@@ -5,23 +5,28 @@ Tools are what the assistant may do beyond answering. Each one arrives with a ca
 ## ADDED Requirements
 
 ### Requirement: TOOLS-MANIFEST
-Every tool the factory is given SHALL carry a capability manifest -- the tool's name, its output's type, the errors it raises, whether it is idempotent, its timeout, its retry class, its rate limit, its side-effect level and its audit event; its input's schema is the tool's own. The factory SHALL refuse, before compiling anything and naming the tool, a tool without a manifest, a manifest naming another tool, and a manifest declaring a side effect other than `read`: no write has an approval route before slice 4.
+Every tool the factory is given SHALL carry a capability manifest -- the tool's name, its output's type, the errors it raises, whether it is idempotent, its timeout, its retry class, its rate limit and its side-effect level, and its audit event; its input's schema is the tool's own. The factory SHALL refuse, before compiling anything and naming the tool, a manifest the assistant cannot honour: none, or one that is not a manifest; one naming another tool; a side effect other than `read` -- no write has an approval route before slice 4; a retry class other than `none` -- a tool's failure propagates; a rate limit other than the run's `TOOL_CALLS_PER_RUN`, the one limit enforced. A tool declaring `read` SHALL be given only a view of its store that refuses a write.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_tool_manifests.py::TestToolManifests`
 
 #### Scenario: The task tools' manifests
-| Tool | Side effect | Idempotent | Retry class | Audit event |
-|---|---|---|---|---|
-| `list_tasks` | `read` | yes | `none` | none |
-| `search_tasks` | `read` | yes | `none` | none |
+| Tool | Arguments | Side effect | Idempotent | Retry class | Rate limit | Errors | Audit event |
+|---|---|---|---|---|---|---|---|
+| `list_tasks` | none | `read` | yes | `none` | `TOOL_CALLS_PER_RUN` | `sqlite3.Error` | none |
+| `search_tasks` | `query` | `read` | yes | `none` | `TOOL_CALLS_PER_RUN` | `sqlite3.Error` | none |
 
+- **AND** each reads through a view of the list that has no method to add, whose connection refuses an `INSERT`, and whose wait is its manifest's timeout
 - **AND** the factory compiles a graph given both, offering the model exactly `list_tasks` and `search_tasks`
 
 #### Scenario: Counter-example -- a tool the assistant cannot honour is refused
 | The tool `add` given with | Refused, naming |
 |---|---|
 | no manifest | `add` |
+| a dictionary in the manifest's place | `add` |
 | a manifest naming `sum` | `add` and `sum` |
 | a manifest declaring the side effect `write` | `add` and `write` |
+| a manifest declaring the side effect `network` | `add` and `network` |
+| a manifest declaring the retry class `transient` | `add` and `transient` |
+| a manifest declaring a rate limit of 5 calls a run | `add` and `5` |
 | a manifest declaring `read`, beside a second tool with none | the second tool |

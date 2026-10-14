@@ -44,7 +44,7 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a d
 #### Scenario: Counter-example -- a caller's step ceiling below 41 ends the run first
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
 - **WHEN** the assistant runs on the human message `keep adding` with `recursion_limit` 50, then again with 51
-- **THEN** at 50 the run raises `GraphRecursionError`; at 51 it raises `ModelCallLimitExceededError` -- measured, with both budgets' middleware
+- **THEN** at 50 the run raises `GraphRecursionError`; at 51 it raises `ModelCallLimitExceededError` -- measured, with both budgets' middleware. The title's 41 was the measured value before the tool-call budget; it still holds as a bound, 51 now being the measured one
 
 ### Requirement: ASSISTANT-REGISTERED
 `langgraph.json` SHALL register exactly one graph, under the id `assistant`, bound to the `assistant` export of `src/starter/infrastructure/agents/registry.py`. That export SHALL be the graph the factory compiles -- so it carries the budgets and the retry policy -- with the model the process's settings choose and the tools `list_tasks` and `search_tasks` over the task list they name, both read when it is loaded; with no model configured it SHALL complete runs with every outbound network connection refused.

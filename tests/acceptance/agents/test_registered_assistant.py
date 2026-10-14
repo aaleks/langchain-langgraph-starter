@@ -81,15 +81,18 @@ class TestAssistantIsRegistered:
         bound = {name for name, value in vars(module).items() if isinstance(value, Pregel)}
         assert bound == {"assistant"}
 
-    def test_with_nothing_configured_the_registered_graph_answers_offline(self, registry):
+    def test_with_nothing_configured_the_registered_graph_answers_offline(self, registry, tmp_path):
         from starter.config.settings import Settings
         from starter.infrastructure.models import OFFLINE_ANSWER
 
-        graph = registry.registered_assistant(Settings("", "", ""))
+        # A task list of the test's own: never the repository's default one.
+        tasks_db = tmp_path / "tasks.sqlite3"
+        graph = registry.registered_assistant(Settings("", "", "", str(tasks_db)))
         messages = graph.invoke({"messages": [HumanMessage("hello")]})["messages"]
 
         assert types(messages) == ["human", "ai"]
         assert messages[-1].content == OFFLINE_ANSWER
+        assert tasks_db.is_file()  # the settings it was given name the list it opened
 
     def test_with_open_webui_configured_the_registered_graph_asks_it(self, monkeypatch):
         with openwebui_stub() as stub:

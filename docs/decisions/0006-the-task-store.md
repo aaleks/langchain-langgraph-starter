@@ -30,15 +30,21 @@ over sqlite-utils, SQLAlchemy and LangChain's SQL toolkit
 - **Through `sqlite3`** in `infrastructure/stores/tasks.py`, the only module
   that opens the file. Each operation opens its own connection, because the
   local server runs tools on worker threads. A busy file is waited on for
-  `TASK_READ_TIMEOUT_SECONDS`, which the tools' manifests declare.
+  `TASK_STORE_TIMEOUT_SECONDS`, which the tools' manifests declare and their
+  readers take from them.
+- **A tool is given a reader, never the store.** Its connections are
+  read-write but `query_only`: they refuse every write except SQLite's own
+  recovery of an interrupted one. A read-only connection cannot roll a journal
+  back, and would refuse a list of tasks. A read is one transaction, so its
+  rows and its count see one state of the list.
 - **Schema version 1**, held in `PRAGMA user_version`:
 
   ```sql
   CREATE TABLE tasks (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    title      TEXT NOT NULL CHECK (length(trim(title)) > 0),
-    assignee   TEXT NOT NULL DEFAULT '',
-    notes      TEXT NOT NULL DEFAULT '',
+    title      TEXT NOT NULL CHECK (length(trim(title)) > 0 AND length(title) <= 200),
+    assignee   TEXT NOT NULL DEFAULT '' CHECK (length(assignee) <= 100),
+    notes      TEXT NOT NULL DEFAULT '' CHECK (length(notes) <= 1000),
     status     TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -47,8 +53,16 @@ over sqlite-utils, SQLAlchemy and LangChain's SQL toolkit
   The order of addition is `id`: `AUTOINCREMENT` never reuses an id. The
   `status` column exists before anything can close a task, so slice 4 adds
   behaviour, not a migration.
-- **Opening decides on the version.** A missing or empty file is created at
-  version 1. A version-1 file is used as it is. Anything else is refused,
+- **Field lengths are bounded** (`TITLE_MAX`, `ASSIGNEE_MAX`, `NOTES_MAX`).
+  They are refused before a write and held by the schema. With
+  `TASK_RESULTS_LIMIT`, they bound what one read hands the model.
+- **Opening decides on the version.**
+  - A missing file, or one with no table at version 0, is created at
+    version 1. This happens in one transaction, which looks at the file again
+    inside it.
+  - A version-1 file is used as it is, once SQLite has recovered any
+    interrupted write.
+  - Anything else is refused,
   naming the file, and nothing is written: a newer version, a file with
   another schema, or a file that is not SQLite at all. A later version adds
   its own forward migration from 1, in the change that needs it.

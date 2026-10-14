@@ -13,6 +13,7 @@ import httpx
 import openai
 import pytest
 from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
+from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from langchain_openai import StreamChunkTimeoutError
@@ -386,10 +387,10 @@ class TestToolCallBudget:
     ):
         model = fake_llm([*self.turns(3, 7), answer()])
 
-        with pytest.raises(Exception) as ended:
+        with pytest.raises(ToolCallLimitExceededError) as ended:
             run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
 
-        assert "run limit" in str(ended.value)
+        assert "run limit" in str(ended.value) and "/20 calls" in str(ended.value)
         assert len(add_tool.calls) == 18
 
     def test_counter_example_exactly_the_budget_is_not_past_it(self, fake_llm, add_tool):

@@ -84,3 +84,37 @@
   stripped, a write accepted, another tool's manifest accepted, no manifest
   accepted, the budget ending instead of raising, a budget of 21, the
   registry giving no tools, the registry not opening the list
+
+## 8. Verify pass 1 -- the fixes (`verify.md`, reviewed at `0a8b80f`)
+
+- [x] 8.1 The suite sealed in code: `Settings.tasks_db` without a default;
+  the offline registered test names its own list, and asserts that list is
+  the one opened (1)
+- [x] 8.2 The store: a tool given a `TaskReader` -- no write method,
+  `query_only` connections that SQLite can still recover through; only
+  `SQLITE_NOTADB` is "not a task list"; an interrupted write recovered,
+  reproduced by a copy taken mid-write (2, 3); one read, one transaction, its
+  wait the manifest's, a locked list proved through the tool loop (5, 16);
+  creation in one `BEGIN IMMEDIATE` transaction (9)
+- [x] 8.3 TOOLS-MANIFEST amended: not a manifest, another side effect, a
+  retry class, a rate limit other than the run's refused; the fields asserted
+  (4, 12)
+- [x] 8.4 What reaches the model bounded: field limits 200/100/1,000 refused
+  before a write and held by the schema; text as written; a query at most 200
+  characters (6, 11)
+- [x] 8.5 TASKS-ADD amended and proved: "no file" after a refusal, padded
+  assignee and notes, the `starter` script's exit status, a directory and an
+  unreadable `.env` exit 1 without a traceback (7, 8, 10, 13); a backslash row
+  (14); the tool budget's own error (15); the 41/51 line (17); the store's
+  timeout in `domain/tasks.py`, the domain naming the field and the CLI
+  `TITLE` (18); `sqlite3.connect` outside `stores/` refused, on a fixture (19);
+  the overview, ADR 0006 and the design (20)
+- [x] 8.6 Proved by mutation, nineteen in a full-suite run, each red -- the
+  survivors of the proof lens among them: the store opened before the title
+  check, the assignee not stripped, another side effect, `run()` exiting 0, a
+  backslash unescaped
+- [x] 8.7 Found by the live run after 8.1: the live Open WebUI test read the
+  owner's `.env` alone, so it created the default task list in the
+  repository. It now runs with the owner's model and a temporary task list,
+  and no `.data/` is left. Every default check passed, suite 225; live 8
+  passed, 1 failed on the owner's model id, as before

@@ -16,7 +16,7 @@ setting those names empty in its environment.
 |---|---|---|
 | `src/starter/domain/tasks.py` | `TASK_RESULTS_LIMIT = 50`; `new_task(title, assignee, notes)` -- the spaces around each removed, a blank title refused naming `TITLE`; the output types `TaskRow`, `TaskPage` (TypedDicts) | domain: pure |
 | `src/starter/domain/agents/capabilities.py` | `Capability`, a frozen dataclass: `name`, `output` (a type), `errors`, `idempotent`, `timeout_seconds`, `retry` (`"none"` or `"transient"`), `calls_per_run`, `side_effect` (`"read"` or `"write"`), `audit_event` (`None` for reads). `check_capability(tool_name, capability)` raises `ValueError` naming the tool | domain: the policy every tool passes |
-| `src/starter/domain/agents/budgets.py` | `TOOL_CALLS_PER_RUN = 20`; `TASK_READ_TIMEOUT_SECONDS = 5` | domain |
+| `src/starter/domain/agents/budgets.py` | `TOOL_CALLS_PER_RUN = 20` | domain |
 | `src/starter/config/settings.py` | `TASKS_DB` in `NAMES`; `Settings.tasks_db` (default `""`, so `Settings(url, key, model)` still reads); `tasks_db_path(settings)` -- the repository's `.data/tasks.sqlite3`, a relative path from the root, an absolute one as it is | config: finding configuration |
 | `src/starter/infrastructure/stores/tasks.py` | `TaskStore(path, timeout)`: `open()` -- the version decision of ADR 0006; `add(...)`; `open_tasks(limit)` and `search(query, limit)`, each returning `TaskPage`. `LIKE ... ESCAPE '\'` with `\`, `%` and `_` escaped | infrastructure: the only module that opens the file |
 | `src/starter/infrastructure/agents/tools/list_tasks.py`, `search_tasks.py` | `build(store) -> BaseTool`, one tool each, its `Capability` in `tool.metadata["capability"]`; the result is `json.dumps(page)`. `search_tasks`' query is `Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]`: a blank query fails the tool's own schema, and `create_agent` hands that back to the model as an error tool message (measured) | agents adapter: tools |
@@ -52,6 +52,46 @@ setting those names empty in its environment.
   chat-completions shape. The story test drives a real `ChatOpenAI` through a
   `list_tasks` call, which proves the request and the parsing as well as the
   tool.
+
+- **Verify pass 1's corrections** (`verify.md`):
+  - *The suite is sealed in code too.* `Settings.tasks_db` has no default, so
+    a settings object built in a test names its own list.
+  - *A tool holds a reader, never the store.* `TaskReader` has no write
+    method, and its connections are `query_only`. They are read-write so that
+    SQLite can recover an interrupted write; a read-only connection cannot,
+    and the list would be refused as "not a task list". Only `SQLITE_NOTADB`
+    is called that.
+  - *One read is one transaction.* The rows and `more` agree, and a lock is
+    waited on once. The wait is SQLite's, and it overshoots the timeout it is
+    given (measured: 1 s given, 1.8 s taken; 5 s given, 7.4 s taken). The
+    requirement states the overshoot rather than hiding it.
+  - *The manifest check refuses what nothing enforces:* a retry class other
+    than `none`, and a rate limit other than the run's budget. The reader
+    takes its wait from the manifest.
+  - *The check runs once, at composition.* That is sound for a fixed set of
+    reads. A write's check, immediately before it runs (`graphs.md`), arrives
+    with slice 4.
+  - *What reaches the model is bounded.* Each field has a length limit (200,
+    100, 1,000), refused before a write and held by the schema, and a read
+    returns at most 50 rows. Text is sent as written, never escaped. A query
+    is at most 200 characters, so SQLite never refuses its pattern mid-run.
+  - *Creation is one transaction.* `BEGIN IMMEDIATE`, with the file looked at
+    again inside it, means two openers cannot both create the list, and a
+    failure leaves no half-made one.
+  - *The CLI never prints a traceback.* Settings or a list that cannot be
+    read or written exit 1, naming the file.
+  - *Accepted and recorded:*
+    - The schema's version decision stays in the store: its inputs come from
+      the file, and it is three lines.
+    - Reads are not audited; the transcript records each call. An audit event
+      arrives with the first write.
+    - No requirement claims the tool descriptions the model reads. "Ignoring
+      case" covers ASCII only, as TASKS-SEARCH says.
+    - `TASKS_DB` shows in `Settings`' text. It is a path, not a secret.
+    - `~` is not expanded.
+    - The suite's temporary directory outlives the run.
+    - No tier streams a tool call on the served path, because the fake cannot
+      stream a proposal. The live server test streams an answer.
 
 ## Orchestration design
 

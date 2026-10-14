@@ -3,11 +3,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 # The most tasks one read returns; the rest are counted, not sent. A starting
 # policy -- a model's context is the cost -- re-measured with real runs (3b).
 TASK_RESULTS_LIMIT = 50
+
+# Each field's limit, in characters: with TASK_RESULTS_LIMIT, the most text one
+# read can hand the model. Starting policies, re-measured with real runs (3b).
+TITLE_MAX = 200
+ASSIGNEE_MAX = 100
+NOTES_MAX = 1000
+
+# How long the task list is waited on while another process writes it, by a
+# read and by the owner's add alike. A local file; a starting policy.
+TASK_STORE_TIMEOUT_SECONDS = 5.0
+
+Field = Literal["title", "assignee", "notes"]
+
+
+class TaskRefused(ValueError):
+    """A new task the list cannot take, naming the field at fault."""
+
+    def __init__(self, field: Field, reason: str) -> None:
+        super().__init__(f"the {field} {reason}")
+        self.field = field
 
 
 @dataclass(frozen=True)
@@ -18,12 +38,15 @@ class NewTask:
 
 
 def new_task(title: str, assignee: str = "", notes: str = "") -> NewTask:
-    """A task to add, each field without the spaces around it. A blank title is
-    refused, named as the command line names it."""
-    title = title.strip()
-    if not title:
-        raise ValueError("TITLE is blank")
-    return NewTask(title=title, assignee=assignee.strip(), notes=notes.strip())
+    """A task to add, each field without the spaces around it. A blank title, or
+    a field over its limit, is refused, naming the field."""
+    task = NewTask(title=title.strip(), assignee=assignee.strip(), notes=notes.strip())
+    if not task.title:
+        raise TaskRefused("title", "is blank")
+    for field, limit in (("title", TITLE_MAX), ("assignee", ASSIGNEE_MAX), ("notes", NOTES_MAX)):
+        if len(getattr(task, field)) > limit:
+            raise TaskRefused(field, f"is longer than {limit} characters")
+    return task
 
 
 class TaskRow(TypedDict):

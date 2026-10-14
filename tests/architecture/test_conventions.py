@@ -5,6 +5,7 @@ from __future__ import annotations
 from .contract import (
     REPO,
     build_package,
+    databases_opened_outside_stores,
     environment_reads_outside_config,
     exits_outside_cli,
     root_package,
@@ -56,3 +57,29 @@ def test_counter_example_raising_a_value_error_is_not_an_exit(tmp_path):
         tmp_path, "raisefix", {"domain/a.py": "raise ValueError('fix your input')\n"}
     )
     assert exits_outside_cli(source) == []
+
+
+def test_only_the_stores_open_a_database():
+    assert databases_opened_outside_stores(SOURCE) == []
+
+
+def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
+    source = build_package(
+        tmp_path,
+        "dbfix",
+        {
+            "domain/a.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
+            "infrastructure/agents/tools/b.py": "import sqlite3 as lite\ndb = lite.connect('x')\n",
+            "cli/c.py": "from sqlite3 import connect as opened\ndb = opened('x')\n",
+            "infrastructure/stores/tasks.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
+            # counter-examples: the module imported for its errors; another connect
+            "infrastructure/agents/tools/d.py": "import sqlite3\nerrors = (sqlite3.Error,)\n",
+            "infrastructure/e.py": "import socket\ns = socket.socket()\ns.connect(('h', 1))\n",
+        },
+    )
+    found = databases_opened_outside_stores(source)
+    assert [f.split(":")[0] for f in found] == [
+        "cli/c.py",
+        "domain/a.py",
+        "infrastructure/agents/tools/b.py",
+    ], found

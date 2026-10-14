@@ -18,7 +18,3 @@ TOOL_CALLS_PER_RUN = 20
 # be slow; a starting policy, to be measured against real runs
 # (connect-openwebui-model, frame.md).
 MODEL_CALL_TIMEOUT_SECONDS = 120
-
-# How long a tool waits on a task list another process is writing, before the
-# read fails and the failure propagates. A local file; a starting policy.
-TASK_READ_TIMEOUT_SECONDS = 5.0
