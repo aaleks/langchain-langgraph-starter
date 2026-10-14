@@ -1,9 +1,10 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 2 (three MAJOR). First fix: bound what a
-  read returns whatever the file holds (finding 21). Pass 1: DO NOT SHIP
-  (eight MAJOR).
-- **Reviewed at:** pass 2: `976d7c2`, the fix diff `0962b1d..976d7c2`. Pass
+- **Verdict:** DO NOT SHIP -- pass 3 (one MAJOR). First fix: prove the
+  control-character rule in every field, at the write and at the read (finding
+  34). Pass 2: DO NOT SHIP (three MAJOR). Pass 1: DO NOT SHIP (eight MAJOR).
+- **Reviewed at:** pass 3: `98d4714`, the fix diff `de61389..98d4714`. Pass
+  2: `976d7c2`, the fix diff `0962b1d..976d7c2`. Pass
   1: `0a8b80f`, the whole change (`git diff
   main..0a8b80f`), committed before the lenses read it.
 - **Evidence (pass 1):**
@@ -116,3 +117,45 @@ in a separate commit with the MINORs, and that diff is read in pass 3.
 - MODEL-OPENWEBUI-LIVE: the owner's model id.
 - The placement and graph lenses (above).
 - A list on a network share, which needs a share (33).
+
+## Pass 3 -- the fix diff `de61389..98d4714`
+
+- **Evidence:** `bash scripts/check.sh live` at `98d4714`:
+  - Every default check passed; suite 241.
+  - Live: 8 passed and 1 failed, on the owner's model id. No key-shaped
+    line, and no `.data/` left behind.
+  - Twenty-two pass-2 mutations red (tasks.md 9.6).
+- **Lenses:** fresh context, over the fix diff:
+  - proof (`spec-compliance`): 17 mutations, 8 red and 9 survived;
+  - defects (`code-reviewer`), who probed the authorizer on SQLite 3.50.4;
+  - capabilities (`agent-capability-auditor`).
+
+  Scratch copies only, no `.env` read, no live test run.
+- **Pass 2 resolved:**
+  - 21-31 fixed. 21 and 22 are only partly proved (34 below).
+  - 32 and 33 accepted. The authorizer denies every write the lenses tried:
+    a pragma with a value, `ATTACH`, `VACUUM INTO`, a temp table,
+    `SAVEPOINT`, `load_extension`.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 34 | MAJOR | proof | The control-character rule is proved for one character in one field. Checking the title only on a write stays green; so does `readable` missing from the assignee and notes, or stripping U+0001 alone | `domain/tasks.py:57`; `stores/tasks.py:145` | Rows: `--assignee` and `--notes` with a control character, U+001B in a title; control characters in every field of a list written without the limits |
+| 35 | MINOR | proof | The assignee's bound at the read is unproved; the title's is asserted `<=` only | `test_task_tools.py:128` | An assignee of 2,000 characters, read as 100; exact lengths |
+| 36 | MINOR | proof, defects | Newline and tab are allowed but untested, so refusing them stays green. CR is refused, so text with Windows line endings cannot be added -- yet JSON sends `\r` in 2 characters, like `\n` | `domain/tasks.py:42` | CR allowed too; a row adding notes with all three, read back unchanged |
+| 37 | MINOR | proof, capabilities | "Control character" in the spec; C0 and DEL in the code. U+0085 passes | `domain/tasks.py:42` | The spec names C0 and DEL: JSON does not escape C1, so the bound's reason holds |
+| 38 | MINOR | proof, capabilities, defects | The stated bound names JSON's escapes of newline and tab only. `"` and `\` double too; 133,323 characters were measured per read | spec TASKS-LIST; frame question 6 | "at most doubled by JSON's escapes"; the measured figure |
+| 39 | MINOR | capabilities, defects | A value that is not text -- a blob another program put in -- crashes the read with `TypeError`, an error no manifest declares | `stores/tasks.py:136-148` | Read anything but text as empty, in SQL; a row |
+| 40 | MINOR | defects | A lone surrogate in the arguments passes `new_task`, creates the file, then exits 1 | `domain/tasks.py:46` | Refuse a field UTF-8 cannot encode, naming it; a row |
+| 41 | MINOR | proof, defects | The database check misses `_sqlite3` and `from sqlite3 import *`, and flags a type annotation of `sqlite3.Connection` | `contract.py:209-247` | `_sqlite3` and the star import caught; `Connection` flagged where called; fixture rows, the annotation a counter-example |
+| 42 | MINOR | proof | "No store" is checked one level deep: a reader holding the store stays green | `test_tool_manifests.py:103` | The reader's own attributes checked too |
+| 43 | MINOR | capabilities | The OPEN per-run budget has no Owner or Review by, no figure, and no line in the roadmap | frame question 6; roadmap | All three |
+| 44 | MINOR | capabilities, proof | Search scans the whole of an oversized field but returns it cut. The SQL `substr` is unproved: `readable` cuts too | `stores/tasks.py:124,135` | Accepted, recorded: both concern only lists written without the limits; the `substr` is a memory guard |
+
+**Pass 3 verdict:** DO NOT SHIP -- 34 is MAJOR. It is fixed in a separate
+commit with the MINORs, and that diff is read in pass 4.
+
+## Not checked -- pass 3
+
+- MODEL-OPENWEBUI-LIVE: the owner's model id.
+- The placement and graph lenses: their pass-1 findings were MINOR, and are
+  answered.
