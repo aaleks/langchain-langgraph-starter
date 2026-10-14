@@ -114,6 +114,24 @@ setting those names empty in its environment.
     - A list on a network share is unsupported: SQLite refuses the URI's
       authority after the first add.
 
+- **Verify pass 3's corrections** (`verify.md`):
+  - *The control-character rule in every field*, at the write and at the
+    read. "Control character" means C0 and DEL, but newline, carriage return
+    and tab: JSON sends those three in two characters, and does not escape C1
+    at all. CR is allowed, so Windows text can be added.
+  - *The read takes text only*, cutting each field in SQL at four times its
+    limit -- never the whole of an oversized one -- and anything but text
+    reads as empty. The domain's `readable` drops control characters, then
+    makes the final cut, so a field reaches its limit exactly.
+  - *A field UTF-8 cannot encode is refused* before the file is touched.
+  - *The database check* reaches `_sqlite3` and a star import, and flags a
+    `Connection` only where it is called: a type names one and opens
+    nothing. A module imported by `importlib` from a string is out of reach,
+    and the docstring says so.
+  - *Accepted and recorded:* search matches the whole of an oversized field
+    but returns it cut; the SQL cut is a memory guard no test can see. Both
+    concern only lists written without the limits.
+
 ## Orchestration design
 
 N-A for the node table: the tool loop is unchanged, with one more middleware.

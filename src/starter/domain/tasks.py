@@ -37,9 +37,10 @@ class NewTask:
     notes: str
 
 
-# Control characters but newline and tab: JSON sends each as six characters
-# (`\u0001`), so they would slip past the length limits on the way to the model.
-CONTROL = frozenset(chr(c) for c in [*range(32), 127] if chr(c) not in "\n\t")
+# C0 control characters and DEL but newline, carriage return and tab: JSON
+# sends each as six characters (`\u0001`), so they would slip past the length
+# limits on the way to the model. The three kept cost two; C1 is not escaped.
+CONTROL = frozenset(chr(c) for c in [*range(32), 127] if chr(c) not in "\n\r\t")
 LIMITS: dict[Field, int] = {"title": TITLE_MAX, "assignee": ASSIGNEE_MAX, "notes": NOTES_MAX}
 
 
@@ -56,13 +57,26 @@ def new_task(title: str, assignee: str = "", notes: str = "") -> NewTask:
             raise TaskRefused(field, f"is longer than {limit} characters")
         if CONTROL.intersection(value):
             raise TaskRefused(field, "holds a control character")
+        if not _encodable(value):
+            raise TaskRefused(field, "holds a character UTF-8 cannot encode")
     return task
 
 
-def readable(text: str, field: Field) -> str:
-    """A field as it may reach the model, whatever wrote it: no control character
-    but newline and tab, and at most its limit long."""
-    return "".join(c for c in text if c not in CONTROL)[: LIMITS[field]]
+def readable(value: str, field: Field) -> str:
+    """A field as it may reach the model, whatever wrote it: without a control
+    character but newline, carriage return and tab, and at most its limit long.
+    (A value that is not text never arrives: the store reads it as empty.)"""
+    return "".join(c for c in value if c not in CONTROL)[: LIMITS[field]]
+
+
+def _encodable(text: str) -> bool:
+    """A lone surrogate -- from argument bytes that were not UTF-8 -- would pass
+    every other check and fail only at the write."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 class TaskRow(TypedDict):

@@ -132,9 +132,8 @@ class TaskReader:
         with self.connection() as db:
             db.execute("BEGIN")
             rows = db.execute(
-                # Cut in SQL too: a file written without the limits is never read whole.
-                f"SELECT id, substr(title, 1, {TITLE_MAX}), substr(assignee, 1, {ASSIGNEE_MAX}), "
-                f"substr(notes, 1, {NOTES_MAX}) FROM tasks WHERE {where} ORDER BY id LIMIT ?",
+                f"SELECT id, {_cut('title', TITLE_MAX)}, {_cut('assignee', ASSIGNEE_MAX)}, "
+                f"{_cut('notes', NOTES_MAX)} FROM tasks WHERE {where} ORDER BY id LIMIT ?",
                 (*params, limit),
             ).fetchall()
             matched = db.execute(f"SELECT COUNT(*) FROM tasks WHERE {where}", params).fetchone()[0]
@@ -167,6 +166,14 @@ def _reading(path: Path, timeout: float) -> Iterator[sqlite3.Connection]:
         # cannot be removed from SQL, and lets nothing but reading through.
         db.set_authorizer(_reads_only)
         yield db
+
+
+def _cut(column: str, limit: int) -> str:
+    """A column as the read fetches it: text only, and never whole -- a file
+    written without the limits could hold megabytes. Four times the limit, so
+    the domain's `readable` still has the limit's worth once it drops control
+    characters; it makes the final cut."""
+    return f"CASE WHEN typeof({column}) = 'text' THEN substr({column}, 1, {4 * limit}) ELSE '' END"
 
 
 _READING = frozenset(

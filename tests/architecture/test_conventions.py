@@ -77,19 +77,34 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
             "config/g.py": "import sqlite3\ndb = sqlite3.Connection('x')\n",
             "domain/h.py": "import sqlite3.dbapi2\ndb = sqlite3.dbapi2.connect('x')\n",
             "infrastructure/i.py": "from sqlite3 import dbapi2\ndb = dbapi2.connect('x')\n",
+            # the C module; every name at once; the DB-API module's opener by name
+            "application/j.py": "import _sqlite3\ndb = _sqlite3.connect('x')\n",
+            "config/k.py": "from sqlite3 import *\ndb = connect('x')\n",
+            "domain/l.py": "from sqlite3.dbapi2 import connect\ndb = connect('x')\n",
+            "cli/m.py": "from sqlite3 import Connection as C\ndb = C('x')\n",
             "infrastructure/stores/tasks.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
             # counter-examples: the module imported for its errors; another connect
             "infrastructure/agents/tools/d.py": "import sqlite3\nerrors = (sqlite3.Error,)\n",
             "infrastructure/e.py": "import socket\ns = socket.socket()\ns.connect(('h', 1))\n",
+            # a connection named in a type, and tested for: nothing opened
+            "infrastructure/agents/tools/n.py": (
+                "import sqlite3\nfrom sqlite3 import Connection\n"
+                "def use(db: sqlite3.Connection, other: Connection) -> bool:\n"
+                "    return isinstance(db, sqlite3.Connection)\n"
+            ),
         },
     )
     found = databases_opened_outside_stores(source)
     assert sorted({f.split(":")[0] for f in found}) == [
         "application/f.py",
+        "application/j.py",
         "cli/c.py",
+        "cli/m.py",
         "config/g.py",
+        "config/k.py",
         "domain/a.py",
         "domain/h.py",
+        "domain/l.py",
         "infrastructure/agents/tools/b.py",
         "infrastructure/i.py",
     ], found

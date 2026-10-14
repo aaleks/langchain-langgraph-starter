@@ -57,6 +57,9 @@ durability, safety) arrives in the slice whose requirement asks for it.
      from slice 2: without tools a run is one model turn);
    - a decision on `invalid_tool_calls` (moved from slice 2: no tool, no
      malformed call);
+   - a run's budget on what reaches the model, with a terminal outcome (from
+     3a: a read is bounded, a run is not -- `task-store-read-only`, frame.md
+     question 6);
    - task text and tool output as **untrusted data, never instruction**, with
      an adversarial case asserting no unauthorised effect.
 4. **Approval-gated writes** (structural). Create, close and reassign, each

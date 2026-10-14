@@ -78,5 +78,5 @@ N-A
 | 2 | How do tasks get in before slice 4? | Asked | The owner's CLI, `starter tasks add` |
 | 3 | What does search match? | Asked | A case-insensitive substring of the title or the notes |
 | 4 | One change or two? | Asked | Two: 3a here, and 3b |
-| 6 | A run's budget on what reaches the model (tokens) | OPEN | Bounded per read today: 50 tasks of 1,300 characters each, before JSON's escapes of newline and tab (TASKS-LIST). A run can make 20 reads, and each model turn re-sends them. A per-run budget with a terminal outcome needs real runs to set it. Resolved in slice 3b, with the owner's Open WebUI answering |
+| 6 | A run's budget on what reaches the model (tokens) | OPEN -- Owner: the owner; Review by: 2026-10-31 | Bounded per read: 50 tasks of 1,300 characters, each at most doubled by JSON's escapes -- 133,323 characters measured at worst (TASKS-LIST). A run can make 20 reads, about 2.7M characters, and each of up to 10 model turns re-sends what came before. A per-run budget with a terminal outcome needs real runs to set it, so it is resolved in slice 3b, with the owner's Open WebUI answering (`docs/roadmap.md`) |
 | 5 | `TOOL_CALLS_PER_RUN` and `TASK_RESULTS_LIMIT` | OPEN | Starting policies (20 and 50), like `MODEL_CALLS_PER_RUN` before them. Re-measured in 3b against real runs through the owner's Open WebUI |

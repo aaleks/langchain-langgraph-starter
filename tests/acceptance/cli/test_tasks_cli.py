@@ -40,15 +40,15 @@ class TestTasksAdd:
     """TASKS-ADD: `starter tasks add TITLE [--assignee NAME] [--notes TEXT]` SHALL add
     one open task to the task list `TASKS_DB` names -- its title (at most
     `TITLE_MAX`, 200 characters), assignee (at most `ASSIGNEE_MAX`, 100) and notes
-    (at most `NOTES_MAX`, 1,000), each with the spaces around it removed and free of
-    control characters but newline and tab -- print its id alone on standard output,
-    and exit 0. A blank title, or a field over its limit or holding another control
-    character, SHALL be refused with exit status 2 and a message on standard error
-    naming it -- `TITLE`, `--assignee`, `--notes` -- nothing written, the file not
-    even created. A task list that cannot be opened or written -- TASKS-SCHEMA
-    refusing it, or the file system -- and settings that cannot be read SHALL end
-    the command with exit status 1 and a message on standard error naming the file,
-    never a traceback."""
+    (at most `NOTES_MAX`, 1,000), each with the spaces around it removed, free of C0
+    control characters and DEL but newline, carriage return and tab, and of
+    characters UTF-8 cannot encode -- print its id alone on standard output, and
+    exit 0. A blank title, or a field over its limit or holding such a character,
+    SHALL be refused with exit status 2 and a message on standard error naming it --
+    `TITLE`, `--assignee`, `--notes` -- nothing written, the file not even created.
+    A task list that cannot be opened or written -- TASKS-SCHEMA refusing it, or the
+    file system -- and settings that cannot be read SHALL end the command with exit
+    status 1 and a message on standard error naming the file, never a traceback."""
 
     def test_two_tasks_added(self, tasks_db, capsys, monkeypatch):
         first = script(monkeypatch, "tasks", "add", "  Renew passport ", "--assignee", " sam ")
@@ -72,8 +72,23 @@ class TestTasksAdd:
             (["Renew passport", "--assignee", "a" * 101], "--assignee"),
             (["Renew passport", "--notes", "n" * 1001], "--notes"),
             (["Pay\x01 rent"], "TITLE"),
+            (["Pay\x1b rent"], "TITLE"),
+            (["Renew passport", "--assignee", "sam\x1b"], "--assignee"),
+            (["Renew passport", "--notes", "a\x07b"], "--notes"),
+            (["Pay\ud800"], "TITLE"),
         ],
-        ids=["spaces", "empty", "title-201", "assignee-101", "notes-1001", "control-character"],
+        ids=[
+            "spaces",
+            "empty",
+            "title-201",
+            "assignee-101",
+            "notes-1001",
+            "control-character",
+            "escape-in-title",
+            "escape-in-assignee",
+            "bell-in-notes",
+            "lone-surrogate",
+        ],
     )
     def test_counter_example_refused_nothing_written(
         self, tasks_db, capsys, monkeypatch, args, named
@@ -85,6 +100,14 @@ class TestTasksAdd:
         assert named in printed.err
         assert printed.out == ""
         assert not tasks_db.exists()
+
+    def test_notes_over_several_lines(self, tasks_db, capsys, monkeypatch):
+        notes = "line one\r\nline two\tend"
+
+        status = script(monkeypatch, "tasks", "add", "Renew passport", "--notes", notes)
+
+        assert (status, capsys.readouterr().out) == (0, "1\n")
+        assert open_tasks(tasks_db)[0][3] == notes
 
     def test_the_limits_themselves_are_accepted(self, tasks_db, capsys):
         status = main(["tasks", "add", "t" * 200, "--assignee", "a" * 100, "--notes", "n" * 1000])

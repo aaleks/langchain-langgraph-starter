@@ -206,24 +206,34 @@ def exits_outside_cli(source: Path) -> list[str]:
 STORES_PREFIX = "infrastructure/stores/"
 
 
-SQLITE_MODULES = frozenset({"sqlite3", "sqlite3.dbapi2"})
-SQLITE_OPENERS = frozenset({"connect", "Connection"})
+SQLITE_MODULES = frozenset({"sqlite3", "sqlite3.dbapi2", "_sqlite3"})
+
+
+def _of_module(attribute: ast.Attribute, modules: set[str]) -> bool:
+    """Whether `attribute` is reached from one of `modules`, through `dbapi2` or not."""
+    owner = attribute.value
+    if isinstance(owner, ast.Attribute) and owner.attr == "dbapi2":
+        owner = owner.value
+    return isinstance(owner, ast.Name) and owner.id in modules
 
 
 def databases_opened_outside_stores(source: Path) -> list[str]:
-    """Any reference to `connect` or `Connection` of `sqlite3` or `sqlite3.dbapi2`,
-    called or not, however the module or the name is bound -- outside
-    infrastructure/stores/, the only place a database file is opened (ADR 0006).
-    Importing `sqlite3` for its error classes is not opening anything."""
+    """A database opened outside infrastructure/stores/, the only place one is
+    (ADR 0006): any reference to `connect` of `sqlite3`, its `dbapi2` or the C
+    module `_sqlite3` -- called or not, however the module or the name is bound --
+    a `Connection` of theirs called, or a star import from them. Importing
+    `sqlite3` for its error classes, or naming `Connection` in a type, opens
+    nothing. Out of reach: a module imported by `importlib` from a string."""
     found = []
     for path in sorted(source.rglob("*.py")):
         rel = path.relative_to(source).as_posix()
         if rel.startswith(STORES_PREFIX):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        # Names bound to sqlite3 or its dbapi2, and to an opener imported by name.
+        # Names bound to one of the modules, and to an opener imported by name.
         modules: set[str] = set()
-        openers: set[str] = set()
+        connects: set[str] = set()
+        classes: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for a in node.names:
@@ -232,19 +242,32 @@ def databases_opened_outside_stores(source: Path) -> list[str]:
                         modules.add(a.asname or a.name.split(".")[0])
             elif isinstance(node, ast.ImportFrom) and node.module in SQLITE_MODULES:
                 for a in node.names:
-                    if a.name in SQLITE_OPENERS:
-                        openers.add(a.asname or a.name)
+                    if a.name == "*":
+                        found.append(f"{rel}:{node.lineno} from {node.module} import *")
+                    elif a.name == "connect":
+                        connects.add(a.asname or a.name)
+                    elif a.name == "Connection":
+                        classes.add(a.asname or a.name)
                     elif a.name == "dbapi2":
                         modules.add(a.asname or a.name)
+
         for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr in SQLITE_OPENERS:
-                owner = node.value
-                if isinstance(owner, ast.Attribute) and owner.attr == "dbapi2":
-                    owner = owner.value
-                if isinstance(owner, ast.Name) and owner.id in modules:
-                    found.append(f"{rel}:{node.lineno} sqlite3.{node.attr}")
-            elif isinstance(node, ast.Name) and node.id in openers:
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == "connect"
+                and _of_module(node, modules)
+            ):
+                found.append(f"{rel}:{node.lineno} sqlite3.connect")
+            elif isinstance(node, ast.Name) and node.id in connects:
                 found.append(f"{rel}:{node.lineno} {node.id}")
+            elif isinstance(node, ast.Call):
+                func = node.func
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "Connection"
+                    and _of_module(func, modules)
+                ) or (isinstance(func, ast.Name) and func.id in classes):
+                    found.append(f"{rel}:{node.lineno} sqlite3.Connection()")
     return found
 
 

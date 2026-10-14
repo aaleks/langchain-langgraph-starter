@@ -141,3 +141,26 @@
 - [x] 9.6 Proved by mutation, twenty-two in a full-suite run, each red --
   every survivor of the proof lens among them (M1-M5, M7-M16). Accepted and
   recorded: the timeout's overshoot (32); a list on a network share (33)
+
+## 10. Verify pass 3 -- the fixes (`verify.md`, reviewed at `98d4714`)
+
+- [x] 10.1 The control-character rule in every field (34): U+001B in a title,
+  the assignee and notes refused at the write; control characters in every
+  field of a list written without the limits stripped at the read, the
+  assignee cut to 100 exactly (35)
+- [x] 10.2 "Control character" is C0 and DEL in the spec too; CR allowed;
+  notes over several lines added and read back unchanged (36, 37)
+- [x] 10.3 The stated bound: each task at most doubled by JSON's escapes,
+  133,323 characters measured (38); frame question 6 given an owner, a review
+  date and the run's figure, and a line in the roadmap's slice 3 (43)
+- [x] 10.4 A value that is not text reads as empty, in SQL; the read cuts at
+  four times the limit, `readable` makes the final cut (39); a field UTF-8
+  cannot encode refused before the file is touched (40)
+- [x] 10.5 The database check: `_sqlite3`, a star import, the DB-API
+  module's `connect` by name; `Connection` flagged where called, a type that
+  names one a counter-example (41); the reader holds no store (42)
+- [x] 10.6 Proved by mutation, sixteen in a full-suite run: fifteen red. The
+  survivor, `readable`'s own guard on a value that is not text, was dead code
+  behind the SQL's; it is removed, and the SQL's guard alone turns the suite
+  red. Accepted: search over an oversized field; the SQL cut a memory guard
+  (44)

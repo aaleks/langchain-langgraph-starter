@@ -54,11 +54,13 @@ class TestListTasks:
     n}`, `n` being how many more open tasks there are -- the rows and `n` seeing one
     state of the list -- its text as written: a letter outside ASCII as itself, not
     escaped. Whatever the file holds, each field SHALL reach the model at most its
-    limit long (TASKS-ADD) and without a control character but newline and tab: one
-    read hands it at most 50 tasks of 1,300 characters, before JSON escapes a
-    newline or a tab. A task list another process holds locked SHALL end the run
-    with the store's error after waiting `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's
-    own wait, which overshoots it (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s)."""
+    limit long (TASKS-ADD), without a C0 control character or DEL but newline,
+    carriage return and tab, and a value that is not text as empty: one read hands
+    it at most 50 tasks of 1,300 characters, each at most doubled by JSON's escapes
+    (measured worst case: 133,323 characters). A task list another process holds
+    locked SHALL end the run with the store's error after waiting
+    `TASK_STORE_TIMEOUT_SECONDS` -- SQLite's own wait, which overshoots it
+    (measured: 1 s given, 1.8 s taken; 5 s, 7.4 s)."""
 
     def test_the_open_tasks_in_order(self, tmp_path):
         store = task_list(
@@ -78,11 +80,13 @@ class TestListTasks:
         }
 
     def test_text_as_written(self, tmp_path):
-        store = task_list(tmp_path / "tasks.sqlite3", ("Čestitka za Ivana ☕", "", ""))
+        notes = "line one\r\nline two\tend"
+        store = task_list(tmp_path / "tasks.sqlite3", ("Čestitka za Ivana ☕", "", notes))
 
         result = list_tasks.build(store).invoke({})
 
         assert "Čestitka za Ivana ☕" in result
+        assert json.loads(result)["tasks"][0]["notes"] == notes
 
     @pytest.mark.parametrize(("count", "returned", "more"), [(51, 50, 1), (50, 50, 0), (0, 0, 0)])
     def test_past_the_limit(self, tmp_path, count, returned, more):
@@ -135,19 +139,21 @@ class TestListTasks:
         )
         db.execute("PRAGMA user_version = 1")
         db.execute(
-            "INSERT INTO tasks (title, notes) VALUES (?, ?)",
-            ("Pay\x01" + "t" * 300, "n" * 2_000_000),
+            "INSERT INTO tasks (title, assignee, notes) VALUES (?, ?, ?)",
+            ("Pay\x01" + "t" * 300, "\x1b" + "a" * 2000, "\x07" + "n" * 2_000_000),
         )
+        db.execute("INSERT INTO tasks (title, notes) VALUES (?, ?)", ("Blob", b"\x00\x01"))
         db.commit()
         db.close()
         store = TaskStore(path)
         store.open()
 
-        task = json.loads(list_tasks.build(store).invoke({}))["tasks"][0]
+        first, second = json.loads(list_tasks.build(store).invoke({}))["tasks"]
 
-        assert "\x01" not in task["title"]
-        assert task["title"].startswith("Pay") and len(task["title"]) <= 200
-        assert len(task["notes"]) == 1000
+        assert first["title"] == "Pay" + "t" * 197
+        assert first["assignee"] == "a" * 100
+        assert first["notes"] == "n" * 1000
+        assert second["notes"] == ""
 
     def test_the_rows_and_more_see_one_state_of_the_list(self, tmp_path, monkeypatch):
         path = tmp_path / "tasks.sqlite3"
