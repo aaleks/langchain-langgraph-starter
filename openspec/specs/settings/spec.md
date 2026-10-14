@@ -22,7 +22,7 @@ A setting SHALL be read from the process environment when the environment holds 
 | not set, `PROBE=leaked` | `OPENWEBUI_MODEL=${PROBE}` | `${PROBE}` |
 
 #### Scenario: Spaces around a value
-| Each of `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL` in the environment | Read |
+| Each of `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`, `TASKS_DB` in the environment | Read |
 |---|---|
 | `   ` | empty |
 | `  sk-local` followed by a tab | `sk-local` |
@@ -37,7 +37,7 @@ A setting SHALL be read from the process environment when the environment holds 
 |---|---|
 | none | every setting empty, no error |
 | saved as UTF-16 | refused, naming the file |
-| saved as UTF-16, the environment holding all three settings | not opened: no error |
+| saved as UTF-16, the environment holding every setting | not opened: no error |
 
 #### Scenario: Counter-example -- reading leaves the process environment as it was
 - **GIVEN** a `.env` holding `OPENWEBUI_URL=http://localhost:3000` and a process environment without `OPENWEBUI_URL`
@@ -63,3 +63,20 @@ The Open WebUI API key SHALL appear neither in a settings object's text nor in t
 #### Scenario: Counter-example -- what is not secret is shown
 - **GIVEN** settings with the URL `http://localhost:3000` and the model `llama3.1:8b`
 - **THEN** their text contains both
+
+### Requirement: SETTINGS-TASKS-DB
+The task list's file SHALL be the setting `TASKS_DB` -- a relative path taken from the repository's root, an absolute one as it is -- and `.data/tasks.sqlite3` under the repository's root when the setting is empty.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/integration/config/test_settings.py::TestTasksDb`
+
+#### Scenario: Where the task list is
+| `TASKS_DB` | The task list's file |
+|---|---|
+| empty | `<repository>/.data/tasks.sqlite3` |
+| `lists/home.sqlite3` | `<repository>/lists/home.sqlite3` |
+| an absolute path, `<tmp>/tasks.sqlite3` | `<tmp>/tasks.sqlite3` |
+
+#### Scenario: Counter-example -- the working directory does not decide
+- **GIVEN** `TASKS_DB=lists/home.sqlite3`, read from a working directory other than the repository's root
+- **THEN** the file is `<repository>/lists/home.sqlite3`
