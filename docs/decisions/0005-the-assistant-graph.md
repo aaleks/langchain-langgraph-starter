@@ -1,7 +1,8 @@
 # 5. The first graph is `assistant`: a tool loop, registered, offline until a provider is required
 
 Date: 2026-10-12
-Status: Accepted. Its "no tools" was superseded by ADR 0006 (task-store-read-only).
+Status: Accepted. Its "no tools" was superseded by ADR 0006 (task-store-read-only),
+its "the rung is the tool loop" by ADR 0007 (assistant-as-a-graph).
 
 ## Context
 

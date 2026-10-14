@@ -4,29 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from langchain.agents import create_agent
-from langchain.agents.middleware import (
-    ModelCallLimitMiddleware,
-    ModelRetryMiddleware,
-    ToolCallLimitMiddleware,
-)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
-from starter.application.prompts import ASSISTANT_PROMPT
-from starter.domain.agents.budgets import MODEL_CALLS_PER_RUN, TOOL_CALLS_PER_RUN
+from starter.domain.agents.budgets import GRAPH_STEP_CEILING, TOOL_CALLS_PER_RUN
 from starter.domain.agents.capabilities import check_capability
-from starter.domain.agents.retries import (
-    MODEL_RETRIES,
-    RETRY_BACKOFF_FACTOR,
-    RETRY_INITIAL_DELAY_SECONDS,
-)
-from starter.infrastructure.agents.middleware import (
-    AnswerInvalidCalls,
-    ContextBudget,
-    OutputBudget,
-)
+from starter.domain.agents.retries import RETRY_INITIAL_DELAY_SECONDS
+from starter.infrastructure.agents.graphs.assistant.graph import assistant_graph
 
 
 def build_assistant(
@@ -36,50 +21,18 @@ def build_assistant(
     transient: Callable[[Exception], bool],
     initial_delay: float = RETRY_INITIAL_DELAY_SECONDS,
 ) -> CompiledStateGraph:
-    """The assistant: a tool loop over `model` and `tools` (docs/decisions/0005).
+    """The assistant: a hand-written graph over `model` and `tools`
+    (docs/decisions/0007).
 
     `transient` decides which model failures are retried; it arrives from the
     caller, so this adapter never imports a provider. It has no default: a graph
-    composed without one would quietly retry nothing. `initial_delay` is the first wait between tries, the domain's;
-    tests pass 0.
-
-    The budget counts model turns: a turn's retries happen inside it, so a run
-    makes at most `MODEL_CALLS_PER_RUN` turns of at most `1 + MODEL_RETRIES`
-    attempts each (ASSISTANT-MODEL-CALL-BUDGET).
+    composed without one would quietly retry nothing. `initial_delay` is the
+    first wait between tries, the domain's; tests pass 0.
     """
     # Every tool's manifest, before anything is compiled (TOOLS-MANIFEST).
     for given in tools:
         check_capability(given.name, (given.metadata or {}).get("capability"), TOOL_CALLS_PER_RUN)
-    # exit_behavior="error": the default, "end", injects an AI message saying the
-    # limit was reached -- an exhausted budget that reads like an answer.
-    budget = ModelCallLimitMiddleware(run_limit=MODEL_CALLS_PER_RUN, exit_behavior="error")
-    # Every tool together; "error" raises before any call of the turn that would
-    # pass it runs (measured: ASSISTANT-TOOL-CALL-BUDGET).
-    tool_budget = ToolCallLimitMiddleware(run_limit=TOOL_CALLS_PER_RUN, exit_behavior="error")
-    # on_failure="error": the default, "continue", turns the last failure into a
-    # message that reads like an answer.
-    retry = ModelRetryMiddleware(
-        max_retries=MODEL_RETRIES,
-        retry_on=transient,
-        on_failure="error",
-        initial_delay=initial_delay,
-        backoff_factor=RETRY_BACKOFF_FACTOR,
-    )
-    return create_agent(
-        model=model,
-        tools=list(tools),
-        system_prompt=ASSISTANT_PROMPT,
-        # AnswerInvalidCalls first: `after_model` hooks run last-first, and its
-        # jump back to the model must come after the budget has counted the turn
-        # -- placed last, an endless malformed reply loops past the budget.
-        # OutputBudget next: it runs before AnswerInvalidCalls, so a call cut off
-        # at the cap ends the run rather than being handed back.
-        middleware=[
-            AnswerInvalidCalls(),
-            OutputBudget(),
-            budget,
-            tool_budget,
-            retry,
-            ContextBudget(),
-        ],
-    )
+    builder = assistant_graph(model, tools, transient=transient, initial_delay=initial_delay)
+    # Set here, so neither the local server nor LangGraph's own default decides
+    # it: the budgets end a run long before (ASSISTANT-MODEL-CALL-BUDGET).
+    return builder.compile().with_config(recursion_limit=GRAPH_STEP_CEILING)

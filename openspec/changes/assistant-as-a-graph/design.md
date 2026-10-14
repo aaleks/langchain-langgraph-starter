@@ -142,14 +142,20 @@ stay the same.
 - **[The server's async path differs]** -> each node has an async body, and
   the async tests stay (context budget, malformed call). `check.sh live`
   runs the server.
-- **[A thread from the old graph meets the new one]** -> the local server's
-  threads live in memory, in `.langgraph_api/`, and do not survive a restart
-  with new code. Nothing else stores a thread.
+- **[A thread from the old graph meets the new one]** -> the local server
+  saves its threads to `.langgraph_api/`, so an old thread can outlive a
+  restart. Its state holds `messages`, which both graphs share. A new run on
+  it starts at `start_run`, which sets the counts the old state lacks. No
+  thread can be paused mid-run, since neither graph has an interrupt.
+  Checked once with a throwaway script, not a test: a thread written by
+  `create_agent` (channels `messages`, `thread_model_call_count`) ran on
+  under the new graph -- its transcript kept, the new run counted from 0.
+  Deleting `.langgraph_api/` drops them all. Nothing else stores a thread.
 
 ## Migration and rollback
 
-**No data migrates.** The task list is untouched, and the server's threads
-do not outlive it. A client that matched `ModelCallLimitExceededError` or
+**No data migrates.** The task list is untouched. A thread the server saved
+under the old graph runs on under the new one (Risks). A client that matched `ModelCallLimitExceededError` or
 `ToolCallLimitExceededError` by name -- none in this repository but the
 tests -- sees the domain's names instead.
 

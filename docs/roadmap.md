@@ -77,15 +77,22 @@ durability, safety) arrives in the slice whose requirement asks for it.
 
      Not done: search by assignee -- the measurement found it missing, and
      it would be a change of its own.
-4. **Approval-gated writes** (structural). Create, close and reassign, each
-   proposed by the model and executed only after the person approves:
-   `interrupt()` with the proposal as payload, `Command(resume=...)` on the
-   same thread, and a rejection that ends without an effect. The rung is
-   decided here -- `create_agent` with human-in-the-loop middleware, or a
-   hand-written `StateGraph` -- and with a hand-written graph come the old
-   Correctness slice's parts: a versioned state contract, routing policy in
-   `domain/`, topology tests. Writes are idempotent per thread and step, and
-   audited.
+4. **Approval-gated writes** -- split in two by the owner, who chose the
+   hand-written `StateGraph` on 2026-10-14 (ADR 0007).
+   - **4a, `assistant-as-a-graph`** (#11) -- the assistant became a
+     hand-written graph with its behaviour unchanged:
+     - three nodes: `start_run`, `call_model` and `run_tools`;
+     - a versioned state contract;
+     - routing in `domain/`;
+     - its topology held equal to the design's table;
+     - the budgets now raise domain errors and count per run.
+   - **4b** (structural). Create, close and reassign, each proposed by the
+     model and run only after the owner approves:
+     - `interrupt()` with LangChain's approval request, and a decision --
+       approve or reject -- resumed with `Command(resume=...)` on the same
+       thread. Agent Chat UI and `useStream` render it.
+     - A rejection ends the run with no effect and no further model call.
+     - Writes are idempotent per thread and step, and audited.
 5. **Durability** (structural). The approval may wait: a durable checkpointer
    chosen with build-or-adopt (`langgraph-checkpoint-sqlite`); a run paused,
    the graph rebuilt on the same store, and resumed; thread ownership; an old

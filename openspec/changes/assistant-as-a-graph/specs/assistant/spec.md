@@ -175,7 +175,7 @@ A run SHALL execute at most `TOOL_CALLS_PER_RUN` (20) tool calls: a turn whose p
 |---|---|---|
 | 4 calls a turn, for 5 turns, then answers | 20 | completes |
 | 3 calls a turn, for 7 turns | 18 -- the seventh turn's 3 not | raises `ToolCallBudgetExceededError` -- `a turn would take the run to 21 tool calls; the run's limit is 20` |
-| 20 calls and 1 malformed call in one turn, then answers | 20 | completes: the malformed call is answered, not counted |
+| 19 calls and 1 malformed call in one turn, then 1 call, then answers | 20 | completes: the malformed call is answered, not counted |
 
 #### Scenario: Counter-example -- exactly the budget is not past it
 - **GIVEN** a model proposing 20 calls in one turn, then answering
