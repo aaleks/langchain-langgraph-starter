@@ -178,3 +178,10 @@
   reaches the domain -- SQLite stops at it, a command line cannot carry it --
   recorded in the design
 - [x] 11.4 Proved by mutation, ten in a full-suite run, each red
+
+## 12. Verify pass 5 -- the MINORs, after the pass (`verify.md`, `d6d8e0e`)
+
+- [x] 12.1 The TASKS-ADD ids beside their rows (53); a `Connection` called
+  inside an annotation or `isinstance` caught, a fixture row, red without the
+  fix (54); the read cut in bytes, with `coalesce` -- a 20 MB field not UTF-8
+  read in 0.04 s (55); the type alias's false positive stated (56)

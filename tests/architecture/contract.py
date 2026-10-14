@@ -269,7 +269,10 @@ def databases_opened_outside_stores(source: Path) -> list[str]:
 
 def _typing_only_nodes(tree: ast.AST) -> set[int]:
     """The nodes that name a class without using it: inside a type annotation,
-    or the class argument of `isinstance` and `issubclass`."""
+    or the class argument of `isinstance` and `issubclass` -- but never a class
+    called there, since Python evaluates annotations and that call opens a
+    database. A type alias outside an annotation (`Callable[[],
+    sqlite3.Connection]`) is not spared: a false positive, stated."""
     roots: list[ast.AST] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.arg | ast.AnnAssign) and node.annotation is not None:
@@ -283,7 +286,9 @@ def _typing_only_nodes(tree: ast.AST) -> set[int]:
             and len(node.args) == 2
         ):
             roots.append(node.args[1])
-    return {id(inner) for root in roots for inner in ast.walk(root)}
+    inside = [inner for root in roots for inner in ast.walk(root)]
+    called = {id(node.func) for node in inside if isinstance(node, ast.Call)}
+    return {id(node) for node in inside} - called
 
 
 def agents_dir(source: Path) -> Path:

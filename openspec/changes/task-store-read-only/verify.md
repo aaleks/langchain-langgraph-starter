@@ -1,9 +1,11 @@
 # Verify
 
-- **Verdict:** SHIP at `f95333f` -- pass 4 (no BLOCKER, no MAJOR; eight
-  MINOR, fixed after it and read in pass 5). Pass 3: DO NOT SHIP (one MAJOR).
-  Pass 2: DO NOT SHIP (three MAJOR). Pass 1: DO NOT SHIP (eight MAJOR).
-- **Reviewed at:** pass 4: `f95333f`, the fix diff `866dadf..f95333f`. Pass
+- **Verdict:** SHIP at `d6d8e0e` -- pass 5 (no BLOCKER, no MAJOR; four
+  MINOR, fixed or recorded after it). Pass 4: SHIP at `f95333f`. Pass 3: DO
+  NOT SHIP (one MAJOR). Pass 2: DO NOT SHIP (three MAJOR). Pass 1: DO NOT
+  SHIP (eight MAJOR).
+- **Reviewed at:** pass 5: `d6d8e0e`, the fix diff `f301b45..d6d8e0e`. Pass
+  4: `f95333f`, the fix diff `866dadf..f95333f`. Pass
   3: `98d4714`, the fix diff `de61389..98d4714`. Pass
   2: `976d7c2`, the fix diff `0962b1d..976d7c2`. Pass
   1: `0a8b80f`, the whole change (`git diff
@@ -197,3 +199,46 @@ in a separate commit read in pass 5.
 
 - MODEL-OPENWEBUI-LIVE: the owner's model id.
 - The capability, placement and graph lenses (above).
+
+## Pass 5 -- the fix diff `f301b45..d6d8e0e`
+
+- **Evidence:** `bash scripts/check.sh live` at `d6d8e0e`:
+  - Every default check passed; suite 252.
+  - Live: 8 passed and 1 failed, on the owner's model id. No key-shaped
+    line, and no `.data/`.
+  - Ten pass-4 mutations red (tasks.md 11.4).
+- **Lenses:** proof (`spec-compliance`) and defects (`code-reviewer`), fresh
+  context, over the fix diff. The proof lens ran 14 mutations, all red.
+  Scratch copies only; the repository was left clean.
+- **Pass 4 resolved:** 45-52 fixed. 48's NUL row was left out on purpose
+  (design.md), and the proof lens accepted that.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 53 | MINOR | proof | Five of the TASKS-ADD refusal rows carry another row's id, so a failure is reported under the wrong name | `test_tasks_cli.py:84-99` | Each id beside its row |
+| 54 | MINOR | proof, defects | A `Connection` called inside an annotation or `isinstance`'s class argument is spared. Python evaluates both, and it opens a database | `contract.py:_typing_only_nodes` | Spare a name, never a call; a fixture row |
+| 55 | MINOR | defects | Text that is not UTF-8 counts as few characters to SQLite, so `_cut` fetched a 20 MB field whole (2.1 s), against its docstring | `stores/tasks.py:_cut` | Cut in bytes |
+| 56 | MINOR | defects | A type alias outside an annotation (`Callable[[], sqlite3.Connection]`) is a false positive | `contract.py` | Stated in the docstring |
+
+**Pass 5 verdict:** SHIP at `d6d8e0e` -- no BLOCKER, no MAJOR.
+
+After the pass, and read by no lens, each item was fixed or recorded:
+- **53:** the ids reordered.
+- **54:** fixed. Removing the fix turns the fixture row red.
+- **55:** fixed in bytes, with a `coalesce`, because `substr` of an empty
+  blob is NULL. That NULL turned 19 tests red until it was added. Measured
+  afterwards: a 20 MB field that is not UTF-8 read in 0.04 s, its notes
+  1,000 characters. The cut itself is a memory guard no test sees, as
+  recorded for 44.
+- **56:** stated in the docstring.
+
+Five passes converged: each found edge cases further out, the last only in
+data written by another program or in code meant to get past the check.
+
+## Not checked -- pass 5
+
+- MODEL-OPENWEBUI-LIVE: the owner's model id is not one their Open WebUI
+  lists.
+- The capability, placement and graph lenses after pass 3: their findings
+  were answered.
+- The post-pass edits for 53-56, read by no lens: proved as listed above.

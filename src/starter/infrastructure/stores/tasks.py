@@ -173,11 +173,18 @@ def _reading(path: Path, timeout: float) -> Iterator[sqlite3.Connection]:
 
 def _cut(column: str, limit: int) -> str:
     """A column as the read fetches it: text only, and never whole -- a file
-    written without the limits could hold megabytes. Four times the limit, then
-    the domain's `readable` drops control characters and makes the final cut:
-    text past four times the limit is never read, so a field made mostly of
-    control characters reads shorter than its limit, or empty."""
-    return f"CASE WHEN typeof({column}) = 'text' THEN substr({column}, 1, {4 * limit}) ELSE '' END"
+    written without the limits could hold megabytes. Cut in bytes, not
+    characters: SQLite counts text that is not UTF-8 as few characters however
+    long it is. Sixteen times the limit in bytes is at least four times it in
+    characters of UTF-8; the domain's `readable` then drops control characters
+    and makes the final cut. Text past that is never read, so a field made
+    mostly of control characters reads shorter than its limit, or empty."""
+    # coalesce: `substr` of an empty blob is NULL, not an empty one.
+    return (
+        f"CASE WHEN typeof({column}) = 'text' "
+        f"THEN coalesce(CAST(substr(CAST({column} AS BLOB), 1, {16 * limit}) AS TEXT), '') "
+        "ELSE '' END"
+    )
 
 
 _READING = frozenset(

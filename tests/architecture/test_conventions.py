@@ -87,6 +87,11 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
                 "import sqlite3\nclass Mine(sqlite3.Connection):\n    pass\ndb = Mine('x')\n"
             ),
             "domain/p.py": "import sqlite3\nopen_ = sqlite3.Connection\ndb = open_('x')\n",
+            # called inside an annotation, or inside isinstance: Python runs both
+            "config/q.py": (
+                "import sqlite3\ndef f() -> sqlite3.Connection('x'):\n    pass\n"
+                "ok = isinstance(None, sqlite3.Connection('y'))\n"
+            ),
             "infrastructure/stores/tasks.py": "import sqlite3\ndb = sqlite3.connect('x')\n",
             # counter-examples: the module imported for its errors; another connect
             "infrastructure/agents/tools/d.py": "import sqlite3\nerrors = (sqlite3.Error,)\n",
@@ -108,6 +113,7 @@ def test_every_way_of_opening_a_database_outside_the_stores_is_caught(tmp_path):
         "cli/m.py",
         "config/g.py",
         "config/k.py",
+        "config/q.py",
         "domain/a.py",
         "domain/h.py",
         "domain/l.py",
