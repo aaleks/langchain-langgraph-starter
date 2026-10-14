@@ -55,10 +55,11 @@ class OutputBudgetExceededError(RuntimeError):
         self.cap = cap
 
 
-# How long the assistant waits on the model at any one point -- to connect, for
-# the next part of an answer, for the next streamed chunk -- before abandoning
-# the call as timed out, and so transient (retries.py). Not a cap on a whole
-# call: a model that keeps answering is not cut off. A local model on a CPU can
-# be slow; a starting policy, to be measured against real runs
-# (connect-openwebui-model, frame.md).
-MODEL_CALL_TIMEOUT_SECONDS = 120
+# How long the assistant waits on the model at any one point before abandoning
+# the call as timed out, and so transient (retries.py): to connect, and -- since
+# a call carrying tools is not streamed (MODEL-OPENWEBUI-CLIENT) -- for the
+# whole reply. Measured (bound-the-tool-loop, verify.md pass 3): a reply at
+# MODEL_OUTPUT_TOKENS takes about 259 s from the owner's local qwen3:1.7b (15.8
+# tokens/s) and 16 s from gpt-5.4-mini. A run waits at most MODEL_CALLS_PER_RUN x
+# (1 + MODEL_RETRIES) x this: 2.5 hours, every call slow to its limit.
+MODEL_CALL_TIMEOUT_SECONDS = 300

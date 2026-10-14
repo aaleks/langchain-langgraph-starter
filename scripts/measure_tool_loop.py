@@ -111,7 +111,11 @@ def main() -> int:
                     replies = [m for m in out["messages"] if isinstance(m, AIMessage)]
                     turns = len(replies)
                     proposed = sum(len(m.tool_calls) + len(m.invalid_tool_calls) for m in replies)
-                    output = max((m.usage_metadata or {}).get("output_tokens", 0) for m in replies)
+                    # None when the backend reports no usage: never a measured 0.
+                    reported = [
+                        m.usage_metadata["output_tokens"] for m in replies if m.usage_metadata
+                    ]
+                    output = max(reported) if reported else None
                     outcome = "completed"
                 except Exception as failure:  # recorded, never re-raised: a measurement
                     outcome = type(failure).__name__

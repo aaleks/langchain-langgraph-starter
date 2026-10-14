@@ -40,9 +40,10 @@ def build_model(settings: Settings) -> BaseChatModel:
 def build_openwebui_model(settings: Settings) -> BaseChatModel:
     """An OpenAI-compatible client addressed to Open WebUI's `/api`.
 
-    - `timeout` and `stream_chunk_timeout`: the domain's wait, on every request
-      and on every streamed chunk -- the server streams, and langchain-openai's
-      own chunk timer would otherwise apply.
+    - `timeout` and `stream_chunk_timeout`: the domain's wait. A call carrying
+      tools is not streamed (`disable_streaming`, below), so for it the wait is
+      the whole reply; a call without tools streams, and the chunk timer -- else
+      langchain-openai's own -- applies to each chunk.
     - `max_retries=0`: the openai client would otherwise retry twice on its own,
       under the assistant's policy (ModelRetryMiddleware in the factory).
     - `use_responses_api=False`: some model ids switch ChatOpenAI to

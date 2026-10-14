@@ -113,3 +113,19 @@
   streamed; the token count ignored or off by one; the call with an id
   answered beside one without; the recorded error repeated; the output
   budget's error made transient
+
+## 8. Verify pass 3 -- the fixes (`verify.md`, reviewed at `476b80e`)
+
+- [x] 8.1 The timeout sized for a whole reply: `MODEL_CALL_TIMEOUT_SECONDS`
+  300. Measured: a reply at the cap takes about 259 s on the owner's local
+  model (15.8 tokens/s) and 16 s on `gpt-5.4-mini`. The comments, the
+  docstring and MODEL-OPENWEBUI-CLIENT say what it bounds; the per-run time
+  is stated (25)
+- [x] 8.2 A reply with an id-less malformed call is stored without its
+  malformed calls, and a second turn sends none unanswered; the id-less call
+  first or second (26, 27)
+- [x] 8.3 Rows: 4,097 output tokens; the error's exact text (27). A request
+  read from the stand-in: a call with tools, streamed on the server's path,
+  goes out with `stream: false` and `max_completion_tokens` 4,096 (28). The
+  script records no usage as None (29)
+- [x] 8.4 Proved by mutation, six in a full-suite run, each red

@@ -65,10 +65,11 @@ A reply cut off at the client's cap of `MODEL_OUTPUT_TOKENS` (4,096) tokens (MOD
 #### Scenario: A reply cut off at the cap
 | The model's reply | Its finish reason | The run |
 |---|---|---|
-| text | `length` | raises `OutputBudgetExceededError`, naming 4,096; the model called once |
+| text | `length` | raises `OutputBudgetExceededError` -- `a reply was cut off at its cap of 4096 tokens` -- the model called once |
 | a call of `add` | `length` | raises it; the tool not called |
 | a call of `add` cut off mid-arguments -- not JSON | `length` | raises it; the call not handed back, the model called once |
 | text, its output tokens 4,096 | `stop` -- an Ollama model capped by its own `num_predict` reports no cut-off | raises it |
+| text, its output tokens 4,097 | `stop` -- a backend that went past the cap | raises it |
 | text, its output tokens 4,095 | `stop` | completes |
 
 #### Scenario: Counter-example -- a reply with no finish reason
@@ -135,7 +136,9 @@ A call the model proposes to a tool it was not given, with arguments that tool's
 | The first reply proposes, arguments not JSON | Tool messages | The run |
 |---|---|---|
 | one call without an id | none -- nothing could answer it | ends as the model left it, without an error of its own |
-| one call without an id, beside one with an id | none -- answering one would leave the other unanswered, and the endpoint refuses that | ends as the model left it |
+| one call without an id, beside one with an id -- first or second | none -- answering one would leave the other unanswered, and the endpoint refuses that | ends as the model left it |
+
+- **AND** the reply is stored without its malformed calls, so a second turn on the transcript sends the model no call left unanswered
 
 #### Scenario: Refused calls still spend the budget
 - **GIVEN** a scripted model that proposes `multiply(a=2, b=3)` on every call

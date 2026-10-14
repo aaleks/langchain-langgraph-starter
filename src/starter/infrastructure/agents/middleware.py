@@ -41,8 +41,10 @@ class AnswerInvalidCalls(AgentMiddleware):
         if not isinstance(last, AIMessage) or not last.invalid_tool_calls or last.tool_calls:
             return None
         if not all(call.get("id") for call in last.invalid_tool_calls):
-            # One left unanswered, the next request would be refused by the endpoint.
-            return None
+            # Answering some would leave one unanswered, and the endpoint refuses
+            # that. The reply is stored without them -- the same id replaces it --
+            # so the thread's next turn sends no call left unanswered either.
+            return {"messages": [last.model_copy(update={"invalid_tool_calls": []})]}
         answers = [
             ToolMessage(
                 content=invalid_call_answer(call.get("name") or "the tool"),

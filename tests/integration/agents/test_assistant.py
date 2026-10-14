@@ -196,15 +196,24 @@ class TestToolError:
         assert [m.type for m in messages] == ["human", "ai"]
         assert model.calls == 1
 
-    def test_counter_example_one_without_an_id_beside_one_with_an_id(self, fake_llm, add_tool):
+    @pytest.mark.parametrize("without_id", [0, 1], ids=["first", "second"])
+    def test_counter_example_one_without_an_id_beside_one_with_an_id(
+        self, fake_llm, add_tool, without_id
+    ):
         reply = malformed("add", "not json", count=2)
-        reply.invalid_tool_calls[1]["id"] = None
+        reply.invalid_tool_calls[without_id]["id"] = None
         model = fake_llm([reply, answer()])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries)
 
-        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+        messages = run(graph, "add")
 
         assert [m.type for m in messages] == ["human", "ai"]
         assert model.calls == 1
+        # Stored without its malformed calls: a second turn sends none unanswered.
+        assert messages[1].invalid_tool_calls == []
+        second = graph.invoke({"messages": [*messages, HumanMessage("again")]})["messages"]
+        assert second[-1].type == "ai"
+        assert all(not getattr(m, "invalid_tool_calls", None) for m in model.seen[1])
 
     def test_arguments_that_cannot_be_parsed_as_the_server_runs_it(self, fake_llm, add_tool):
         # The local server runs graphs with `astream`, the asynchronous path.
@@ -731,6 +740,7 @@ class TestOutputBudget:
 
         assert MODEL_OUTPUT_TOKENS == 4096
         assert ended.value.cap == 4096
+        assert str(ended.value) == "a reply was cut off at its cap of 4096 tokens"
         assert model.calls == 1
 
     def test_a_call_cut_off_at_the_cap_is_not_run(self, fake_llm, add_tool):
@@ -749,7 +759,7 @@ class TestOutputBudget:
 
         assert model.calls == 1
 
-    @pytest.mark.parametrize(("output_tokens", "ends"), [(4096, True), (4095, False)])
+    @pytest.mark.parametrize(("output_tokens", "ends"), [(4097, True), (4096, True), (4095, False)])
     def test_a_reply_that_reached_the_cap_though_it_says_stop(self, fake_llm, output_tokens, ends):
         # An Ollama model capped by its own num_predict reports `stop` (measured on
         # the owner's server): the tokens are what show it was cut off.
