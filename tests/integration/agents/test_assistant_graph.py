@@ -108,8 +108,9 @@ class TestStateContract:
     """ASSISTANT-STATE-CONTRACT: The assistant's state SHALL be the contract
     `AssistantState` at `ASSISTANT_STATE_VERSION` 2, with exactly the fields
     `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's
-    counts, and `write_decisions`, the owner's decision on each write of the reply
-    under review, by call id -- each one required. A reply whose id the transcript
+    counts, and `write_decisions`, each write of the reply under review by call id
+    -- the owner's decision, then what the store recorded for it: `approve`,
+    `reject` or `refused` -- each one required. A reply whose id the transcript
     already holds SHALL be appended under a new id, never replace that message; and
     each well-formed call of a stored reply SHALL have an id of its own -- one
     missing, or used already in the reply, is given a new one, so no answer,
@@ -227,6 +228,8 @@ class TestStateContract:
 
         stored = [c["id"] for c in graph.get_state(paused).values["messages"][1].tool_calls]
         assert len(set(stored)) == len(stored) and all(stored)
+        # Every write waits for the owner; none was dropped by a shared id.
+        assert graph.get_state(paused).next == ("review_writes",)
         if calls[0][1]:
             assert stored[0] == calls[0][1]
         if ids == "two-writes-one-id":
@@ -238,6 +241,37 @@ class TestStateContract:
             rows = store.reader(1.0).open_tasks(50)["tasks"]
             # The close was rejected: task 1 still open; the add approved: task 2.
             assert [(t["id"], t["title"]) for t in rows] == [(1, "Renew passport"), (2, "Buy milk")]
+
+    @pytest.mark.parametrize("stopped_before", ["call_model", "run_tools"])
+    def test_a_state_of_version_1_runs_on(self, fake_llm, tmp_path, stopped_before):
+        from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS
+        from starter.infrastructure.agents.tools import read_tools, write_tools
+        from starter.infrastructure.stores.tasks import TaskStore
+
+        store = TaskStore(tmp_path / "tasks.sqlite3")
+        store.open()
+        proposal = propose(("add_task", {"title": "Call the plumber"}))
+        tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        graph = build_assistant(
+            fake_llm([proposal, answer()]), tools, transient=no_retries, writer=store.writer()
+        ).copy(update={"checkpointer": InMemorySaver()})
+        old = {"configurable": {"thread_id": "v1"}}
+        # Version 1's channels only: no `write_decisions`.
+        if stopped_before == "call_model":
+            values = {"messages": [HumanMessage("add it")], "model_calls": 0, "tool_calls": 0}
+            graph.update_state(old, values, as_node="start_run")
+        else:
+            values = {
+                "messages": [HumanMessage("add it"), proposal],
+                "model_calls": 1,
+                "tool_calls": 0,
+            }
+            graph.update_state(old, values, as_node="call_model")
+        assert "write_decisions" not in graph.get_state(old).values
+
+        graph.invoke(None, old)
+
+        assert graph.get_state(old).next == ("review_writes",)
 
     def test_counter_example_a_caller_cannot_set_a_count(self, fake_llm, add_tool):
         # The input schema's jsonschema, above, is what proves a count is not
@@ -302,13 +336,14 @@ class TestNoCallLeftUnanswered:
     reply: `start_run` SHALL answer each call left without one -- an earlier run on
     the thread ended between a reply and its tools, or the input holds such a reply
     -- with a tool message of status `error` reading exactly `Error: this call was
-    not run; the run that proposed it ended first.`, placed after the reply that
-    proposed it, before the model is called. A tool message elsewhere in the
-    transcript answers nothing, whatever its id. A real endpoint refuses a
-    transcript holding a call left unanswered, so without this every later turn on
-    the thread would fail. A call without an id cannot be answered, and is left as
-    it is; a continue without input resumes the stopped run, its tools running
-    again."""
+    not run; the run that proposed it ended first.` -- or, for a write the task list
+    recorded under its key (ASSISTANT-WRITE-KEY), with the outcome recorded --
+    placed after the reply that proposed it, before the model is called. A tool
+    message elsewhere in the transcript answers nothing, whatever its id. A real
+    endpoint refuses a transcript holding a call left unanswered, so without this
+    every later turn on the thread would fail. A call without an id cannot be
+    answered, and is left as it is; a continue without input resumes the stopped
+    run, its tools running again."""
 
     @staticmethod
     def unanswered_in(messages) -> set[str]:

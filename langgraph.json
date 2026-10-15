@@ -3,5 +3,8 @@
   "graphs": {
     "assistant": "./src/starter/infrastructure/agents/registry.py:assistant"
   },
-  "python_version": "3.13"
+  "python_version": "3.13",
+  "http": {
+    "app": "./src/starter/infrastructure/server/guard.py:app"
+  }
 }

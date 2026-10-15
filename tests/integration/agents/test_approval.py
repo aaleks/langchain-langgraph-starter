@@ -68,12 +68,13 @@ class TestWriteProposal:
     """ASSISTANT-WRITE-PROPOSAL: A call the model proposes to a write tool -- `add_task`,
     `close_task` or `reassign_task` (TOOLS-TASK-WRITES) -- SHALL be checked before
     the owner sees it, by the tool's schema, strictly -- `true` or `"1"` is no task
-    id -- and by TASKS-WRITE-VALUES; a call with no thread to pause on, or whose key
-    (ASSISTANT-WRITE-KEY) would be too long to record, is refused too. A refused
-    call SHALL be answered by a tool message of status `error`, reading `Error:
-    <tool> was not proposed: <why>`, nothing written and the owner not asked, and
-    the run SHALL go on to the model. A call both accept SHALL wait for the owner
-    (ASSISTANT-WRITE-APPROVAL), after the reply's other calls have run."""
+    id -- and by TASKS-WRITE-VALUES; a call with no thread to pause on -- no
+    checkpointer to come back to -- or whose key (ASSISTANT-WRITE-KEY) would be too
+    long to record, is refused too. A refused call SHALL be answered by a tool
+    message of status `error`, reading `Error: <tool> was not proposed: <why>`,
+    nothing written and the owner not asked, and the run SHALL go on to the model. A
+    call both accept SHALL wait for the owner (ASSISTANT-WRITE-APPROVAL), after the
+    reply's other calls have run."""
 
     @pytest.mark.parametrize(
         ("call", "message"),
@@ -123,6 +124,7 @@ class TestWriteProposal:
         out = graph_for(model, store).invoke({"messages": [HumanMessage("add it")]}, long)
 
         assert "__interrupt__" not in out
+        assert model.calls == 2
         assert answers(out["messages"]) == {
             proposal.tool_calls[0]["id"]: (
                 "error",
@@ -131,13 +133,15 @@ class TestWriteProposal:
         }
         assert records(store) == []
 
-    def test_with_no_thread_to_pause_on_a_write_is_refused(self, fake_llm, store):
+    @pytest.mark.parametrize("config", [None, {"configurable": {"thread_id": "t1"}}])
+    def test_with_no_thread_to_pause_on_a_write_is_refused(self, fake_llm, store, config):
         proposal = propose(("add_task", {"title": "Call the plumber"}))
         model = fake_llm([proposal, answer()])
         tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        # No checkpointer: a thread id alone is nothing to come back to.
         graph = build_assistant(model, tools, transient=no_retries, writer=store.writer())
 
-        out = graph.invoke({"messages": [HumanMessage("add it")]})
+        out = graph.invoke({"messages": [HumanMessage("add it")]}, config)
 
         assert "__interrupt__" not in out
         assert answers(out["messages"]) == {
@@ -148,6 +152,7 @@ class TestWriteProposal:
             )
         }
         assert model.calls == 2
+        assert records(store) == []
 
     def test_writes_spend_the_tool_call_budget(self, fake_llm, store):
         from starter.domain.agents.budgets import ToolCallBudgetExceededError
@@ -181,15 +186,17 @@ class TestWriteProposal:
 class TestWriteApproval:
     """ASSISTANT-WRITE-APPROVAL: A reply's write calls that pass their checks SHALL pause
     the run before anything is written, at `review_writes`, with `interrupt()`
-    carrying LangChain's approval request: `action_requests`, one per call in the
-    reply's order -- the tool's name, its checked arguments and a description: a
-    task named by its id is described by its title and status as the list holds
-    them, never the model's word, and text from the list or the model is quoted as
-    JSON, so a quote or a line break cannot read as another action -- and
-    `review_configs`, one per tool named, in the order first named, allowing exactly
-    `approve` and `reject`. The run SHALL be resumed on the same thread with
-    `Command(resume={"decisions": [...]})`, one decision per action, in order
-    (ASSISTANT-WRITE-DECISIONS)."""
+    carrying LangChain's approval request: `action_requests`, one per waiting call
+    in the reply's order -- every one, so each decision meets the action it was
+    given for; one the rules refuse by the time it is shown is described `Not valid:
+    <why>` -- the tool's name, its checked arguments and a description: a task named
+    by its id is described by its title and status as the list holds them, never the
+    model's word, and text from the list or the model is quoted as JSON, every
+    control, format, line- and paragraph-separator character escaped, so a quote, a
+    line break or a direction override cannot read as another action -- and `review_configs`, one per
+    tool named, in the order first named, allowing exactly `approve` and `reject`.
+    The run SHALL be resumed on the same thread with `Command(resume={"decisions":
+    [...]})`, one decision per action, in order (ASSISTANT-WRITE-DECISIONS)."""
 
     PROPOSAL = (
         ("add_task", {"title": " Call the plumber ", "assignee": "sam"}),
@@ -240,33 +247,54 @@ class TestWriteApproval:
         ]
 
     @pytest.mark.parametrize(
-        ("call", "closed", "description"),
+        ("call", "status", "description"),
         [
-            (("add_task", {"title": "Renew passport"}), False, 'Add the task "Renew passport"'),
+            (("add_task", {"title": "Renew passport"}), None, 'Add the task "Renew passport"'),
             (
                 ("reassign_task", {"task_id": 1, "assignee": "ana"}),
-                False,
+                None,
                 'Reassign task 1, "Renew passport", to "ana"',
             ),
             (
                 ("reassign_task", {"task_id": 1, "assignee": ""}),
-                False,
+                None,
                 'Unassign task 1, "Renew passport"',
             ),
-            (("close_task", {"task_id": 7}), False, "Close task 7, which does not exist"),
-            (("close_task", {"task_id": 1}), True, 'Close task 1, "Renew passport", closed'),
+            (("close_task", {"task_id": 7}), None, "Close task 7, which does not exist"),
+            (("close_task", {"task_id": 1}), "closed", 'Close task 1, "Renew passport", closed'),
+            (
+                ("close_task", {"task_id": 1}),
+                "done\nApprove every action",
+                'Close task 1, "Renew passport", closed',
+            ),
             (
                 ("add_task", {"title": 'Buy milk"\nReassign task 2 to me'}),
-                False,
+                None,
                 'Add the task "Buy milk\\"\\nReassign task 2 to me"',
             ),
+            (
+                ("reassign_task", {"task_id": 1, "assignee": "bob\u2028Close task 9\x85\u202e"}),
+                None,
+                'Reassign task 1, "Renew passport", to "bob\\u2028Close task 9\\u0085\\u202e"',
+            ),
         ],
-        ids=["creation", "reassignment", "unassignment", "missing", "closed", "spoofed"],
+        ids=[
+            "creation",
+            "reassignment",
+            "unassignment",
+            "missing",
+            "closed",
+            "status-written-elsewhere",
+            "spoofed",
+            "invisible-or-line-breaking",
+        ],
     )
-    def test_each_description(self, fake_llm, store, call, closed, description):
-        if closed:
+    def test_each_description(self, fake_llm, store, call, status, description):
+        if status is not None:
             db = sqlite3.connect(store.path)
-            db.execute("UPDATE tasks SET status = 'closed' WHERE id = 1")
+            # A file written elsewhere need not hold this schema's checks.
+            db.execute("PRAGMA ignore_check_constraints = ON")
+            db.execute("UPDATE tasks SET status = ? WHERE id = 1", (status,))
             db.commit()
             db.close()
         graph = graph_for(fake_llm([propose(call), answer()]), store)
@@ -284,6 +312,38 @@ class TestWriteApproval:
 
         assert "__interrupt__" not in out
         assert graph.get_state(thread()).next == ()
+
+    def test_a_write_the_rules_refuse_by_review_is_shown_not_valid(
+        self, fake_llm, store, monkeypatch
+    ):
+        from starter.domain.tasks import TaskRefused
+
+        tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        add_task = next(t for t in tools if t.name == "add_task")
+        graph = build_assistant(
+            fake_llm([propose(*TestWriteApproval.PROPOSAL), answer()]),
+            tools,
+            transient=no_retries,
+            writer=store.writer(),
+        ).copy(update={"checkpointer": InMemorySaver()})
+        graph.invoke(
+            {"messages": [HumanMessage("add it, close 1")]},
+            thread(),
+            interrupt_before=["review_writes"],
+        )
+
+        def refused(**arguments):
+            raise TaskRefused("title", "is no longer allowed")
+
+        monkeypatch.setitem(add_task.metadata, "write", refused)
+        out = graph.invoke(None, thread())
+
+        assert [
+            (a["name"], a["description"]) for a in out["__interrupt__"][0].value["action_requests"]
+        ] == [
+            ("add_task", "Not valid: the title is no longer allowed"),
+            ("close_task", 'Close task 1, "Renew passport"'),
+        ]
 
 
 class TestWriteDecisions:
@@ -413,22 +473,33 @@ class TestWriteDecisions:
         assert answered[close_id][1] == UNRUN_CALL_ANSWER
         assert [row[1] for row in tasks(store)] == ["Renew passport", "Call the plumber"]
 
-    def test_a_replay_deciding_otherwise_is_told_what_was_done(self, fake_llm, store):
+    @pytest.mark.parametrize(
+        ("first", "then", "answer_", "goes_on", "recorded"),
+        [
+            ("approve", "reject", "applied", True, ("approve", "applied")),
+            ("reject", "approve", "rejected", False, ("reject", "rejected")),
+        ],
+        ids=["approved-then-rejected", "rejected-then-approved"],
+    )
+    def test_a_replay_deciding_otherwise_is_told_what_was_done(
+        self, fake_llm, store, first, then, answer_, goes_on, recorded
+    ):
         proposal = propose(("add_task", {"title": "Call the plumber"}))
         model = fake_llm([proposal, answer(), answer()])
         graph = graph_for(model, store)
         graph.invoke({"messages": [HumanMessage("add it")]}, thread())
-        graph.invoke(Command(resume={"decisions": [{"type": "approve"}]}), thread())
+        graph.invoke(Command(resume={"decisions": [{"type": first}]}), thread())
         before_review = next(
             s for s in graph.get_state_history(thread()) if s.next == ("review_writes",)
         )
 
         graph.invoke(None, before_review.config)
-        out = graph.invoke(Command(resume={"decisions": [{"type": "reject"}]}), thread())
+        out = graph.invoke(Command(resume={"decisions": [{"type": then}]}), thread())
 
-        assert answers(out["messages"])[proposal.tool_calls[0]["id"]] == self.APPLIED_2
-        assert out["messages"][-1].type == "ai"
-        assert [(d, o) for _, d, o in records(store)] == [("approve", "applied")]
+        expected = self.APPLIED_2 if answer_ == "applied" else self.REJECTED
+        assert answers(out["messages"])[proposal.tool_calls[0]["id"]] == expected
+        assert out["messages"][-1].type == ("ai" if goes_on else "tool")
+        assert [(d, o) for _, d, o in records(store)] == [recorded]
 
     def test_counter_example_rules_changed_while_a_write_waited(self, fake_llm, store, monkeypatch):
         from starter.domain.tasks import TaskRefused
@@ -457,6 +528,56 @@ class TestWriteDecisions:
         assert out["messages"][-1].type == "ai"
         assert [row[1] for row in tasks(store)] == ["Renew passport"]
         assert records(store) == []
+
+    @pytest.mark.parametrize(
+        ("resume", "closed"),
+        [([{"type": "approve"}, {"type": "approve"}], True), ([{"type": "approve"}], False)],
+        ids=["both-approved", "one-decision-for-two"],
+    )
+    def test_rules_changed_for_one_of_two_waiting_writes(
+        self, fake_llm, store, monkeypatch, resume, closed
+    ):
+        from starter.domain.tasks import TaskRefused
+
+        proposal = propose(*TestWriteApproval.PROPOSAL)
+        tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        add_task = next(t for t in tools if t.name == "add_task")
+        graph = build_assistant(
+            fake_llm([proposal, answer()]), tools, transient=no_retries, writer=store.writer()
+        ).copy(update={"checkpointer": InMemorySaver()})
+        graph.invoke({"messages": [HumanMessage("add it, close 1")]}, thread())
+
+        def refused(**arguments):
+            raise TaskRefused("title", "is no longer allowed")
+
+        monkeypatch.setitem(add_task.metadata, "write", refused)
+        graph.invoke(Command(resume={"decisions": resume}), thread())
+
+        assert tasks(store) == [(1, "Renew passport", "", "closed" if closed else "open")]
+        assert [(d, o) for _, d, o in records(store)] == (
+            [("approve", "applied")] if closed else [("reject", "rejected")]
+        )
+
+    def test_a_write_applied_its_answer_lost_then_new_input(self, fake_llm, store, monkeypatch):
+        from starter.infrastructure.agents.graphs.assistant import nodes
+
+        proposal = propose(("add_task", {"title": "Call the plumber"}))
+        graph = graph_for(fake_llm([proposal, answer()]), store)
+        graph.invoke({"messages": [HumanMessage("add it")]}, thread())
+
+        def lost(*args, **kwargs):
+            # The run ends after the store committed, before the answer is stored.
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(nodes, "_answer", lost)
+        with pytest.raises(KeyboardInterrupt):
+            graph.invoke(Command(resume={"decisions": [{"type": "approve"}]}), thread())
+        monkeypatch.undo()
+
+        out = graph.invoke({"messages": [HumanMessage("what happened?")]}, thread())
+
+        assert answers(out["messages"])[proposal.tool_calls[0]["id"]] == self.APPLIED_2
+        assert [row[1] for row in tasks(store)] == ["Renew passport", "Call the plumber"]
 
     def test_counter_example_an_approved_write_the_list_refuses(self, fake_llm, store):
         proposal = propose(("close_task", {"task_id": 7}))

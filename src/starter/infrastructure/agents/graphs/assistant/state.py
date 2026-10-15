@@ -31,6 +31,9 @@ class AssistantState(TypedDict):
     # (ASSISTANT-BUDGETS-PER-RUN).
     model_calls: int
     tool_calls: int
-    # The owner's decision on each write of the reply under review, by call id:
-    # `approve` or `reject` (ASSISTANT-WRITE-DECISIONS); `{}` from `start_run`.
+    # Each write of the reply under review, by call id: the owner's decision
+    # (`approve` or `reject`), then what the store recorded for it -- `approve`
+    # when applied or refused by the list, `reject` when rejected, `refused`
+    # when the rules refused it by the time it was decided
+    # (ASSISTANT-WRITE-DECISIONS); `{}` from `start_run`.
     write_decisions: dict[str, str]

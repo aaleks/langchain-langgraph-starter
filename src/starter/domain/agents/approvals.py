@@ -4,6 +4,7 @@ and the key a decision is recorded under (docs/decisions/0009)."""
 from __future__ import annotations
 
 import json
+import unicodedata
 
 from starter.domain.tasks import (
     CreateTask,
@@ -35,11 +36,19 @@ def _as_found(found: tuple[str, str] | None) -> str:
     if found is None:
         return ", which does not exist"
     title, status = found
-    return f", {_quoted(title)}" + ("" if status == "open" else f", {status}")
+    # A fixed word, whatever a file written elsewhere holds as a status.
+    return f", {_quoted(title)}" + ("" if status == "open" else ", closed")
+
+
+# Characters an approval UI may draw as a line break or reorder -- line and
+# paragraph separators, C1 controls, bidi overrides -- so a description could
+# read as another action. JSON escapes the C0 controls; these are escaped too.
+_UNSEEN = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
 def _quoted(text: str) -> str:
-    return json.dumps(text, ensure_ascii=False)
+    quoted = json.dumps(text, ensure_ascii=False)
+    return "".join(f"\\u{ord(c):04x}" if unicodedata.category(c) in _UNSEEN else c for c in quoted)
 
 
 def read_decisions(resume: object, count: int) -> list[Decision]:

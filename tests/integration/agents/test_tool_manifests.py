@@ -243,9 +243,13 @@ class TestTaskWriteTools:
         ],
     )
     def test_counter_example_called_directly_nothing_is_written(self, store, name, arguments):
+        from starter.domain.tasks import new_task
+
+        store.add(new_task("Call the plumber", "sam"))
+        before = store.reader(1.0).open_tasks(50)
         called = next(t for t in write_tools() if t.name == name)
 
         with pytest.raises(RuntimeError):
             called.invoke(arguments)
 
-        assert store.reader(1.0).open_tasks(50) == {"tasks": [], "more": 0}
+        assert store.reader(1.0).open_tasks(50) == before

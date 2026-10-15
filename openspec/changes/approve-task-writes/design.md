@@ -16,9 +16,12 @@ decision. This change joins them through the owner's approval.
      returns the decisions as state.
    - `apply_writes` is a write node. It decides one waiting write a step
      through the writer, and answers it, then routes back to itself while
-     another waits. A write's answer is stored with it, so a failure after
-     it never leaves it unanswered, nor answered "not run" by the next run
-     (verify pass 1, finding 3).
+     another waits. A write's answer is stored with it, in the same step
+     (verify pass 1, finding 3). The store's commit and the step's
+     checkpoint are still two transactions: a run cancelled or killed
+     between them loses the answer, never the write. So `start_run`
+     answers a write call left unanswered with what the store recorded
+     under its key, and "not run" only when nothing is (pass 2, N1).
    - The answer and the route follow the outcome the writer returns -- the
      one recorded under the key -- never a later decision: a replay that
      decides otherwise is told what was done (finding 4).
@@ -31,7 +34,9 @@ decision. This change joins them through the owner's approval.
      - by the tool's schema (pydantic, strict, so `true` or `"1"` is no task
        id);
      - by the domain's builder (TASKS-WRITE-VALUES);
-     - for a thread to pause on;
+     - for a thread to pause on -- a thread id and a checkpointer, read
+       from the run's config, since a thread id alone is nothing to come
+       back to (pass 2);
      - for a key short enough to record.
 
      A refused one is answered then and there; an accepted one is left
@@ -46,12 +51,21 @@ decision. This change joins them through the owner's approval.
    shape is the interface, and the test pins it.
    - `action_requests`: one per waiting call, in the reply's order -- the
      tool's name, the checked arguments, and a description from the
-     domain's `describe_write`.
+     domain's `describe_write`. Every waiting call is asked about, so the
+     owner's decisions meet the actions they were given for, by position,
+     on the resume too: one the rules refuse by then is described `Not
+     valid: <why>`, and `apply_writes` answers it (pass 2: a list rebuilt
+     shorter on resume once turned an approval into a rejection, or onto
+     the wrong write).
      - A task named by its id is described by its title and status, read
        from the list by the writer's `task()`. The model's word for it
        never reaches the owner: task text could steer it (finding 5).
      - Text from the list or the model is quoted as JSON, so a quote or a
-       line break cannot read as another action (finding 6).
+       line break cannot read as another action (finding 6); every
+       control, format, line- and paragraph-separator character is
+       escaped too, so a direction override or U+2028 cannot (pass 2).
+     - A status other than `open` is shown as the fixed word `closed`,
+       never the file's text (pass 2).
    - `review_configs`: one per tool named, in first-named order, each
      allowing `approve` and `reject`.
 
@@ -121,16 +135,36 @@ decision. This change joins them through the owner's approval.
     - `scripts/serve.sh` starts the server with `CORS_ALLOW_ORIGINS` set to
       that origin, on the `exec` line, outside the local-only environment's
       `export`s, which the method holds equal to the session's settings.
-    - The SDK and `curl` are not browsers, and are unaffected.
+      It unsets `CORS_CONFIG`, which would replace it, and refuses a
+      `langgraph.json` holding a `"cors"` key.
+    - The SDK is not a browser, and is unaffected.
+12. **A request guard in front of every route** (pass 2's BLOCKER). CORS
+    limits what a page may read, never what it may send: a `text/plain`
+    POST is sent without a preflight, and the server parses its body as
+    JSON whatever its type -- so a page could create a thread, propose and
+    approve a write without reading a byte. The owner chose, 2026-10-15,
+    the guard.
+    - The policy is the domain's `request_refusal` (`domain/access.py`):
+      a `Host` that is not this machine is refused (DNS rebinding); a
+      request other than `GET`, `HEAD` or `OPTIONS` is refused when its
+      `Origin` is another page's, or its body, for `POST`, `PUT` or
+      `PATCH`, is not `application/json` -- which a browser cannot send
+      to another origin without a preflight CORS refuses.
+    - The adapter is `LocalRequestGuard`, ASGI middleware in
+      `infrastructure/server/guard.py`, named in `langgraph.json` as
+      `http.app`; the server runs it before CORS and every route.
+    - Alternatives: LangGraph's custom `auth` with a local token -- every
+      client, Agent Chat UI included, would need the token; refusing state
+      writes alone -- leaves the propose-then-approve path open.
 
 ## Orchestration design
 
 | Node (a business outcome) | Kind (read, decide, write) | Reads | Writes or side effect | Routes to | Decided by (domain policy or model) |
 |---|---|---|---|---|---|
-| `start_run` | read | `messages` | counts 0; `write_decisions` `{}`; calls an earlier run left answered as not run | `call_model` | `unanswered_calls` |
+| `start_run` | read | `messages`, the store's records | counts 0; `write_decisions` `{}`; calls an earlier run left answered as not run, or a write with the outcome recorded under its key | `call_model` | `unanswered_calls` |
 | `call_model` | decide | `messages`, `model_calls` | the reply, within the budgets | `run_tools`, `END` | `route_after_reply` |
 | `run_tools` | read | the reply, `tool_calls` | reads and malformed calls answered; write calls checked, refused ones answered | `review_writes`, `call_model` | `route_after_tools` |
-| `review_writes` | decide | the waiting write calls | `interrupt()`; on resume, `write_decisions` | `apply_writes` | the owner (`read_decisions`) |
+| `review_writes` | decide | every waiting write call | `interrupt()`; on resume, `write_decisions` | `apply_writes` | the owner (`read_decisions`) |
 | `apply_writes` | write | the next waiting write call, `write_decisions` | it applied or rejected by the writer, once per key, and answered from the outcome | `apply_writes`, `call_model`, `END` | `route_after_writes` |
 
 - **State:** `AssistantState` v2: `messages`, `model_calls`, `tool_calls`,
@@ -194,6 +228,14 @@ decision. This change joins them through the owner's approval.
   it recorded.
 - **[A resume the owner got wrong]** -> it rejects. The safe outcome is no
   effect.
+- **[A run ends after the store commits, before its answer is stored]** --
+  cancelled or killed -> the next run's `start_run` answers the call with
+  the outcome recorded under its key, never "not run".
+- **[A client that can edit a paused thread's state]** -> it can set
+  `write_decisions` or swap a waiting call, and so apply a write the owner
+  did not see. The guard keeps every web page but Agent Chat UI's out; a
+  process on this machine can still do it, as it can write the task file
+  itself. Slice 5's thread ownership revisits it.
 - **[The model proposes the same write twice in two turns]** -> two
   proposals, two decisions. The key holds the reply, so each is its own
   write. That is what the owner approved.

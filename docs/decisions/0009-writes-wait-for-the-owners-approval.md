@@ -48,9 +48,19 @@ What is settled here is the interface a client depends on:
   store recorded for its key.
 - **Each call of a reply has an id of its own**, so a decision is never
   another call's.
-- **Browsers:** only `http://localhost:3000` may call the local server --
+- **Browsers:** only `http://localhost:3000` may use the local server --
   the owner's choice, 2026-10-15. Any other page in the owner's browser
-  gets no CORS permission, and so cannot approve a write.
+  gets no CORS permission, so cannot read a paused run.
+- **A request guard in front of every route** -- the owner's choice,
+  2026-10-15, since CORS never stops a page *sending* a `text/plain`
+  POST. It refuses a `Host` that is not this machine, a write from
+  another page's `Origin`, and a write body that is not
+  `application/json`. Its policy is the domain's `request_refusal`;
+  `langgraph.json` names the middleware as `http.app`.
+- **A write's answer lost is read back from the store.** A run that ends
+  after the store commits and before the step's checkpoint loses the
+  answer, never the write; the next run answers the call with the
+  outcome recorded under its key.
 
 ## Consequences
 
@@ -67,6 +77,9 @@ What is settled here is the interface a client depends on:
   applied.
 - A pause lasts as long as the server's thread, until slice 5 makes it
   durable.
+- A process on this machine can still edit a paused thread's state, and
+  so approve a write itself -- as it could write the task file. Slice 5's
+  thread ownership revisits it.
 
 **Reversal:** another payload is a change of `review_writes` and of every
 client. Letting the model continue after a rejection is one route

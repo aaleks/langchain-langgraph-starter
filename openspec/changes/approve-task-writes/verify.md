@@ -3,6 +3,9 @@
 - **Verdict:** pass 1: DO NOT SHIP -- two BLOCKER, three MAJOR. The most
   important fix: a write the owner rejected was applied when two calls of a
   reply shared an id (1).
+- **Verdict:** pass 2: DO NOT SHIP -- one BLOCKER, three MAJOR. The most
+  important fix: a page's blind `text/plain` POST could propose and approve
+  a write, since CORS limits what a page reads, never what it sends (18).
 - **Reviewed at:** pass 1: `04dc4a2`, the whole change (`git diff
   0123b5d..04dc4a2`), committed before the lenses read it.
 - **Evidence (pass 1):**
@@ -58,6 +61,45 @@
 | 14 | Fixed: design.md Risks, `domain/tasks.py` |
 | 15, 16 | Accepted, as written |
 | 17 | Slice 5 |
+
+## Findings -- pass 2
+
+Reviewed at `195ab87`, the fixes (`git diff 04dc4a2..195ab87`), by the four
+lenses of pass 1, fresh context each; scratch files, fakes and in-memory
+checkpointers only. `uv run pytest`: 411 passed.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 18 | BLOCKER | capabilities, defects, proof | Pass 1's finding 2 was half closed: CORS limits what a page may read, never what it may send. A page's `text/plain` POST is sent without a preflight, and the server parses its body as JSON whatever its type: a page can create a thread, propose a write and approve it -- or set `write_decisions` and go to `apply_writes` -- reading nothing. DNS rebinding makes it same-origin: no `Host` check | `scripts/serve.sh`, the server | The owner chose, 2026-10-15: "Request guard middleware" |
+| 19 | MAJOR | proof, defects, durability | On resume `review_writes` rebuilt its list under the current rules: a write refused by then dropped out, and the owner's decisions were counted and mapped against a list they never saw -- an approval recorded as a rejection, or, with one decision for two, an approval landing on the other write | `nodes.py:review_writes` | Every waiting write asked about, one refused by then shown `Not valid: <why>` |
+| 20 | MAJOR | durability | The store's commit and the step's checkpoint are two transactions: a run cancelled or killed between them keeps the write and loses its answer, and the next run answered it "not run" -- a re-proposal applied it twice. The requirement said this could not happen | `nodes.py:start_run` | `start_run` answers it with the outcome recorded under its key |
+| 21 | MAJOR | capabilities | The owner's decision is tied to a position, not to the action shown: a client that edits the paused thread's state can swap the call under its id, and the owner's approval applies to a task they never saw | `nodes.py:review_writes` | The same reach as setting `write_decisions` directly: any client that can edit state can approve. The guard (18) keeps every page but Agent Chat UI's out |
+| 22 | MINOR | defects, capabilities, proof | `CORS_CONFIG` from the shell, or `http.cors` in `langgraph.json`, replaces the script's origin | `scripts/serve.sh` | Unset; a `"cors"` key refused |
+| 23 | MINOR | defects, proof | A thread id with no checkpointer passes "a thread to pause on", and returns an interrupt nothing can resume | `nodes.py:_proposal` | The checkpointer read from the run's config |
+| 24 | MINOR | defects | A thread id that is not a string makes `write_key` raise `TypeError`, failing the turn | `approvals.py:write_key` | `str()` |
+| 25 | MINOR | proof | A status from the list is shown unquoted; a file written elsewhere need not hold the schema's check | `approvals.py:describe_write` | A fixed word, `closed` |
+| 26 | MINOR | capabilities | JSON quoting leaves bidi overrides, U+2028/U+2029 and C1 controls raw in a description, which a UI may draw as another line or reversed | `approvals.py:_quoted` | Escaped: categories Cc, Cf, Zl, Zp |
+| 27 | MINOR | durability | The state contract called `write_decisions` the owner's decision; after the fixes it is the store's outcome class | `state.py`, ASSISTANT-STATE-CONTRACT | Reworded |
+| 28 | MINOR | durability | "No v1 thread can be paused where it is read" was backed by a scratch probe only | tests | A v1 state run on, in a test |
+| 29 | MINOR | proof | Parts of scenarios unasserted: the proposal rows' AND clauses; the read and write under one id still waiting; the replay rejecting then approving | tests | Asserted |
+| 30 | MINOR | proof | "Nothing written" by a direct call held for any code: the list was empty | `test_tool_manifests.py` | A seeded list, unchanged |
+
+Not findings, for the record: `review_writes` reads the list again on resume
+to rebuild descriptions nobody sees then (durability); `localhost:3000` has
+credentials, the owner's accepted choice (capabilities).
+
+### Pass 2 -- what became of each
+
+| # | Outcome |
+|---|---|
+| 18 | Fixed (tasks.md 12.1): `request_refusal`, `LocalRequestGuard`; live, a page's blind POST and a rebound `Host` refused with no thread created |
+| 19 | Fixed (12.3) |
+| 20 | Fixed (12.4) |
+| 21 | Accepted under the approved design's identity line -- "no owner check yet: one owner on 127.0.0.1. Slice 5 adds ownership." Binding a decision to what was shown would not close it: a client that can edit state can set the decision itself. The guard narrows it to a process on this machine, which can write the task file directly. Recorded in design.md Risks and ADR 0009 |
+| 22 | Fixed (12.2) |
+| 23, 24, 25, 26 | Fixed (12.5) |
+| 27 | Fixed: `state.py`, ASSISTANT-STATE-CONTRACT |
+| 28, 29, 30 | Fixed (12.6) |
 
 ## Not checked
 

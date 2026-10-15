@@ -84,6 +84,22 @@ def preflight(url: str, origin: str) -> str | None:
         return refused.headers.get("Access-Control-Allow-Origin")
 
 
+def blind_post(url: str, headers: dict[str, str]) -> int:
+    """A POST to `/threads` as a page sends one blind -- its answer's status."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        url + "/threads", method="POST", data=b'{"metadata": {}}', headers=headers
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=10) as answer:
+            return answer.status
+    except urllib.error.HTTPError as refused:
+        return refused.code
+
+
 def message_types(values: dict) -> list[str]:
     return [message["type"] for message in values["messages"]]
 
@@ -118,6 +134,16 @@ def session(tmp_path_factory):
         seen["events"], seen["last"] = stream(client, thread, stream_mode=["values", "updates"])
         seen["runs"] = [run["status"] for run in client.runs.list(thread)]
         seen["preflights"] = {origin: preflight(server.url, origin) for origin in ORIGINS}
+        before = len(client.threads.search(limit=1000))
+        seen["blind"] = {
+            "page": blind_post(
+                server.url, {"Origin": "https://evil.example", "Content-Type": "text/plain"}
+            ),
+            "rebound": blind_post(
+                server.url, {"Host": "evil.example", "Content-Type": "application/json"}
+            ),
+        }
+        seen["blind_threads"] = len(client.threads.search(limit=1000)) - before
         seen["second"] = subprocess.run(
             [sys.executable, "-c", READ_THREAD, server.url, thread],
             capture_output=True,
@@ -384,12 +410,14 @@ class TestApprovalThroughTheServer:
 
 
 class TestBrowserOrigins:
-    """LOCAL-SERVER-BROWSER-ORIGINS: `bash scripts/serve.sh` SHALL let a web page call the
+    """LOCAL-SERVER-BROWSER-ORIGINS: `bash scripts/serve.sh` SHALL let a web page use the
     server only from `http://localhost:3000`, Agent Chat UI's default origin -- the
-    owner's choice (2026-10-15): a cross-origin request from any other origin SHALL
-    get no CORS permission, so no other page in the owner's browser can read a
-    paused run or approve a write. A client that is not a browser -- the SDK, `curl`
-    -- is unaffected."""
+    owner's choice (2026-10-15): a preflight from any other origin SHALL get no CORS
+    permission, and a request that would change anything from any other origin SHALL
+    be refused before it reaches a route (LOCAL-SERVER-REQUEST-GUARD) -- a
+    `text/plain` POST a browser sends without a preflight included -- so no other
+    page in the owner's browser can read a paused run or approve a write. A client
+    that is not a browser -- the SDK -- is unaffected."""
 
     @pytest.mark.live
     def test_a_browsers_preflight(self, session):
@@ -398,6 +426,13 @@ class TestBrowserOrigins:
             "https://evil.example": None,
             "http://localhost:8080": None,
         }
+
+    @pytest.mark.live
+    def test_a_pages_blind_write_is_refused(self, session):
+        assert session["blind"] == {"page": 403, "rebound": 403}
+        assert session["blind_threads"] == 0
+        # The SDK's own requests went through: the session made its threads.
+        assert session["runs"] == ["success"]
 
     def test_counter_example_set_by_the_script_not_by_chance(self):
         import re
@@ -409,3 +444,7 @@ class TestBrowserOrigins:
             "http://localhost:3000"
         ]
         assert "CORS_ALLOW_ORIGINS" not in shell_exports(script)
+        assert re.findall(r"^unset CORS_CONFIG$", script, re.M) == ["unset CORS_CONFIG"]
+        assert '"cors"' in script and "refuse" in script
+        config = json.loads((REPO / "langgraph.json").read_text(encoding="utf-8"))
+        assert config["http"] == {"app": "./src/starter/infrastructure/server/guard.py:app"}

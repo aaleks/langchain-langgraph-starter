@@ -52,11 +52,11 @@ def assistant_graph(
         retry_on=transient,
     )
     builder = StateGraph(AssistantState, input_schema=AssistantInput, output_schema=AssistantInput)
-    builder.add_node("start_run", nodes.start_run)
     builder.add_node("call_model", nodes.call_model(model, tools), retry_policy=retry)
     # A write tool is offered to the model, and run only by `apply_writes`.
     writes = {t.name: t for t in tools if t.metadata["capability"].side_effect == "write"}
     reads = [t for t in tools if t.name not in writes]
+    builder.add_node("start_run", nodes.start_run(writes, writer))
     builder.add_node("run_tools", nodes.run_tools(reads, writes))
     builder.add_node("review_writes", nodes.review_writes(writes, writer))
     builder.add_node("apply_writes", nodes.apply_writes(writes, writer))

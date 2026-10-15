@@ -22,6 +22,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_core.tools import BaseTool
+from langgraph.constants import CONFIG_KEY_CHECKPOINTER
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
@@ -62,21 +63,37 @@ from starter.infrastructure.agents.graphs.assistant.state import AssistantState
 from starter.infrastructure.stores.tasks import TaskWriter
 
 
-def start_run(state: AssistantState) -> dict[str, Any]:
+def start_run(writes: Mapping[str, BaseTool], writer: TaskWriter | None):
     """Every run starts its budgets at zero, whatever the thread holds from an
     earlier run (ASSISTANT-BUDGETS-PER-RUN), and on a transcript with every call
     answered: a call an earlier run left -- it ended between a reply and its
-    tools -- is answered as not run (ASSISTANT-NO-CALL-LEFT-UNANSWERED)."""
-    update: dict[str, Any] = {"model_calls": 0, "tool_calls": 0, "write_decisions": {}}
-    answered = _answer_left_calls(state["messages"])
-    if answered is not None:
-        # Each answer must follow its reply, before the next message: the
-        # transcript is written again, in order, its ids kept.
-        update["messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES), *answered]
-    return update
+    tools -- is answered as not run (ASSISTANT-NO-CALL-LEFT-UNANSWERED). A write
+    the store recorded under its key is answered with that outcome instead: the
+    run that applied it may have ended before its answer was stored."""
+
+    def start(state: AssistantState, config: RunnableConfig) -> dict[str, Any]:
+        update: dict[str, Any] = {"model_calls": 0, "tool_calls": 0, "write_decisions": {}}
+        thread = config.get("configurable", {}).get("thread_id")
+
+        def recorded(reply: AIMessage, call: dict[str, Any]) -> WriteOutcome | None:
+            if writer is None or thread is None or call.get("name") not in writes:
+                return None
+            try:
+                return writer.recorded(write_key(str(thread), reply.id, call["id"]))
+            except ValueError:  # a key too long was never recorded
+                return None
+
+        answered = _answer_left_calls(state["messages"], recorded)
+        if answered is not None:
+            # Each answer must follow its reply, before the next message: the
+            # transcript is written again, in order, its ids kept.
+            update["messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES), *answered]
+        return update
+
+    return start
 
 
-def _answer_left_calls(messages: list[AnyMessage]) -> list[AnyMessage] | None:
+def _answer_left_calls(messages: list[AnyMessage], recorded) -> list[AnyMessage] | None:
     """The transcript with an answer after each reply for every call of it left
     unanswered, or None when there is none.
 
@@ -95,11 +112,15 @@ def _answer_left_calls(messages: list[AnyMessage]) -> list[AnyMessage] | None:
                 break
             answered.add(following.tool_call_id)
         calls = [*message.tool_calls, *message.invalid_tool_calls]
-        proposed = [call["id"] for call in calls if call.get("id")]
-        for call_id in unanswered_calls(proposed, answered):
-            rewritten.append(
-                ToolMessage(content=UNRUN_CALL_ANSWER, tool_call_id=call_id, status="error")
-            )
+        by_id = {call["id"]: call for call in calls if call.get("id")}
+        for call_id in unanswered_calls(list(by_id), answered):
+            outcome = recorded(message, by_id[call_id])
+            if outcome is not None:
+                rewritten.append(_answer(by_id[call_id], outcome))
+            else:
+                rewritten.append(
+                    ToolMessage(content=UNRUN_CALL_ANSWER, tool_call_id=call_id, status="error")
+                )
             added = True
     return rewritten if added else None
 
@@ -166,10 +187,13 @@ def run_tools(tools: Sequence[BaseTool], writes: Mapping[str, BaseTool]) -> Runn
         )
         others = [call for call in reply.tool_calls if call["name"] not in writes]
         answers = [_invalid_call_answer(call) for call in reply.invalid_tool_calls]
-        thread = config.get("configurable", {}).get("thread_id")
+        configurable = config.get("configurable", {})
+        thread = configurable.get("thread_id")
+        # A pause needs a checkpointer to come back to, not only a thread id.
+        checkpointer = configurable.get(CONFIG_KEY_CHECKPOINTER)
         for call in reply.tool_calls:
             if call["name"] in writes:
-                checked = _proposal(call, writes[call["name"]], thread, reply.id)
+                checked = _proposal(call, writes[call["name"]], thread, reply.id, checkpointer)
                 if isinstance(checked, str):
                     answers.append(_not_proposed(call, checked))
         return reply, others, spent, answers
@@ -195,14 +219,18 @@ def run_tools(tools: Sequence[BaseTool], writes: Mapping[str, BaseTool]) -> Runn
 
 
 def _proposal(
-    call: dict[str, Any], tool: BaseTool, thread: str | None, reply_id: str
+    call: dict[str, Any],
+    tool: BaseTool,
+    thread: str | None,
+    reply_id: str,
+    config_checkpointer: object,
 ) -> TaskWrite | str:
     """A write call as the owner may be asked about it -- or why it may not: its
     values refused, no thread to pause on, or a key too long to record it."""
-    if thread is None:
+    if thread is None or config_checkpointer is None:
         return "there is no thread to pause on for the owner's decision"
     try:
-        write_key(thread, reply_id, call["id"])
+        write_key(str(thread), reply_id, call["id"])
     except ValueError:
         return "its key would be too long to record"
     return checked_write(call, tool)
@@ -250,26 +278,20 @@ def review_writes(writes: Mapping[str, BaseTool], writer: TaskWriter | None):
     """Pause for the owner's decision on each waiting write, in LangChain's
     approval request (ASSISTANT-WRITE-APPROVAL, docs/decisions/0009). Nothing is
     written here: on resume, the node runs again from the start, and returns the
-    decisions as state. A write the rules refuse by now -- they changed while it
-    waited -- is not asked about; `apply_writes` answers it."""
+    decisions as state. Every waiting write is asked about, in the reply's order,
+    so each decision meets the action it was given for, however the rules change
+    before the resume; one the rules refuse by now is shown as not valid, and
+    `apply_writes` answers it."""
 
     def review(state: AssistantState) -> dict[str, Any]:
         asked = [
-            (call, write)
+            (call, checked_write(call, writes[call["name"]]))
             for call in waiting_writes(state["messages"], writes)
-            if not isinstance(write := checked_write(call, writes[call["name"]]), str)
         ]
         names = list(dict.fromkeys(call["name"] for call, _ in asked))
         answer = interrupt(
             {
-                "action_requests": [
-                    {
-                        "name": call["name"],
-                        "args": write_arguments(write),
-                        "description": describe_write(write, _found(writer, write)),
-                    }
-                    for call, write in asked
-                ],
+                "action_requests": [_action_request(call, write, writer) for call, write in asked],
                 "review_configs": [
                     {"action_name": name, "allowed_decisions": ["approve", "reject"]}
                     for name in names
@@ -284,6 +306,18 @@ def review_writes(writes: Mapping[str, BaseTool], writer: TaskWriter | None):
         }
 
     return review
+
+
+def _action_request(
+    call: dict[str, Any], write: TaskWrite | str, writer: TaskWriter | None
+) -> dict[str, Any]:
+    if isinstance(write, str):
+        return {"name": call["name"], "args": call["args"], "description": f"Not valid: {write}"}
+    return {
+        "name": call["name"],
+        "args": write_arguments(write),
+        "description": describe_write(write, _found(writer, write)),
+    }
 
 
 def _found(writer: TaskWriter | None, write: TaskWrite) -> tuple[str, str] | None:
@@ -312,7 +346,7 @@ def apply_writes(writes: Mapping[str, BaseTool], writer: TaskWriter | None):
             # Refused by rules that changed while it waited: never decided.
             decisions[call["id"]] = "refused"
             return {"messages": [_not_proposed(call, write)], "write_decisions": decisions}
-        key = write_key(config["configurable"]["thread_id"], reply.id, call["id"])
+        key = write_key(str(config["configurable"]["thread_id"]), reply.id, call["id"])
         if decisions.get(call["id"]) == "approve":
             outcome = writer.apply(write, key)
         else:

@@ -41,6 +41,14 @@ if grep -Eq '"env"[[:space:]]*:' <<< "$flat"; then
   refuse "$config has an \"env\" key, which the server loads over the local-only environment. Remove it: config/ loads .env for the graphs."
 fi
 
+# Browsers are limited below (CORS_ALLOW_ORIGINS) and by the request guard in
+# langgraph.json's http.app. A "cors" block there would replace the first, so it
+# is refused like "env"; CORS_CONFIG from this shell would too, so it is unset.
+if grep -Eq '"cors"[[:space:]]*:' <<< "$flat"; then
+  refuse "$config has a \"cors\" key, which replaces the one origin a browser may use. Remove it (approve-task-writes, ADR 0009)."
+fi
+unset CORS_CONFIG
+
 # .env must not put LangSmith back either -- a loader that overrides would undo
 # the environment below. Names are reported; values are never printed.
 credentials='LANGSMITH_API_KEY|LANGCHAIN_API_KEY|LANGSMITH_CONTROL_PLANE_API_KEY|LANGGRAPH_CLOUD_LICENSE_KEY'

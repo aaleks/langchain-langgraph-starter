@@ -93,3 +93,26 @@
   replay re-running, the read beside a write succeeding
 - [x] 11.6 Mutations of the fixes, 18, each red -- one, at first an error
   rather than a red, closed with the changed-rules scenario
+
+## 12. Verify pass 2 -- the fixes
+
+- [x] 12.1 The request guard, the owner's choice: `request_refusal` in the
+  domain (`TestRequestGuard`), `LocalRequestGuard` as `langgraph.json`'s
+  `http.app`; live, a page's blind `text/plain` POST and a rebound `Host`
+  refused with no thread created, the SDK let through
+- [x] 12.2 `serve.sh` unsets `CORS_CONFIG` and refuses a `"cors"` key
+- [x] 12.3 Every waiting write asked about on the resume too, one refused by
+  then shown `Not valid: <why>`; two writes, rules changed for one, resumed
+  both ways
+- [x] 12.4 `start_run` answers a write left unanswered with the outcome its
+  key recorded (`TaskWriter.recorded`)
+- [x] 12.5 No checkpointer, no proposal, whatever the thread id; the thread
+  id passed through `str()`; a status shown as a fixed word; every control,
+  format and separator character escaped in a description
+- [x] 12.6 Test gaps closed: the AND clauses of the proposal rows, the read
+  and write under one id still waiting, the replay in both directions, the
+  direct calls over a seeded list, a v1 state running on
+- [x] 12.7 MODEL-OPENWEBUI-LIVE amended: a real model may read the list
+  before it answers -- measured, two runs of three on 2026-10-15
+- [x] 12.8 Mutations of the fixes, 11, each red once two survivors were
+  closed with rows: the `Not valid` reason, a status written elsewhere
