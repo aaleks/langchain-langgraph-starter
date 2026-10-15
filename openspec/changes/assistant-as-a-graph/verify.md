@@ -1,29 +1,36 @@
 # Verify
 
-- **Verdict:** pass 1: DO NOT SHIP -- three MAJOR. The most important fix: the
-  retry waits (1).
-- **Reviewed at:** pass 1: `a9cbde3`, the whole change (`git diff
-  7243c03..a9cbde3`), committed before the lenses read it.
+- **Verdict:** SHIP at `0eb6dc5` -- pass 2: no BLOCKER, no MAJOR. Its MINORs
+  were fixed after it, at `601bdd4` (below). Pass 1: DO NOT SHIP -- three
+  MAJOR: two fixed, one deferred by the owner in writing.
+- **Reviewed at:** pass 2: `0eb6dc5`, the fix diff `a9cbde3..0eb6dc5`. Pass 1:
+  `a9cbde3`, the whole change (`git diff 7243c03..a9cbde3`), committed before
+  the lenses read it.
+- **Evidence (pass 2):**
+  - `bash scripts/check.sh live` at `7804da6` (the fixes' code): suite 310,
+    and 8 of 9 live passed. The Open WebUI test could not connect: the
+    owner's Open WebUI was not running (Not checked).
+  - Mutations of the fixes, each red once one survivor was closed (tasks.md
+    7.9). After `601bdd4`: answers matched by id anywhere, red. A dedupe of
+    ids within one reply survived; it was behaviour no requirement claims,
+    and was removed.
+  - `bash scripts/check.sh` at `601bdd4`: all checks passed, suite 313.
+  - Three fresh-context lenses over the fix diff: proof, defects and
+    durability. No `.env` read, no live test, no paid model call.
 - **Evidence (pass 1):**
   - `bash scripts/check.sh live` at the code of `a9cbde3`: every check passed --
     suite 303, live 9, the owner's Open WebUI among them. No key-shaped line,
     and no `.data/`.
   - 17 mutations of the new code, each red once two survivors were closed
     (tasks.md 6.2).
-  - Six fresh-context lenses over the diff:
-    - proof (`spec-compliance`);
-    - defects (`code-reviewer`);
-    - placement (`architecture-guardian`): `lint-imports` 1 contract kept,
-      `tests/architecture` 54 passed;
-    - graph (`graph-architecture-guardian`): no violation;
-    - durability (`durability-auditor`);
-    - routes (`graph-eval-auditor`).
+  - Six fresh-context lenses over the diff: proof (`spec-compliance`);
+    defects (`code-reviewer`); placement (`architecture-guardian`:
+    `lint-imports` 1 contract kept, `tests/architecture` 54 passed); graph
+    (`graph-architecture-guardian`: no violation); durability
+    (`durability-auditor`); routes (`graph-eval-auditor`). Four stopped on a
+    usage limit and were run again from the start.
 
-    Four of them stopped on a usage limit and were run again from the start.
-    They used scratch scripts only: no `.env` read, no live test, no paid
-    model call.
-
-## Findings
+## Findings -- pass 1
 
 | # | Severity | Lens | Finding | Where | Fix |
 |---|---|---|---|---|---|
@@ -48,11 +55,52 @@
 | 19 | MINOR | graph | `start_run` is labelled "decide"; the node names are mechanical, and become an interface with slice 5. The topology test does not assert there is no interrupt | `design.md`, `test_assistant_graph.py` | Relabel; record the names as deliberate; assert no interrupt |
 | 20 | MINOR | graph, defects, proof | Stale text names the deleted middleware or `create_agent` | `capabilities.py:11`, `models.py:48`, `agents/__init__.py:4`, `docs/architecture/overview.md:43`, `test_assistant.py:667`, `tests/fakes.py:76` | Reword |
 
-One more, a note: budget errors are raised, not audited (graph). Accepted in
+### Pass 1 -- what became of each
+
+| # | Outcome |
+|---|---|
+| 1 | Fixed (tasks.md 7.1): no jitter, a max delay, from the domain; 1 s then 2 s pinned after pass 2 |
+| 2 | Fixed (7.2): ASSISTANT-NO-CALL-LEFT-UNANSWERED; answered by position after pass 2 |
+| 3 | Deferred to slice 5 by the owner, 2026-10-14: "Defer to slice 5 (Recommended)" -- design.md Risks, roadmap slice 5 |
+| 4 | Fixed (7.4): the rule in `check_tool_calls`; rows for an unknown tool and refused arguments; `state.py`'s comment |
+| 5, 6 | Fixed (7.5) |
+| 7, 8 | Fixed (7.3; the ROUTING statement) |
+| 9, 10, 12 | Fixed (7.6) |
+| 11 | Kept, with its reason in the scenario: OpenSpec refuses a modified requirement's renamed scenario (measured) |
+| 13 | Fixed (7.7) |
+| 14, 15, 16, 19, 20 | Fixed (7.8) |
+| 17 | Pinned now (7.6); the version stamped on checkpoints deferred to slice 5 (roadmap) |
+| 18 | Accepted and stated: the state-update endpoint's caller is the owner |
+
+## Findings -- pass 2
+
+| # | Severity | Lens | Finding | Where | Outcome |
+|---|---|---|---|---|---|
+| 21 | MINOR | proof, defects, durability | A call counted as answered by a tool message anywhere in the transcript: a backend reusing a call id across turns leaves it unanswered | `nodes.py:_answer_left_calls` | Fixed: answered only by the tool messages right after its reply; a row with `call_0` used twice |
+| 22 | MINOR | proof | The budget row's 22 answers not checked for their text | `test_assistant_graph.py` | Fixed |
+| 23 | MINOR | proof | "1 s then 2 s" claimed, not asserted | `test_assistant_graph.py` | Fixed |
+| 24 | MINOR | proof | "Arguments its schema refuses" count had no row | `test_assistant.py` | Fixed: parametrised |
+| 25 | MINOR | proof | A transcript sent without a checkpointer is answered too, unclaimed; a call without an id is left, unstated | `nodes.py` | Fixed: a scenario, and the statement |
+| 26 | MINOR | proof | `state.py` still said "executed" | `state.py:28` | Fixed |
+| 27 | MINOR | proof | tasks.md 7.10 pointed at a Not checked line verify.md lacked | `verify.md` | Fixed: below |
+| 28 | MINOR | defects | A rewriting run streams the whole transcript after a `remove` marker | `nodes.py:start_run` | Stated: design.md decision 10 |
+| 29 | MINOR | durability | A state edit then a continue without input goes past `start_run` | `nodes.py:start_run` | Stated: the requirement covers runs that start from input; design.md decision 10 |
+
+Notes: a continue resumes `run_tools`, whose tools run again -- safe while
+every tool reads, and a constraint on 4b's write node (design.md decision
+10). `check_tool_calls` takes `malformed` to state its rule, and spends
+nothing for it.
+
+One more, a note (pass 1): budget errors are raised, not audited (graph). Accepted in
 design decision 5; auditing arrives with 4b and slice 6.
 
 ## Not checked
 
+- **The real Open WebUI test, after the fixes.** The owner's Open WebUI was
+  not running on 2026-10-15 (`localhost:8080` refused, probed twice). It
+  passed at the code of `a9cbde3`; the fixes since change `start_run`, the
+  retry waits and the budgets' bookkeeping, each proved with fakes and the
+  stand-in. To re-run: `bash scripts/check.sh live`.
 - `agent-capability-auditor`: no tool, manifest or permission changed. The
   manifest check moved with the factory, and `test_tool_manifests.py` runs
   unchanged except for the name it patches.
