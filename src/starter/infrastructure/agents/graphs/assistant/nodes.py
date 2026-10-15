@@ -51,16 +51,24 @@ def start_run(state: AssistantState) -> dict[str, Any]:
 
 def _answer_left_calls(messages: list[AnyMessage]) -> list[AnyMessage] | None:
     """The transcript with an answer after each reply for every call of it left
-    unanswered, or None when there is none."""
-    answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+    unanswered, or None when there is none.
+
+    A call is answered only by a tool message right after its reply -- what the
+    endpoint checks -- never by one elsewhere: a backend may use an id again in
+    a later turn. A call without an id cannot be answered, and is left."""
     rewritten: list[AnyMessage] = []
     added = False
-    for message in messages:
+    for index, message in enumerate(messages):
         rewritten.append(message)
         if not isinstance(message, AIMessage):
             continue
-        proposed = [call["id"] for call in message.tool_calls if call.get("id")]
-        proposed += [call["id"] for call in message.invalid_tool_calls if call.get("id")]
+        answered = set()
+        for following in messages[index + 1 :]:
+            if not isinstance(following, ToolMessage):
+                break
+            answered.add(following.tool_call_id)
+        calls = [*message.tool_calls, *message.invalid_tool_calls]
+        proposed = [call["id"] for call in calls if call.get("id")]
         for call_id in unanswered_calls(proposed, answered):
             rewritten.append(
                 ToolMessage(content=UNRUN_CALL_ANSWER, tool_call_id=call_id, status="error")

@@ -101,6 +101,18 @@ stay the same.
     - The bug was in the old loop too. It is fixed here because 4b makes it
       common: new input on a thread paused for approval drops the pending
       tools the same way.
+    - A call is answered only by a tool message right after its reply -- the
+      endpoint's own check -- so a backend that uses an id again in a later
+      turn is answered too (verify pass 2).
+    - Scope: a run that starts from input. A continue without input resumes
+      the stopped run at `run_tools`, whose tools run again -- safe while
+      every tool reads; 4b's write node must not repeat its effect. An
+      owner who edits the thread's state and then continues goes past
+      `start_run`, as with the counts (Risks).
+    - What a client sees: on the rare run that rewrites, `start_run`'s update
+      streams the whole transcript after a `remove` marker, and the
+      checkpoint holds it once more. No client here reads updates
+      incrementally; a UI that does would show the history twice.
 11. **A reply whose id the transcript already holds is appended under a new
     one** (verify pass 1, finding 8). `add_messages` would otherwise replace
     the earlier message where it stands, and the route reads the last

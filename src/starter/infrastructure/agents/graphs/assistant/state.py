@@ -25,7 +25,8 @@ class AssistantInput(TypedDict):
 class AssistantState(TypedDict):
     # The transcript; a message whose id is already present replaces it.
     messages: Annotated[list[AnyMessage], add_messages]
-    # This run's model turns and executed tool calls, set to 0 by `start_run`
+    # This run's model turns, and its well-formed tool calls, run or refused;
+    # each set to 0 by `start_run`
     # (ASSISTANT-BUDGETS-PER-RUN).
     model_calls: int
     tool_calls: int

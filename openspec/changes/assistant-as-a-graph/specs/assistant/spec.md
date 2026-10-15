@@ -90,7 +90,7 @@ Each run SHALL start its model-call and tool-call counts at zero: on a thread wh
 - **THEN** it raises `ModelCallBudgetExceededError` after 10 model calls
 
 ### Requirement: ASSISTANT-NO-CALL-LEFT-UNANSWERED
-Every run SHALL start on a transcript in which every call is answered: `start_run` SHALL answer each call that an earlier run on the thread left without an answer -- the run ended between a reply and its tools -- with a tool message of status `error` reading exactly `Error: this call was not run; the run that proposed it ended first.`, placed after the reply that proposed it, before the model is called. A real endpoint refuses a transcript holding a call left unanswered, so without this every later turn on the thread would fail.
+Every run that starts from input SHALL start on a transcript in which every call is answered by a tool message right after its reply: `start_run` SHALL answer each call left without one -- an earlier run on the thread ended between a reply and its tools, or the input holds such a reply -- with a tool message of status `error` reading exactly `Error: this call was not run; the run that proposed it ended first.`, placed after the reply that proposed it, before the model is called. A tool message elsewhere in the transcript answers nothing, whatever its id. A real endpoint refuses a transcript holding a call left unanswered, so without this every later turn on the thread would fail. A call without an id cannot be answered, and is left as it is; a continue without input resumes the stopped run, its tools running again.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant_graph.py::TestNoCallLeftUnanswered`
@@ -102,8 +102,14 @@ Every run SHALL start on a transcript in which every call is answered: `start_ru
 |---|---|---|
 | a tool raises `RuntimeError` on `explode(a=1)` | 1 | completes; the model's first input holds that call's answer, as not run, right after the reply |
 | `ToolCallBudgetExceededError`, on 21 calls of `add` and 1 malformed call in one turn | 22 | completes; each of the 22 answered as not run, right after the reply; `add` never called |
+| a tool raises on `explode` under the id `call_0`, which an earlier turn's `add` used and had answered | 1 | completes; `call_0` answered as not run after the second reply -- the earlier answer counts for its own reply only |
 
-- **AND** no message the model receives in the second run proposes a call that no tool message answers
+- **AND** no message the model receives in the second run proposes a call that no tool message right after it answers
+
+#### Scenario: A transcript sent without a checkpointer
+- **GIVEN** no checkpointer, and an input transcript `human, ai` -- the `ai` proposing `add(a=1, b=2)` with no answer -- then `again`
+- **WHEN** the assistant runs on it
+- **THEN** the model's first input is `human, ai, tool, human`, the `tool` answering the call as not run, and `add` is never called
 
 #### Scenario: Counter-example -- a finished thread is left as it is
 - **GIVEN** a thread whose first run completed: `human, ai, tool, ai`

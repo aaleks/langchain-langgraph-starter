@@ -553,8 +553,13 @@ class TestToolCallBudget:
         assert tool_messages(messages)[turn.invalid_tool_calls[0]["id"]][0] == "error"
         assert messages[-1].type == "ai" and messages[-1].tool_calls == []
 
-    def test_a_refused_call_counts(self, fake_llm, add_tool):
-        refused = propose(*[("multiply", {"a": 1, "b": 2})] * 20)
+    @pytest.mark.parametrize(
+        "refused",
+        [("multiply", {"a": 1, "b": 2}), ("add", {"a": "x", "b": 1})],
+        ids=["no-such-tool", "arguments-its-schema-refuses"],
+    )
+    def test_a_refused_call_counts(self, fake_llm, add_tool, refused):
+        refused = propose(*[refused] * 20)
         model = fake_llm([refused, *self.turns(1, 1), answer()])
 
         with pytest.raises(ToolCallBudgetExceededError) as ended:

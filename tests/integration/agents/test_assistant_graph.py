@@ -19,7 +19,11 @@ from starter.domain.agents.budgets import (
     ModelCallBudgetExceededError,
     ToolCallBudgetExceededError,
 )
-from starter.domain.agents.retries import MODEL_RETRIES, RETRY_BACKOFF_FACTOR
+from starter.domain.agents.retries import (
+    MODEL_RETRIES,
+    RETRY_BACKOFF_FACTOR,
+    RETRY_INITIAL_DELAY_SECONDS,
+)
 from starter.infrastructure.agents.factory import build_assistant
 from tests.fakes import answer, malformed, propose
 
@@ -74,6 +78,11 @@ class TestTopology:
         assert (policy.initial_interval, policy.backoff_factor) == (0, RETRY_BACKOFF_FACTOR)
         # No random part: LangGraph's default adds up to a second to every wait.
         assert (policy.max_interval, policy.jitter) == (60.0, False)
+        # Composed with the domain's first wait: 1 s, then 2 s.
+        composed = build_assistant(fake_llm([answer()]), [], transient=transient)
+        waits = composed.builder.nodes["call_model"].retry_policy
+        assert (RETRY_INITIAL_DELAY_SECONDS, RETRY_BACKOFF_FACTOR) == (1.0, 2.0)
+        assert (waits.initial_interval, waits.backoff_factor) == (1.0, 2.0)
         assert graph.builder.nodes["start_run"].retry_policy is None
         assert graph.builder.nodes["run_tools"].retry_policy is None
 
@@ -212,20 +221,34 @@ class TestBudgetsPerRun:
 
 
 class TestNoCallLeftUnanswered:
-    """ASSISTANT-NO-CALL-LEFT-UNANSWERED: Every run SHALL start on a transcript in
-    which every call is answered: `start_run` SHALL answer each call that an earlier
-    run on the thread left without an answer -- the run ended between a reply and
-    its tools -- with a tool message of status `error` reading exactly `Error: this
-    call was not run; the run that proposed it ended first.`, placed after the reply
-    that proposed it, before the model is called. A real endpoint refuses a
+    """ASSISTANT-NO-CALL-LEFT-UNANSWERED: Every run that starts from input SHALL start
+    on a transcript in which every call is answered by a tool message right after
+    its reply: `start_run` SHALL answer each call left without one -- an earlier run
+    on the thread ended between a reply and its tools, or the input holds such a
+    reply -- with a tool message of status `error` reading exactly `Error: this call
+    was not run; the run that proposed it ended first.`, placed after the reply that
+    proposed it, before the model is called. A tool message elsewhere in the
+    transcript answers nothing, whatever its id. A real endpoint refuses a
     transcript holding a call left unanswered, so without this every later turn on
-    the thread would fail."""
+    the thread would fail. A call without an id cannot be answered, and is left as
+    it is; a continue without input resumes the stopped run, its tools running
+    again."""
 
     @staticmethod
     def unanswered_in(messages) -> set[str]:
-        answered = {m.tool_call_id for m in messages if m.type == "tool"}
-        proposed = {c["id"] for m in messages if m.type == "ai" for c in m.tool_calls}
-        return proposed - answered
+        """Each reply's calls that no tool message right after it answers --
+        the endpoint's own check."""
+        left: set[str] = set()
+        for index, message in enumerate(messages):
+            if message.type != "ai":
+                continue
+            answered = set()
+            for following in messages[index + 1 :]:
+                if following.type != "tool":
+                    break
+                answered.add(following.tool_call_id)
+            left |= {c["id"] for c in message.tool_calls} - answered
+        return left
 
     def test_after_a_tool_raised_the_next_run_answers_the_call_as_not_run(self, fake_llm):
         from langchain_core.tools import tool
@@ -263,6 +286,8 @@ class TestNoCallLeftUnanswered:
         assert out["messages"][-1].type == "ai"
 
     def test_after_the_tool_budget_each_call_is_answered_as_not_run(self, fake_llm, add_tool):
+        from starter.application.prompts import UNRUN_CALL_ANSWER
+
         turn = propose(*[("add", {"a": 1, "b": 2})] * 21)
         turn.invalid_tool_calls = malformed("add", '{"a": 1,').invalid_tool_calls
         model = fake_llm([turn, answer()])
@@ -280,9 +305,65 @@ class TestNoCallLeftUnanswered:
         proposed = [c["id"] for c in [*turn.tool_calls, *turn.invalid_tool_calls]]
         assert [m.tool_call_id for m in sent[2:24]] == proposed
         assert {m.status for m in sent[2:24]} == {"error"}
+        assert {m.content for m in sent[2:24]} == {UNRUN_CALL_ANSWER}
         assert self.unanswered_in(sent) == set()
         assert add_tool.calls == []
         assert out["messages"][-1].type == "ai"
+
+    def test_an_id_an_earlier_turn_answered_is_answered_again_after_its_own_reply(
+        self, fake_llm, add_tool
+    ):
+        from langchain_core.tools import tool
+
+        from starter.application.prompts import UNRUN_CALL_ANSWER
+        from tests.fakes import manifested
+
+        @tool
+        def explode(a: int) -> int:
+            """Fail."""
+            raise RuntimeError("explode failed")
+
+        first = propose(("add", {"a": 1, "b": 2}))
+        first.tool_calls[0]["id"] = "call_0"
+        second = propose(("explode", {"a": 1}))
+        second.tool_calls[0]["id"] = "call_0"
+        model = fake_llm([first, answer(), second, answer()])
+        graph = build_assistant(
+            model, [add_tool.tool, manifested(explode)], transient=no_retries
+        ).copy(update={"checkpointer": InMemorySaver()})
+        thread = {"configurable": {"thread_id": "t5"}}
+
+        graph.invoke({"messages": [HumanMessage("add")]}, thread)
+        with pytest.raises(RuntimeError):
+            graph.invoke({"messages": [HumanMessage("explode")]}, thread)
+        graph.invoke({"messages": [HumanMessage("again")]}, thread)
+
+        sent = model.seen[3][1:]
+        assert [m.type for m in sent] == [
+            "human",
+            "ai",
+            "tool",
+            "ai",
+            "human",
+            "ai",
+            "tool",
+            "human",
+        ]
+        assert (sent[6].tool_call_id, sent[6].content) == ("call_0", UNRUN_CALL_ANSWER)
+        assert self.unanswered_in(sent) == set()
+
+    def test_a_transcript_sent_without_a_checkpointer_is_answered_too(self, fake_llm, add_tool):
+        left = propose(("add", {"a": 1, "b": 2}))
+        model = fake_llm([answer()])
+
+        build_assistant(model, [add_tool.tool], transient=no_retries).invoke(
+            {"messages": [HumanMessage("add"), left, HumanMessage("again")]}
+        )
+
+        sent = model.seen[0][1:]
+        assert [m.type for m in sent] == ["human", "ai", "tool", "human"]
+        assert (sent[2].tool_call_id, sent[2].status) == (left.tool_calls[0]["id"], "error")
+        assert add_tool.calls == []
 
     def test_counter_example_a_finished_thread_is_left_as_it_is(self, fake_llm, add_tool):
         model = fake_llm([propose(("add", {"a": 1, "b": 2})), answer(), answer()])

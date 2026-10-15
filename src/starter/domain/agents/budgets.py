@@ -49,7 +49,8 @@ class ToolCallBudgetExceededError(RuntimeError):
 def check_tool_calls(spent: int, *, well_formed: int, malformed: int) -> int:
     """The run's tool calls once a turn's are added -- every well-formed call,
     run or refused by its tool's schema; a malformed call is answered, never
-    run, and spends nothing. A turn that would take the run past
+    run, and spends nothing: `malformed` is taken so the rule is stated here,
+    where the budget is. A turn that would take the run past
     TOOL_CALLS_PER_RUN is refused whole, never in part."""
     total = spent + well_formed
     if total > TOOL_CALLS_PER_RUN:
