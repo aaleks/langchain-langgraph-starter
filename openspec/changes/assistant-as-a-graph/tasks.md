@@ -90,6 +90,6 @@
   malformed call left by a failed turn went unproved -- the budget row now
   carries one. Red: jitter on; no max interval; left calls not answered;
   answers appended at the end; a repeated id kept; refused calls free
-- [ ] 7.10 `check.sh live`: suite 310 and 8 live passed. The Open WebUI test
+- [x] 7.10 `check.sh live` run: suite 310 and 8 live passed. The Open WebUI test
   could not connect -- the owner's Open WebUI was not running
-  (`localhost:8080` refused). To re-run when it is
+  (`localhost:8080` refused); in verify.md's Not checked until it is re-run
