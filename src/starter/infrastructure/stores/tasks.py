@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
@@ -13,13 +14,28 @@ from starter.domain.tasks import (
     NOTES_MAX,
     TASK_STORE_TIMEOUT_SECONDS,
     TITLE_MAX,
+    WRITE_KEY_MAX,
+    CloseTask,
+    CreateTask,
+    Decision,
     NewTask,
+    RecordedWrite,
     TaskPage,
     TaskRow,
+    TaskWrite,
+    WriteOutcome,
+    check_write_key,
     readable,
+    replayed,
+    write_action,
+    write_arguments,
+    write_refusal,
+    write_task_id,
 )
 
-SCHEMA_VERSION = 1
+# Version 1: the tasks (ADR 0006). Version 2 adds the record of every decision
+# on a proposed write (ADR 0008); a version-1 list is migrated forward.
+SCHEMA_VERSION = 2
 SCHEMA = f"""
 CREATE TABLE tasks (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +44,19 @@ CREATE TABLE tasks (
   notes      TEXT NOT NULL DEFAULT '' CHECK (length(notes) <= {NOTES_MAX}),
   status     TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+WRITES_TABLE = f"""
+CREATE TABLE task_writes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  write_key   TEXT NOT NULL UNIQUE CHECK (length(write_key) BETWEEN 1 AND {WRITE_KEY_MAX}),
+  action      TEXT NOT NULL CHECK (action IN ('create', 'close', 'reassign')),
+  arguments   TEXT NOT NULL,
+  decision    TEXT NOT NULL CHECK (decision IN ('approve', 'reject')),
+  outcome     TEXT NOT NULL CHECK (outcome IN ('applied', 'refused', 'rejected')),
+  task_id     INTEGER,
+  reason      TEXT NOT NULL DEFAULT '',
+  recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )
 """
 
@@ -42,14 +71,16 @@ class TaskStore:
         self.timeout = timeout
 
     def open(self) -> None:
-        """Create the list at version 1 when the file is missing or holds no table
-        at version 0; use a version-1 list as it is; refuse anything else, naming
-        the file, before writing a byte to it."""
+        """Create the list at version 2 when the file is missing or holds no table
+        at version 0; migrate a version-1 list to version 2; use a version-2 list
+        as it is; refuse anything else, naming the file, before writing a byte
+        to it."""
         if self.path.is_file() and self.path.stat().st_size > 0:
             version, tables = self._inspect()
             if _is_task_list(version, tables):
                 return
-            _refuse_unless_blank(self.path, version, tables)
+            if not _is_version_1(version, tables):
+                _refuse_unless_blank(self.path, version, tables)
         self._create()
 
     def add(self, task: NewTask) -> int:
@@ -64,6 +95,10 @@ class TaskStore:
     def reader(self, timeout: float) -> TaskReader:
         """A view of this list that reads and cannot write -- what a tool is given."""
         return TaskReader(self.path, timeout)
+
+    def writer(self) -> TaskWriter:
+        """The writes the owner approves (ADR 0008) -- never a tool's."""
+        return TaskWriter(self.path, self.timeout)
 
     def _inspect(self) -> tuple[int, set[str]]:
         """The file's schema version and tables, read without changing them.
@@ -81,21 +116,123 @@ class TaskStore:
             raise
 
     def _create(self) -> None:
-        """The schema at version 1, in one transaction, the file looked at again
-        inside it: another process may have opened it first."""
+        """The schema at version 2 -- whole, or a version-1 list's missing table --
+        in one transaction, the file looked at again inside it: another process
+        may have opened it first."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(_connect(self.path, self.timeout, isolation_level=None)) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 version, tables = _version_and_tables(db)
                 if not _is_task_list(version, tables):
-                    _refuse_unless_blank(self.path, version, tables)
-                    db.execute(SCHEMA)
+                    if not _is_version_1(version, tables):
+                        _refuse_unless_blank(self.path, version, tables)
+                        db.execute(SCHEMA)
+                    db.execute(WRITES_TABLE)
                     db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 db.execute("COMMIT")
             except BaseException:
-                db.execute("ROLLBACK")
+                _roll_back(db)
                 raise
+
+
+class TaskWriter:
+    """Applies or rejects a write the owner decided on, once per key, and records
+    the decision with its effect in one transaction (ADR 0008)."""
+
+    def __init__(self, path: Path, timeout: float) -> None:
+        self.path = path
+        self.timeout = timeout
+
+    def apply(self, write: TaskWrite, key: str) -> WriteOutcome:
+        """Apply `write` under `key` (TASKS-WRITES, TASKS-WRITE-ONCE)."""
+        return self._decide(write, key, "approve")
+
+    def reject(self, write: TaskWrite, key: str) -> WriteOutcome:
+        """Record that the owner rejected `write`; nothing else changes."""
+        return self._decide(write, key, "reject")
+
+    def _decide(self, write: TaskWrite, key: str, decision: Decision) -> WriteOutcome:
+        check_write_key(key)
+        with closing(_writing(self.path, self.timeout)) as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                version, tables = _version_and_tables(db)
+                if not _is_task_list(version, tables):
+                    raise ValueError(
+                        f"{self.path} is not a task list this version writes: schema version "
+                        f"{version}, tables {sorted(tables)} -- version {SCHEMA_VERSION} expected"
+                    )
+                recorded = _recorded(db, key)
+                if recorded is not None:
+                    outcome = replayed(recorded, write)
+                else:
+                    if decision == "approve":
+                        outcome = _apply(db, write)
+                    else:
+                        outcome = WriteOutcome("rejected", write_task_id(write), "")
+                    _record(db, write, key, decision, outcome)
+                db.execute("COMMIT")
+            except BaseException:
+                _roll_back(db)
+                raise
+        return outcome
+
+
+def _recorded(db: sqlite3.Connection, key: str) -> RecordedWrite | None:
+    row = db.execute(
+        "SELECT action, arguments, outcome, task_id, reason FROM task_writes WHERE write_key = ?",
+        (key,),
+    ).fetchone()
+    if row is None:
+        return None
+    action, arguments, outcome, task_id, reason = row
+    return RecordedWrite(action, json.loads(arguments), WriteOutcome(outcome, task_id, reason))
+
+
+def _apply(db: sqlite3.Connection, write: TaskWrite) -> WriteOutcome:
+    if isinstance(write, CreateTask):
+        task = write.task
+        cursor = db.execute(
+            "INSERT INTO tasks (title, assignee, notes) VALUES (?, ?, ?)",
+            (task.title, task.assignee, task.notes),
+        )
+        return WriteOutcome("applied", cursor.lastrowid, "")
+    found = db.execute("SELECT status FROM tasks WHERE id = ?", (write.task_id,)).fetchone()
+    refusal = write_refusal(write.task_id, found[0] if found else None)
+    if refusal is not None:
+        return WriteOutcome("refused", write.task_id, refusal)
+    # The transaction holds the write lock since the status was read; the
+    # guard in the statement is a second one, never the decision.
+    if isinstance(write, CloseTask):
+        db.execute(
+            "UPDATE tasks SET status = 'closed' WHERE id = ? AND status = 'open'",
+            (write.task_id,),
+        )
+    else:
+        db.execute(
+            "UPDATE tasks SET assignee = ? WHERE id = ? AND status = 'open'",
+            (write.assignee, write.task_id),
+        )
+    return WriteOutcome("applied", write.task_id, "")
+
+
+def _record(
+    db: sqlite3.Connection, write: TaskWrite, key: str, decision: Decision, outcome: WriteOutcome
+) -> None:
+    db.execute(
+        "INSERT INTO task_writes (write_key, action, arguments, decision, outcome, task_id, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            key,
+            write_action(write),
+            json.dumps(write_arguments(write), ensure_ascii=False),
+            decision,
+            outcome.outcome,
+            outcome.task_id,
+            outcome.reason,
+        ),
+    )
 
 
 class TaskReader:
@@ -154,13 +291,34 @@ def _connect(path: Path, timeout: float, **options) -> sqlite3.Connection:
     return sqlite3.connect(path, timeout=timeout, **options)
 
 
+def _writing(path: Path, timeout: float) -> sqlite3.Connection:
+    """A connection to an existing file: `mode=rw`, so a writer never creates a
+    list -- only `open()` does, at its version."""
+    return sqlite3.connect(_existing(path), uri=True, timeout=timeout, isolation_level=None)
+
+
+def _existing(path: Path) -> str:
+    """The URI of an existing file, `mode=rw`: a missing one is an error, never a
+    new empty one. Absolute, not resolved: every connection names the file as
+    `_connect` does, so a symlinked list keeps one journal, beside the name."""
+    return path.absolute().as_uri() + "?mode=rw"
+
+
+def _roll_back(db: sqlite3.Connection) -> None:
+    """Roll back what is open. SQLite rolls some failures back itself -- a full
+    disk -- and a second ROLLBACK would replace the real error with its own."""
+    if db.in_transaction:
+        db.execute("ROLLBACK")
+
+
 @contextmanager
 def _reading(path: Path, timeout: float) -> Iterator[sqlite3.Connection]:
     """A connection to an existing file that refuses every write but SQLite's own
     recovery of an interrupted one. `mode=rw`: a missing file is an error, never
     a new empty one."""
-    uri = path.resolve().as_uri() + "?mode=rw"
-    with closing(sqlite3.connect(uri, uri=True, timeout=timeout, isolation_level=None)) as db:
+    with closing(
+        sqlite3.connect(_existing(path), uri=True, timeout=timeout, isolation_level=None)
+    ) as db:
         db.execute("PRAGMA query_only = ON")
         # query_only is a pragma its holder could switch off; the authorizer
         # cannot be removed from SQL, and lets nothing but reading through.
@@ -217,7 +375,12 @@ def _version_and_tables(db: sqlite3.Connection) -> tuple[int, set[str]]:
 
 
 def _is_task_list(version: int, tables: set[str]) -> bool:
-    return version == SCHEMA_VERSION and "tasks" in tables
+    return version == SCHEMA_VERSION and {"tasks", "task_writes"} <= tables
+
+
+def _is_version_1(version: int, tables: set[str]) -> bool:
+    """A list written by the version before: migrated forward when opened."""
+    return version == 1 and "tasks" in tables and "task_writes" not in tables
 
 
 def _refuse_unless_blank(path: Path, version: int, tables: set[str]) -> None:

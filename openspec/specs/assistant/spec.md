@@ -153,7 +153,7 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a d
 | none of the Open WebUI settings | the offline model |
 | `OPENWEBUI_URL` -- a stand-in on `127.0.0.1` -- `OPENWEBUI_API_KEY=sk-local`, `OPENWEBUI_MODEL=llama3.1:8b` | the Open WebUI client those settings describe: a run on `hello` reaches the stand-in once, at `/api/chat/completions` with the key |
 | `OPENWEBUI_URL` and `OPENWEBUI_MODEL` only | none: refused at load, naming `OPENWEBUI_API_KEY` |
-| `TASKS_DB` naming a task list at schema version 2 | none: refused at load, naming the file |
+| `TASKS_DB` naming a task list at schema version 3 | none: refused at load, naming the file |
 
 #### Scenario: A task the owner added, read through the registered graph
 - **GIVEN** `TASKS_DB` naming a list to which `starter tasks add "Renew passport"` added task 1, and Open WebUI configured -- a stand-in on `127.0.0.1` that proposes `list_tasks`, then answers

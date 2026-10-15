@@ -130,7 +130,7 @@ class TestAssistantIsRegistered:
         path = tmp_path / "tasks.sqlite3"
         db = sqlite3.connect(path)
         db.execute("CREATE TABLE t (x)")
-        db.execute("PRAGMA user_version = 2")
+        db.execute("PRAGMA user_version = 3")
         db.commit()
         db.close()
         monkeypatch.setenv("TASKS_DB", str(path))
