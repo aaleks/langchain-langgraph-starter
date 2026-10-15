@@ -28,3 +28,15 @@ def unanswered_calls(proposed: Iterable[str], answered: Set[str]) -> list[str]:
     answer before the model is called again -- the endpoint refuses a call left
     unanswered (ASSISTANT-NO-CALL-LEFT-UNANSWERED)."""
     return [call_id for call_id in proposed if call_id not in answered]
+
+
+def route_after_tools(*, waiting_writes: int) -> Literal["review_writes", "call_model"]:
+    """A write the checks accepted waits for the owner (ASSISTANT-WRITE-APPROVAL);
+    with none, the tools' answers go to the model."""
+    return "review_writes" if waiting_writes else "call_model"
+
+
+def route_after_writes(decisions: Iterable[str]) -> Literal["call_model", "end"]:
+    """Every write approved: the model goes on. Any rejected: the run ends, the
+    model not called again -- the owner's rule (ASSISTANT-WRITE-DECISIONS)."""
+    return "end" if any(decision != "approve" for decision in decisions) else "call_model"

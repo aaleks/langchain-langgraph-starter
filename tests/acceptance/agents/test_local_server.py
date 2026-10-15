@@ -264,3 +264,97 @@ class TestStaysLocal:
         ]
 
         assert beyond_this_machine(records) == [far_connect, far_lookup]
+
+
+def task_titles(path) -> list[str]:
+    import sqlite3
+
+    db = sqlite3.connect(path)
+    titles = [title for (title,) in db.execute("SELECT title FROM tasks ORDER BY id")]
+    db.close()
+    return titles
+
+
+def paused_then_resumed(client, decision: dict, task_list) -> dict:
+    """A run on a new thread until it pauses, then resumed with `decision`: what
+    the owner sees at each point."""
+    seen: dict = {}
+    thread = client.threads.create()["thread_id"]
+    client.runs.wait(
+        thread, "assistant", input={"messages": [{"role": "human", "content": "add the plumber"}]}
+    )
+    state = client.threads.get_state(thread)
+    seen["paused_thread"] = client.threads.get(thread)["status"]
+    seen["paused_runs"] = [run["status"] for run in client.runs.list(thread)]
+    seen["interrupts"] = [i["value"] for i in state.get("interrupts", [])]
+    seen["paused_tasks"] = task_titles(task_list)
+    client.runs.wait(thread, "assistant", command={"resume": {"decisions": [decision]}})
+    seen["thread"] = client.threads.get(thread)["status"]
+    seen["runs"] = [run["status"] for run in client.runs.list(thread)]
+    seen["last"] = client.threads.get_state(thread)["values"]["messages"][-1]
+    seen["tasks"] = task_titles(task_list)
+    return seen
+
+
+@pytest.fixture(scope="module")
+def approvals(tmp_path_factory):
+    """A server whose model -- a stand-in on 127.0.0.1 -- proposes `add_task`:
+    once approved, once rejected, each on its own thread."""
+    from langgraph_sdk import get_sync_client
+
+    from tests.openwebui_stub import openwebui_stub, tool_call
+
+    plumber = tool_call("add_task", {"title": "Call the plumber"})
+    workdir = tmp_path_factory.mktemp("approvals")
+    seen: dict = {}
+    with openwebui_stub(replies=[plumber, "done", plumber]) as stub:
+        settings = {
+            "OPENWEBUI_URL": stub.url,
+            "OPENWEBUI_API_KEY": "sk-local",
+            "OPENWEBUI_MODEL": "llama3.1:8b",
+        }
+        with local_server(workdir, settings=settings) as server:
+            client = get_sync_client(url=server.url)
+            task_list = workdir / "tasks.sqlite3"
+            seen["approved"] = paused_then_resumed(client, {"type": "approve"}, task_list)
+            seen["rejected"] = paused_then_resumed(client, {"type": "reject"}, task_list)
+    return seen
+
+
+class TestApprovalThroughTheServer:
+    """LOCAL-SERVER-APPROVAL: Through the local server's API (`bash scripts/serve.sh`), a
+    run whose model proposes a write SHALL pause with the approval request
+    (ASSISTANT-WRITE-APPROVAL) -- the thread's status `interrupted`, its state
+    showing the interrupt, the task list unchanged; the run itself ends `success`,
+    as the server reports a run stopped at an interrupt (measured); a run on the
+    same thread with `command={"resume": {"decisions": [{"type": "approve"}]}}`
+    SHALL apply the write and complete, and with `{"type": "reject"}` SHALL end with
+    nothing written."""
+
+    @pytest.mark.live
+    def test_approved_through_the_server(self, approvals):
+        approved = approvals["approved"]
+
+        assert approved["paused_thread"] == "interrupted"
+        # The server ends the run itself `success`: the pause is the thread's.
+        assert approved["paused_runs"] == ["success"]
+        assert [
+            [action["name"] for action in value["action_requests"]]
+            for value in approved["interrupts"]
+        ] == [["add_task"]]
+        assert approved["paused_tasks"] == []
+        assert approved["thread"] == "idle"
+        assert approved["runs"] == ["success", "success"]
+        assert approved["tasks"] == ["Call the plumber"]
+
+    @pytest.mark.live
+    def test_counter_example_rejected_through_the_server(self, approvals):
+        rejected = approvals["rejected"]
+
+        assert rejected["paused_thread"] == "interrupted"
+        assert rejected["thread"] == "idle"
+        assert rejected["runs"] == ["success", "success"]
+        assert rejected["last"]["type"] == "tool"
+        assert rejected["last"]["content"] == "The owner rejected this; nothing was changed."
+        # The list holds the first thread's approved task only.
+        assert rejected["tasks"] == ["Call the plumber"]

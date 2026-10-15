@@ -10,7 +10,7 @@ from langchain_core.tools import BaseTool, tool
 from starter.domain.agents.budgets import TOOL_CALLS_PER_RUN
 from starter.domain.agents.capabilities import Capability
 from starter.domain.tasks import TASK_RESULTS_LIMIT, TASK_STORE_TIMEOUT_SECONDS, TaskPage
-from starter.infrastructure.stores.tasks import TaskStore
+from starter.infrastructure.stores.tasks import TaskReader
 
 CAPABILITY = Capability(
     name="list_tasks",
@@ -26,9 +26,13 @@ CAPABILITY = Capability(
 )
 
 
-def build(store: TaskStore) -> BaseTool:
-    # Only a reader -- it cannot write -- waiting the manifest's timeout.
-    reader = store.reader(CAPABILITY.timeout_seconds)
+def build(reader: TaskReader) -> BaseTool:
+    # Only a reader -- it cannot write, nor reach the store -- waiting the
+    # manifest's timeout, or the manifest would say what is not so.
+    if reader.timeout != CAPABILITY.timeout_seconds:
+        raise ValueError(
+            f"{CAPABILITY.name} waits {CAPABILITY.timeout_seconds} s; its reader {reader.timeout} s"
+        )
 
     @tool
     def list_tasks() -> str:

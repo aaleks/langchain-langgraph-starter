@@ -92,13 +92,16 @@ durability, safety) arrives in the slice whose requirement asks for it.
        transaction;
      - each write applied at most once under its key;
      - each decision recorded in `task_writes`, in the effect's transaction.
-   - **4b2** (structural). Create, close and reassign, each proposed by the
-     model and run only after the owner approves:
+   - **4b2, `approve-task-writes`** (#13) -- create, close and reassign,
+     each proposed by the model and run only after the owner approves
+     (ADR 0009):
      - `interrupt()` with LangChain's approval request, and a decision --
        approve or reject -- resumed with `Command(resume=...)` on the same
        thread. Agent Chat UI and `useStream` render it.
      - A rejection ends the run with no effect and no further model call.
-     - The key built from the thread, the step and the call.
+     - The key built from the thread, the reply and the call. The step was
+       measured unstable on replay.
+     - Proved end to end through `scripts/serve.sh`'s API.
 5. **Durability** (structural). The approval may wait: a durable checkpointer
    chosen with build-or-adopt (`langgraph-checkpoint-sqlite`); a run paused,
    the graph rebuilt on the same store, and resumed; thread ownership; an old

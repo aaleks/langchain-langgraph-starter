@@ -37,13 +37,15 @@ def edges(graph) -> set[tuple[str, str, bool]]:
 
 
 class TestTopology:
-    """ASSISTANT-GRAPH-TOPOLOGY: The factory SHALL compile the assistant as a
-    hand-written `StateGraph` whose nodes are exactly `start_run`, `call_model` and
-    `run_tools`, and whose edges are exactly design.md's table: `START` to
-    `start_run`, `start_run` to `call_model`, `call_model` to `run_tools` or `END`
-    as ASSISTANT-ROUTING decides, and `run_tools` to `call_model`. `call_model`
-    SHALL carry the model retry policy (ASSISTANT-TRANSIENT-RETRY) and no other
-    node a retry policy; the compiled graph's step ceiling SHALL be 9,999."""
+    """ASSISTANT-GRAPH-TOPOLOGY: The factory SHALL compile the assistant as a hand-written
+    `StateGraph` whose nodes are exactly `start_run`, `call_model`, `run_tools`,
+    `review_writes` and `apply_writes`, and whose edges are exactly design.md's
+    table: `START` to `start_run`, `start_run` to `call_model`, `call_model` to
+    `run_tools` or `END`, `run_tools` to `review_writes` or `call_model`,
+    `review_writes` to `apply_writes`, and `apply_writes` to `call_model` or `END`,
+    each conditional edge as ASSISTANT-ROUTING decides. `call_model` SHALL carry the
+    model retry policy (ASSISTANT-TRANSIENT-RETRY) and no other node a retry policy;
+    the compiled graph's step ceiling SHALL be 9,999."""
 
     def test_the_nodes_and_edges_are_the_designs_table(self, fake_llm, add_tool):
         graph = build_assistant(fake_llm([answer()]), [add_tool.tool], transient=no_retries)
@@ -53,6 +55,8 @@ class TestTopology:
             "start_run",
             "call_model",
             "run_tools",
+            "review_writes",
+            "apply_writes",
             "__end__",
         }
         assert edges(graph) == {
@@ -60,10 +64,14 @@ class TestTopology:
             ("start_run", "call_model", False),
             ("call_model", "run_tools", True),
             ("call_model", "__end__", True),
-            ("run_tools", "call_model", False),
+            ("run_tools", "review_writes", True),
+            ("run_tools", "call_model", True),
+            ("review_writes", "apply_writes", False),
+            ("apply_writes", "call_model", True),
+            ("apply_writes", "__end__", True),
         }
         assert graph.config["recursion_limit"] == 9_999
-        # No interrupt until 4b's approval.
+        # The pause is `interrupt()` inside `review_writes`, never a static one.
         assert (graph.interrupt_before_nodes, graph.interrupt_after_nodes) == ([], [])
 
     def test_the_retry_policy_is_the_model_calls(self, fake_llm):
@@ -83,25 +91,27 @@ class TestTopology:
         waits = composed.builder.nodes["call_model"].retry_policy
         assert (RETRY_INITIAL_DELAY_SECONDS, RETRY_BACKOFF_FACTOR) == (1.0, 2.0)
         assert (waits.initial_interval, waits.backoff_factor) == (1.0, 2.0)
-        assert graph.builder.nodes["start_run"].retry_policy is None
-        assert graph.builder.nodes["run_tools"].retry_policy is None
+        for node in ("start_run", "run_tools", "review_writes", "apply_writes"):
+            assert graph.builder.nodes[node].retry_policy is None, node
 
     def test_counter_example_no_route_ends_straight_after_the_tools(self, fake_llm, add_tool):
         graph = build_assistant(fake_llm([answer()]), [add_tool.tool], transient=no_retries)
 
         assert {(s, t) for s, t, _ in edges(graph) if s == "run_tools"} == {
-            ("run_tools", "call_model")
+            ("run_tools", "call_model"),
+            ("run_tools", "review_writes"),
         }
 
 
 class TestStateContract:
     """ASSISTANT-STATE-CONTRACT: The assistant's state SHALL be the contract
-    `AssistantState` at `ASSISTANT_STATE_VERSION` 1, with exactly the fields
+    `AssistantState` at `ASSISTANT_STATE_VERSION` 2, with exactly the fields
     `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's
-    counts, each one required. A reply whose id the transcript already holds SHALL
-    be appended under a new id, never replace that message. A run SHALL take only
-    `messages` as input and return only `messages`, and a state SHALL come back
-    unchanged through the checkpointer's serializer."""
+    counts, and `write_decisions`, the owner's decision on each write of the reply
+    under review, by call id -- each one required. A reply whose id the transcript
+    already holds SHALL be appended under a new id, never replace that message. A
+    run SHALL take only `messages` as input and return only `messages`, and a state
+    SHALL come back unchanged through the checkpointer's serializer."""
 
     def test_the_fields_are_pinned_to_the_version(self, fake_llm):
         from langchain_core.messages import AnyMessage
@@ -116,18 +126,25 @@ class TestStateContract:
         # checkpoint holds, and slice 5 migrates by this number.
         fields = typing.get_type_hints(AssistantState, include_extras=True)
         assert {ASSISTANT_STATE_VERSION: fields} == {
-            1: {
+            2: {
                 "messages": typing.Annotated[list[AnyMessage], add_messages],
                 "model_calls": int,
                 "tool_calls": int,
+                "write_decisions": dict[str, str],
             }
         }
-        assert AssistantState.__required_keys__ == {"messages", "model_calls", "tool_calls"}
+        assert AssistantState.__required_keys__ == {
+            "messages",
+            "model_calls",
+            "tool_calls",
+            "write_decisions",
+        }
         graph = build_assistant(fake_llm([answer()]), [], transient=no_retries)
         assert {c for c in graph.channels if not c.startswith(("__", "branch:"))} == {
             "messages",
             "model_calls",
             "tool_calls",
+            "write_decisions",
         }
         assert set(graph.get_input_jsonschema()["properties"]) == {"messages"}
         assert set(graph.get_output_jsonschema()["properties"]) == {"messages"}
@@ -143,6 +160,7 @@ class TestStateContract:
             ],
             "model_calls": 2,
             "tool_calls": 1,
+            "write_decisions": {"call_1": "approve"},
         }
         serde = JsonPlusSerializer()
 
@@ -221,12 +239,12 @@ class TestBudgetsPerRun:
 
 
 class TestNoCallLeftUnanswered:
-    """ASSISTANT-NO-CALL-LEFT-UNANSWERED: Every run that starts from input SHALL start
-    on a transcript in which every call is answered by a tool message right after
-    its reply: `start_run` SHALL answer each call left without one -- an earlier run
-    on the thread ended between a reply and its tools, or the input holds such a
-    reply -- with a tool message of status `error` reading exactly `Error: this call
-    was not run; the run that proposed it ended first.`, placed after the reply that
+    """ASSISTANT-NO-CALL-LEFT-UNANSWERED: Every run that starts from input SHALL start on a
+    transcript in which every call is answered by a tool message right after its
+    reply: `start_run` SHALL answer each call left without one -- an earlier run on
+    the thread ended between a reply and its tools, or the input holds such a reply
+    -- with a tool message of status `error` reading exactly `Error: this call was
+    not run; the run that proposed it ended first.`, placed after the reply that
     proposed it, before the model is called. A tool message elsewhere in the
     transcript answers nothing, whatever its id. A real endpoint refuses a
     transcript holding a call left unanswered, so without this every later turn on
@@ -364,6 +382,35 @@ class TestNoCallLeftUnanswered:
         assert [m.type for m in sent] == ["human", "ai", "tool", "human"]
         assert (sent[2].tool_call_id, sent[2].status) == (left.tool_calls[0]["id"], "error")
         assert add_tool.calls == []
+
+    def test_new_input_instead_of_a_decision_answers_the_write_as_not_run(self, fake_llm, tmp_path):
+        from starter.application.prompts import UNRUN_CALL_ANSWER
+        from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS
+        from starter.infrastructure.agents.tools import read_tools, write_tools
+        from starter.infrastructure.stores.tasks import TaskStore
+
+        store = TaskStore(tmp_path / "tasks.sqlite3")
+        store.open()
+        proposal = propose(("add_task", {"title": "Call the plumber"}))
+        model = fake_llm([proposal, answer()])
+        tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        graph = build_assistant(model, tools, transient=no_retries, writer=store.writer()).copy(
+            update={"checkpointer": InMemorySaver()}
+        )
+        paused = {"configurable": {"thread_id": "t6"}}
+        graph.invoke({"messages": [HumanMessage("add the plumber")]}, paused)
+
+        out = graph.invoke({"messages": [HumanMessage("never mind")]}, paused)
+
+        sent = model.seen[1][1:]
+        assert [m.type for m in sent] == ["human", "ai", "tool", "human"]
+        assert (sent[2].tool_call_id, sent[2].content) == (
+            proposal.tool_calls[0]["id"],
+            UNRUN_CALL_ANSWER,
+        )
+        assert out["messages"][-1].type == "ai"
+        assert store.reader(1.0).open_tasks(50) == {"tasks": [], "more": 0}
+        assert graph.get_state(paused).values["write_decisions"] == {}
 
     def test_counter_example_a_finished_thread_is_left_as_it_is(self, fake_llm, add_tool):
         model = fake_llm([propose(("add", {"a": 1, "b": 2})), answer(), answer()])

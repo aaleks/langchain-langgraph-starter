@@ -17,7 +17,7 @@ decision. This change joins them through the owner's approval.
    - `apply_writes` is a write node. It applies or rejects each waiting
      write through the writer, and answers each call.
    - They are separate nodes, so the write sits after the interrupt in its
-     own step. The step is part of the key (decision 4).
+     own step, and the interrupt's node, re-run on resume, writes nothing.
 2. **`run_tools` splits the reply's calls:**
    - Reads and unknown tools go through `ToolNode`, as before. It is given a
      copy of the reply holding only those calls.
@@ -43,14 +43,19 @@ decision. This change joins them through the owner's approval.
      any other decision rejects it.
    - A resume that is not `{"decisions": [...]}` of the right length
      rejects every action.
-4. **The key is `<thread id>:<step>:<call id>`**, from the domain's
+4. **The key is `<thread id>:<reply id>:<call id>`**, from the domain's
    `write_key`, checked against `WRITE_KEY_MAX`.
    - The thread id is `config["configurable"]["thread_id"]`.
-   - The step is `config["metadata"]["langgraph_step"]` in `apply_writes`.
-   - A replay from the checkpoint before `apply_writes` runs the same step,
-     so the same keys, so the store answers what it recorded (ADR 0008).
-   - A continue after `apply_writes` failed part-way re-runs it under the
-     same keys, so the writes it already made are not made again.
+   - The reply id is the stored id of the AI message that proposed the
+     call. It is unique in the transcript (ASSISTANT-STATE-CONTRACT), and
+     the same on every replay.
+   - The superstep was the first design, and is wrong. Measured: a replay
+     from the checkpoint before `apply_writes` ran it at step 6 where the
+     first run used 5, and the write was applied twice. The roadmap's "per
+     thread and step" is met by the reply, which names the step's proposal.
+   - A replay or a continue after `apply_writes` failed part-way re-runs it
+     under the same keys, so the writes it already made are not made again
+     (ADR 0008).
 5. **The outcome as the model reads it is JSON**, from the domain's
    `outcome_message`:
    - `{"outcome": "applied", "task_id": 8}`, status `success`;

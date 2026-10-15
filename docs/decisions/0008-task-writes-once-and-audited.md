@@ -34,7 +34,8 @@ Two things settled here are expensive to reverse:
 - **A key is one write.**
   - A key already recorded returns the recorded outcome and changes nothing.
   - A key recorded for a different write is refused.
-  - The caller makes the key: thread, step and call, in slice 4b2.
+  - The caller makes the key: in slice 4b2, thread, reply and call (ADR
+    0009) -- the reply naming the step's proposal, stable on replay.
 - **Only the assistant's proposed writes are audited.** The owner's own
   `starter tasks add` is not: the audit is a record of what the owner
   decided about the assistant's proposals.

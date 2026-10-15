@@ -9,8 +9,9 @@ from __future__ import annotations
 from langgraph.graph.state import CompiledStateGraph
 
 from starter.config.settings import Settings, settings_from_process, tasks_db_path
+from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS
 from starter.infrastructure.agents.factory import build_assistant
-from starter.infrastructure.agents.tools import task_tools
+from starter.infrastructure.agents.tools import read_tools, write_tools
 from starter.infrastructure.models import build_model, is_transient_failure
 from starter.infrastructure.stores.tasks import TaskStore
 
@@ -21,15 +22,19 @@ def registered_assistant(settings: Settings | None = None) -> CompiledStateGraph
     task list they name, opened now. A partial or malformed configuration, or a
     task list this version cannot read, is refused here, at the server's start.
 
-    Its tools read the task list (docs/decisions/0006); each carries its
-    capability manifest, which the factory checks.
+    Its tools read the task list through a reader (docs/decisions/0006), and
+    propose writes the owner approves, applied by the list's writer
+    (docs/decisions/0009); each carries its capability manifest, which the
+    factory checks.
     """
     settings = settings if settings is not None else settings_from_process()
     model = build_model(settings)
     store = TaskStore(tasks_db_path(settings))
     store.open()
-    tools = task_tools(store)
-    return build_assistant(model, tools=tools, transient=is_transient_failure)
+    tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+    return build_assistant(
+        model, tools=tools, transient=is_transient_failure, writer=store.writer()
+    )
 
 
 assistant = registered_assistant()

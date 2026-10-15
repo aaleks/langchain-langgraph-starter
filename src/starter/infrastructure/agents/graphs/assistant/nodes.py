@@ -7,7 +7,7 @@ the graph with `astream`, and a tool written async runs only on that path.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -23,8 +23,22 @@ from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_core.tools import BaseTool
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.prebuilt import ToolNode
+from langgraph.types import interrupt
+from pydantic import ValidationError
 
-from starter.application.prompts import ASSISTANT_PROMPT, INVALID_CALL_ANSWER, UNRUN_CALL_ANSWER
+from starter.application.prompts import (
+    ASSISTANT_PROMPT,
+    INVALID_CALL_ANSWER,
+    NOT_PROPOSED_ANSWER,
+    REJECTED_ANSWER,
+    UNRUN_CALL_ANSWER,
+)
+from starter.domain.agents.approvals import (
+    describe_write,
+    outcome_message,
+    read_decisions,
+    write_key,
+)
 from starter.domain.agents.budgets import (
     check_context_chars,
     check_model_calls,
@@ -32,7 +46,9 @@ from starter.domain.agents.budgets import (
     check_tool_calls,
 )
 from starter.domain.agents.routing import keep_malformed_calls, unanswered_calls
+from starter.domain.tasks import TaskRefused, TaskWrite, write_arguments
 from starter.infrastructure.agents.graphs.assistant.state import AssistantState
+from starter.infrastructure.stores.tasks import TaskWriter
 
 
 def start_run(state: AssistantState) -> dict[str, Any]:
@@ -40,7 +56,7 @@ def start_run(state: AssistantState) -> dict[str, Any]:
     earlier run (ASSISTANT-BUDGETS-PER-RUN), and on a transcript with every call
     answered: a call an earlier run left -- it ended between a reply and its
     tools -- is answered as not run (ASSISTANT-NO-CALL-LEFT-UNANSWERED)."""
-    update: dict[str, Any] = {"model_calls": 0, "tool_calls": 0}
+    update: dict[str, Any] = {"model_calls": 0, "tool_calls": 0, "write_decisions": {}}
     answered = _answer_left_calls(state["messages"])
     if answered is not None:
         # Each answer must follow its reply, before the next message: the
@@ -114,38 +130,159 @@ def call_model(model: BaseChatModel, tools: Sequence[BaseTool]) -> Runnable:
     return RunnableLambda(sync, afunc=asynchronous, name="call_model")
 
 
-def run_tools(tools: Sequence[BaseTool]) -> Runnable:
-    """Answer every call the last reply proposes, within the run's tool-call budget.
+def run_tools(tools: Sequence[BaseTool], writes: Mapping[str, BaseTool]) -> Runnable:
+    """Answer every call the last reply proposes but its writes, within the run's
+    tool-call budget -- every well-formed call counting, a write's too.
 
-    Well-formed calls run through LangGraph's `ToolNode`: an unknown tool and
-    arguments its schema refuses come back as error tool messages, and a tool's
-    own exception propagates (ASSISTANT-TOOL-ERROR, ASSISTANT-ERRORS-PROPAGATE).
-    Each malformed call is answered with a fixed error, so the model can send it
-    again. A turn that would pass `TOOL_CALLS_PER_RUN` runs none of its calls."""
+    Reads, and calls to a tool not given, run through LangGraph's `ToolNode`: an
+    unknown tool and arguments its schema refuses come back as error tool
+    messages, and a tool's own exception propagates (ASSISTANT-TOOL-ERROR,
+    ASSISTANT-ERRORS-PROPAGATE). Each malformed call is answered with a fixed
+    error. A write is checked -- by its tool's schema and the task list's rules
+    -- and answered here only when refused; one accepted waits for the owner
+    (ASSISTANT-WRITE-PROPOSAL). A turn that would pass `TOOL_CALLS_PER_RUN` runs
+    none of its calls."""
     tool_node = ToolNode(list(tools))
 
-    def proposed(state: AssistantState) -> tuple[AIMessage, int, list[ToolMessage]]:
+    def proposed(state: AssistantState) -> tuple[AIMessage, list, int, list[ToolMessage]]:
         reply = state["messages"][-1]
         spent = check_tool_calls(
             state["tool_calls"],
             well_formed=len(reply.tool_calls),
             malformed=len(reply.invalid_tool_calls),
         )
-        return reply, spent, [_invalid_call_answer(call) for call in reply.invalid_tool_calls]
+        others = [call for call in reply.tool_calls if call["name"] not in writes]
+        answers = [_invalid_call_answer(call) for call in reply.invalid_tool_calls]
+        for call in reply.tool_calls:
+            if call["name"] in writes:
+                checked = checked_write(call, writes[call["name"]])
+                if isinstance(checked, str):
+                    answers.append(_not_proposed(call, checked))
+        return reply, others, spent, answers
+
+    def only(reply: AIMessage, calls: list) -> dict[str, Any]:
+        # The tool node runs every call of the reply it is given: here, the others.
+        return {"messages": [reply.model_copy(update={"tool_calls": calls})]}
 
     def sync(state: AssistantState, config: RunnableConfig) -> dict[str, Any]:
-        reply, spent, answers = proposed(state)
-        if reply.tool_calls:
-            answers = [*tool_node.invoke(state, config)["messages"], *answers]
+        reply, others, spent, answers = proposed(state)
+        if others:
+            answers = [*tool_node.invoke(only(reply, others), config)["messages"], *answers]
         return {"messages": answers, "tool_calls": spent}
 
     async def asynchronous(state: AssistantState, config: RunnableConfig) -> dict[str, Any]:
-        reply, spent, answers = proposed(state)
-        if reply.tool_calls:
-            answers = [*(await tool_node.ainvoke(state, config))["messages"], *answers]
+        reply, others, spent, answers = proposed(state)
+        if others:
+            ran = await tool_node.ainvoke(only(reply, others), config)
+            answers = [*ran["messages"], *answers]
         return {"messages": answers, "tool_calls": spent}
 
     return RunnableLambda(sync, afunc=asynchronous, name="run_tools")
+
+
+def checked_write(call: dict[str, Any], tool: BaseTool) -> TaskWrite | str:
+    """The write a call proposes, checked by its tool's schema and by the task
+    list's rules -- or why it was refused."""
+    try:
+        arguments = tool.args_schema.model_validate(call["args"]).model_dump()
+    except ValidationError:
+        return "its arguments do not match its schema"
+    try:
+        return tool.metadata["write"](**arguments)
+    except TaskRefused as refused:
+        return str(refused)
+
+
+def _not_proposed(call: dict[str, Any], why: str) -> ToolMessage:
+    return ToolMessage(
+        content=NOT_PROPOSED_ANSWER.format(name=call["name"], reason=why),
+        tool_call_id=call["id"],
+        name=call["name"],
+        status="error",
+    )
+
+
+def waiting_writes(messages: Sequence[AnyMessage], writes: Mapping[str, BaseTool]) -> list:
+    """The last reply's write calls no tool message after it answers: those the
+    checks accepted, waiting for the owner."""
+    reply, answered = _last_reply(messages)
+    return [
+        call for call in reply.tool_calls if call["name"] in writes and call["id"] not in answered
+    ]
+
+
+def _last_reply(messages: Sequence[AnyMessage]) -> tuple[AIMessage, set[str]]:
+    index = max(i for i, m in enumerate(messages) if isinstance(m, AIMessage))
+    answered = {m.tool_call_id for m in messages[index + 1 :] if isinstance(m, ToolMessage)}
+    return messages[index], answered
+
+
+def review_writes(writes: Mapping[str, BaseTool]):
+    """Pause for the owner's decision on each waiting write, in LangChain's
+    approval request (ASSISTANT-WRITE-APPROVAL, docs/decisions/0009). Nothing is
+    written here: on resume, the node runs again from the start, and returns the
+    decisions as state."""
+
+    def review(state: AssistantState) -> dict[str, Any]:
+        waiting = waiting_writes(state["messages"], writes)
+        checked = [checked_write(call, writes[call["name"]]) for call in waiting]
+        names = list(dict.fromkeys(call["name"] for call in waiting))
+        answer = interrupt(
+            {
+                "action_requests": [
+                    {
+                        "name": call["name"],
+                        "args": write_arguments(write),
+                        "description": describe_write(write),
+                    }
+                    for call, write in zip(waiting, checked, strict=True)
+                ],
+                "review_configs": [
+                    {"action_name": name, "allowed_decisions": ["approve", "reject"]}
+                    for name in names
+                ],
+            }
+        )
+        decisions = read_decisions(answer, len(waiting))
+        return {
+            "write_decisions": {
+                call["id"]: decision for call, decision in zip(waiting, decisions, strict=True)
+            }
+        }
+
+    return review
+
+
+def apply_writes(writes: Mapping[str, BaseTool], writer: TaskWriter | None):
+    """Decide each waiting write through the task list's writer, under the key
+    from the thread, the reply and the call -- once, however often the step is
+    replayed (ASSISTANT-WRITE-DECISIONS, ASSISTANT-WRITE-KEY) -- and answer each
+    call with what became of it."""
+
+    def apply(state: AssistantState, config: RunnableConfig) -> dict[str, Any]:
+        waiting = waiting_writes(state["messages"], writes)
+        reply, _ = _last_reply(state["messages"])
+        thread = config["configurable"]["thread_id"]
+        # Every key before any write: one too long ends the run, nothing written.
+        keys = [write_key(thread, reply.id, call["id"]) for call in waiting]
+        answers = []
+        for call, key in zip(waiting, keys, strict=True):
+            write = checked_write(call, writes[call["name"]])
+            if state["write_decisions"].get(call["id"]) == "approve":
+                outcome = writer.apply(write, key)
+                content = json.dumps(outcome_message(outcome))
+                status = "success" if outcome.outcome == "applied" else "error"
+            else:
+                writer.reject(write, key)
+                content, status = REJECTED_ANSWER, "error"
+            answers.append(
+                ToolMessage(
+                    content=content, tool_call_id=call["id"], name=call["name"], status=status
+                )
+            )
+        return {"messages": answers}
+
+    return apply
 
 
 def _stored(reply: BaseMessage) -> BaseMessage:

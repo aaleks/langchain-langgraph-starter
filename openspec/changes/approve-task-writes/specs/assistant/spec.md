@@ -15,6 +15,10 @@ A call the model proposes to a write tool -- `add_task`, `close_task` or `reassi
 
 - **AND** the run does not pause, the model is called next, and `task_writes` holds no row
 
+#### Scenario: Writes spend the tool-call budget
+- **GIVEN** a model proposing 21 calls of `add_task(title="Call the plumber")` in one reply
+- **THEN** the run raises `ToolCallBudgetExceededError`, naming 21, before any pause, and `task_writes` holds no row
+
 #### Scenario: Counter-example -- a read beside a write runs first
 - **GIVEN** a reply proposing `list_tasks` and `add_task(title="Call the plumber")`
 - **THEN** `list_tasks` runs and is answered, and the run pauses for `add_task` alone, unanswered
@@ -40,6 +44,10 @@ A reply's write calls that pass their checks SHALL pause the run before anything
 ```
 
 - **AND** the list is unchanged, and `task_writes` holds no row
+
+#### Scenario: One review config per tool
+- **GIVEN** a model proposing `add_task(title="a")` and `add_task(title="b")` in one reply
+- **THEN** the request holds two action requests and one review config, for `add_task`
 
 #### Scenario: Each description
 | The call | Its description |
@@ -77,7 +85,7 @@ Each decision SHALL decide its write. `{"type": "approve"}` SHALL apply it throu
 - **THEN** the call is answered `{"outcome": "refused", "task_id": 7, "reason": "no task 7"}`, status `error`, and the run goes on to the model: the owner approved, and the model hears why nothing changed
 
 ### Requirement: ASSISTANT-WRITE-KEY
-An approved or rejected write SHALL be decided under the key `<thread id>:<step>:<call id>` -- the thread's id, the superstep of `apply_writes`, the call's id -- so a replay of `apply_writes` from its checkpoint changes the task list once. A key longer than `WRITE_KEY_MAX` SHALL end the run with `ValueError`, nothing written.
+An approved or rejected write SHALL be decided under the key `<thread id>:<reply id>:<call id>` -- the thread's id, the id of the reply that proposed the call, the call's id -- so a replay of `apply_writes` from its checkpoint changes the task list once. Not the superstep: a replay runs `apply_writes` at another step (measured: 5, then 6). A key longer than `WRITE_KEY_MAX` SHALL end the run with `ValueError`, nothing written.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteKey`
@@ -85,7 +93,7 @@ An approved or rejected write SHALL be decided under the key `<thread id>:<step>
 #### Scenario: Replayed, applied once
 - **GIVEN** an approved `add_task(title="Call the plumber")` on the thread `t1`, applied
 - **WHEN** the thread is run again from the checkpoint before `apply_writes`
-- **THEN** the list holds one `Call the plumber`, and `task_writes` one row, whose key is `t1:<step>:<the call's id>`
+- **THEN** the list holds one `Call the plumber`, and `task_writes` one row, whose key is `t1:<the reply's id>:<the call's id>`
 
 #### Scenario: Counter-example -- a thread id too long for a key
 - **GIVEN** a thread id of 300 characters and an approved `add_task(title="Call the plumber")`

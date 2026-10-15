@@ -52,3 +52,4 @@ Every tool the factory is given SHALL carry a capability manifest -- the tool's 
 | a manifest declaring a rate limit of 5 calls a run | `add` and `5` |
 | a manifest declaring a rate limit of 21 calls a run | `add` and `21` |
 | a manifest declaring `read`, beside a second tool with none | the second tool |
+| `list_tasks` built over a reader waiting 1 s, its manifest saying 5 | `list_tasks` |

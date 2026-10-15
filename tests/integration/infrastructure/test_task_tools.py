@@ -19,6 +19,11 @@ from starter.infrastructure.stores.tasks import TaskReader, TaskStore
 from tests.fakes import answer, propose
 
 
+def reading(store: TaskStore, tool_module) -> TaskReader:
+    """The view a tool is given -- never the store -- waiting its manifest's timeout."""
+    return store.reader(tool_module.CAPABILITY.timeout_seconds)
+
+
 def task_list(path: Path, *tasks: tuple[str, str, str]) -> TaskStore:
     store = TaskStore(path)
     store.open()
@@ -70,7 +75,7 @@ class TestListTasks:
             ("Call the plumber", "", "after 5pm"),
         )
 
-        result = list_tasks.build(store).invoke({})
+        result = list_tasks.build(reading(store, list_tasks)).invoke({})
 
         assert json.loads(result) == {
             "tasks": [
@@ -84,7 +89,7 @@ class TestListTasks:
         notes = "line one\r\nline two\tend"
         store = task_list(tmp_path / "tasks.sqlite3", ("Čestitka za Ivana ☕", "", notes))
 
-        result = list_tasks.build(store).invoke({})
+        result = list_tasks.build(reading(store, list_tasks)).invoke({})
 
         assert "Čestitka za Ivana ☕" in result
         assert json.loads(result)["tasks"][0]["notes"] == notes
@@ -97,7 +102,7 @@ class TestListTasks:
             tmp_path / "tasks.sqlite3", *[(f"Task {n}", "", "") for n in range(1, count + 1)]
         )
 
-        result = json.loads(list_tasks.build(store).invoke({}))
+        result = json.loads(list_tasks.build(reading(store, list_tasks)).invoke({}))
 
         assert TASK_RESULTS_LIMIT == 50
         assert [t["id"] for t in result["tasks"]] == list(range(1, returned + 1))
@@ -114,7 +119,9 @@ class TestListTasks:
             list_tasks, "CAPABILITY", replace(list_tasks.CAPABILITY, timeout_seconds=1.0)
         )
         model = fake_llm([propose(("list_tasks", {})), answer()])
-        graph = build_assistant(model, [list_tasks.build(store)], transient=lambda failure: False)
+        graph = build_assistant(
+            model, [list_tasks.build(reading(store, list_tasks))], transient=lambda failure: False
+        )
         holder = sqlite3.connect(path, isolation_level=None)
         holder.execute("BEGIN EXCLUSIVE")
         try:
@@ -154,7 +161,9 @@ class TestListTasks:
         store = TaskStore(path)
         store.open()
 
-        first, second, third, fourth = json.loads(list_tasks.build(store).invoke({}))["tasks"]
+        first, second, third, fourth = json.loads(
+            list_tasks.build(reading(store, list_tasks)).invoke({})
+        )["tasks"]
 
         assert first["title"] == "Pay" + "t" * 197
         assert first["assignee"] == "a" * 100
@@ -166,7 +175,7 @@ class TestListTasks:
     def test_at_the_bound(self, tmp_path):
         store = task_list(tmp_path / "tasks.sqlite3", *[('"' * 200, '"' * 100, '"' * 1000)] * 51)
 
-        result = list_tasks.build(store).invoke({})
+        result = list_tasks.build(reading(store, list_tasks)).invoke({})
 
         assert len(result) == 132_713
 
@@ -182,7 +191,7 @@ class TestListTasks:
 
         monkeypatch.setattr(TaskReader, "connection", interleaved)
 
-        result = json.loads(list_tasks.build(store).invoke({}))
+        result = json.loads(list_tasks.build(reading(store, list_tasks)).invoke({}))
 
         assert [t["id"] for t in result["tasks"]] == [1, 2]
         assert result["more"] == 0
@@ -192,7 +201,7 @@ class TestListTasks:
         store = task_list(path, ("One", "", ""), ("Two", "", ""), ("Three", "", ""))
         close(path, 2)
 
-        result = list_tasks.build(store).invoke({})
+        result = list_tasks.build(reading(store, list_tasks)).invoke({})
 
         assert ids(result) == [1, 3]
         assert json.loads(result)["more"] == 0
@@ -273,7 +282,7 @@ class TestSearchTasks:
     def test_what_a_query_matches(self, tmp_path, query, expected):
         store = task_list(tmp_path / "tasks.sqlite3", *SEARCHED)
 
-        result = search_tasks.build(store).invoke({"query": query})
+        result = search_tasks.build(reading(store, search_tasks)).invoke({"query": query})
 
         assert ids(result) == expected
         assert json.loads(result)["more"] == 0
@@ -281,7 +290,7 @@ class TestSearchTasks:
     def test_text_as_written(self, tmp_path):
         store = task_list(tmp_path / "tasks.sqlite3", *SEARCHED)
 
-        result = search_tasks.build(store).invoke({"query": "Čestitka"})
+        result = search_tasks.build(reading(store, search_tasks)).invoke({"query": "Čestitka"})
 
         assert '"Čestitka"' in result
 
@@ -290,7 +299,9 @@ class TestSearchTasks:
             tmp_path / "tasks.sqlite3", *[(f"Task {n}", "", "") for n in range(1, 52)]
         )
 
-        result = json.loads(search_tasks.build(store).invoke({"query": "task"}))
+        result = json.loads(
+            search_tasks.build(reading(store, search_tasks)).invoke({"query": "task"})
+        )
 
         assert [t["id"] for t in result["tasks"]] == list(range(1, 51))
         assert result["more"] == 1
@@ -305,7 +316,9 @@ class TestSearchTasks:
         monkeypatch.setattr(TaskReader, "search", unread)
         store = task_list(tmp_path / "tasks.sqlite3")
 
-        messages, _ = run_proposing(fake_llm, search_tasks.build(store), {"query": query})
+        messages, _ = run_proposing(
+            fake_llm, search_tasks.build(reading(store, search_tasks)), {"query": query}
+        )
 
         tool_message = messages[2]
         assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
@@ -317,6 +330,6 @@ class TestSearchTasks:
         store = task_list(path, *SEARCHED)
         close(path, 1)
 
-        result = search_tasks.build(store).invoke({"query": "passport"})
+        result = search_tasks.build(reading(store, search_tasks)).invoke({"query": "passport"})
 
         assert ids(result) == [2]

@@ -20,49 +20,57 @@
 
 ## 1. The story test
 
-- [ ] 1.1 /accept -- `TestApprovalThroughTheServer`, red
+- [x] 1.1 /accept -- `TestApprovalThroughTheServer`, red: the run completed, no
+  `add_task` to pause on
 
 ## 2. TOOLS-TASK-WRITES, TOOLS-MANIFEST (modified)
 
-- [ ] 2.1 /accept -- `TestTaskWriteTools`; the manifest rows
-- [ ] 2.2 /tdd -- `add_task.py`, `close_task.py`, `reassign_task.py`;
+- [x] 2.1 /accept -- `TestTaskWriteTools`; the manifest rows
+- [x] 2.2 /tdd -- `add_task.py`, `close_task.py`, `reassign_task.py`;
   `check_capability` takes writes; reads built over a reader
 
 ## 3. ASSISTANT-STATE-CONTRACT, ASSISTANT-GRAPH-TOPOLOGY, ASSISTANT-ROUTING (modified)
 
-- [ ] 3.1 /accept -- the version, the table, the policies' rows
-- [ ] 3.2 /tdd -- state v2, the two nodes, `route_after_tools`, `route_after_writes`
+- [x] 3.1 /accept -- the version, the table, the policies' rows
+- [x] 3.2 /tdd -- state v2, the two nodes, `route_after_tools`, `route_after_writes`
 
 ## 4. ASSISTANT-WRITE-PROPOSAL
 
-- [ ] 4.1 /accept -- `TestWriteProposal`
-- [ ] 4.2 /tdd -- `run_tools` checks write calls
+- [x] 4.1 /accept -- `TestWriteProposal`
+- [x] 4.2 /tdd -- `run_tools` checks write calls
 
 ## 5. ASSISTANT-WRITE-APPROVAL
 
-- [ ] 5.1 /accept -- `TestWriteApproval`
-- [ ] 5.2 /tdd -- `review_writes`, `describe_write`
+- [x] 5.1 /accept -- `TestWriteApproval`
+- [x] 5.2 /tdd -- `review_writes`, `describe_write`
 
 ## 6. ASSISTANT-WRITE-DECISIONS
 
-- [ ] 6.1 /accept -- `TestWriteDecisions`
-- [ ] 6.2 /tdd -- `apply_writes`, `read_decisions`, `outcome_message`
+- [x] 6.1 /accept -- `TestWriteDecisions`
+- [x] 6.2 /tdd -- `apply_writes`, `read_decisions`, `outcome_message`
 
 ## 7. ASSISTANT-WRITE-KEY
 
-- [ ] 7.1 /accept -- `TestWriteKey`
-- [ ] 7.2 /tdd -- `write_key`
+- [x] 7.1 /accept -- `TestWriteKey`. Red after the code was written: the
+  replay applied the write twice -- the superstep differs on replay (5, then
+  6, measured). The key is the reply's id instead; spec, design and ADRs
+  amended
+- [x] 7.2 /tdd -- `write_key(thread, reply, call)`
 
 ## 8. ASSISTANT-PROMPT (modified), ASSISTANT-UNTRUSTED-TASK-TEXT, ASSISTANT-NO-CALL-LEFT-UNANSWERED (rows)
 
-- [ ] 8.1 Prompt v2 and its digest; the adversarial row; the new-input row
+- [x] 8.1 Prompt v2 and its digest; the adversarial row; the new-input row
 
 ## 9. ASSISTANT-REGISTERED (modified), the story test green
 
-- [ ] 9.1 The registry passes the writer; five tools offered
-- [ ] 9.2 `bash scripts/check.sh live` -- the story test green
+- [x] 9.1 The registry passes the writer; five tools offered
+- [x] 9.2 The story test green through `scripts/serve.sh`. Measured on the
+  way: the server ends a run stopped at an interrupt `success`; the pause is
+  the thread's status, `interrupted`. The scenario said the run's: amended
 
 ## 10. Close
 
-- [ ] 10.1 Mutations of the new code, each red
-- [ ] 10.2 Documents: CLAUDE.md, the roadmap, the measurement script
+- [x] 10.1 Mutations of the new code, 19, each red once three survivors were
+  closed with rows: a reader's wait other than its manifest; one review config
+  per tool; writes spending the tool-call budget
+- [x] 10.2 Documents: CLAUDE.md, the roadmap, the measurement script

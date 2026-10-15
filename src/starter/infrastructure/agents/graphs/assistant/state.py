@@ -13,7 +13,8 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
-ASSISTANT_STATE_VERSION = 1
+# 2: `write_decisions`, the owner's decisions on a reply's writes (approve-task-writes).
+ASSISTANT_STATE_VERSION = 2
 
 
 class AssistantInput(TypedDict):
@@ -30,3 +31,6 @@ class AssistantState(TypedDict):
     # (ASSISTANT-BUDGETS-PER-RUN).
     model_calls: int
     tool_calls: int
+    # The owner's decision on each write of the reply under review, by call id:
+    # `approve` or `reject` (ASSISTANT-WRITE-DECISIONS); `{}` from `start_run`.
+    write_decisions: dict[str, str]

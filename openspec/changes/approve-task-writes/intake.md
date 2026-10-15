@@ -29,7 +29,7 @@ All of it:
 - the three write tools;
 - the pause in LangChain's format;
 - a rejection that ends the run;
-- the key from the thread, the step and the call;
+- the key from the thread, the reply and the call;
 - the prompt;
 - the approval through the local server, end to end.
 
