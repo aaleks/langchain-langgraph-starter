@@ -151,7 +151,7 @@ class TestToolManifests:
         from starter.infrastructure.agents import factory
 
         compiled = []
-        monkeypatch.setattr(factory, "create_agent", lambda **kw: compiled.append(kw))
+        monkeypatch.setattr(factory, "assistant_graph", lambda *a, **kw: compiled.append(a))
 
         with pytest.raises(ValueError) as refused:
             build_assistant(fake_llm([answer()]), tools, transient=lambda failure: False)

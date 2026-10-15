@@ -7,8 +7,8 @@ schema is the tool's own. What holds each one:
   A tool declaring `read` reads through a view of its store that refuses a
   write, so the declaration is not the only guard.
 - `retry` -- here: only `"none"`, since a tool's failure propagates.
-- `calls_per_run` -- here: only the run's budget, the one limit the factory
-  enforces (`ToolCallLimitMiddleware`, every tool together).
+- `calls_per_run` -- here: only the run's budget, the one limit enforced
+  (`check_tool_calls` in `run_tools`, every tool together).
 - `timeout_seconds` -- the store's own wait, which the tool takes from it.
 - `idempotent` and `audit_event` -- declared now, held with the first write.
 

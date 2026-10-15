@@ -13,8 +13,6 @@ import json
 import httpx
 import openai
 import pytest
-from langchain.agents.middleware.model_call_limit import ModelCallLimitExceededError
-from langchain.agents.middleware.tool_call_limit import ToolCallLimitExceededError
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 from langchain_openai import StreamChunkTimeoutError
@@ -26,7 +24,9 @@ from starter.domain.agents.budgets import (
     MODEL_OUTPUT_TOKENS,
     TOOL_CALLS_PER_RUN,
     ContextBudgetExceededError,
+    ModelCallBudgetExceededError,
     OutputBudgetExceededError,
+    ToolCallBudgetExceededError,
 )
 from starter.domain.agents.retries import MODEL_RETRIES
 from starter.infrastructure.agents.factory import build_assistant
@@ -236,7 +236,7 @@ class TestToolError:
     def test_refused_calls_still_spend_the_budget(self, fake_llm, add_tool):
         model = fake_llm(propose(("multiply", {"a": 2, "b": 3})) for _ in itertools.count())
 
-        with pytest.raises(ModelCallLimitExceededError):
+        with pytest.raises(ModelCallBudgetExceededError):
             run(build_assistant(model, [add_tool.tool], transient=no_retries), "keep multiplying")
 
         assert model.calls == 10
@@ -245,9 +245,9 @@ class TestToolError:
     def test_invalid_calls_still_spend_the_budget(self, fake_llm, add_tool):
         model = fake_llm(malformed("add", '{"a": 1,') for _ in itertools.count())
 
-        # A ceiling of 100, well above the 71 the budget needs: were the budget
+        # A ceiling of 100, well above the 22 the budget needs: were the budget
         # not counting these turns, the run would end at the ceiling, not loop on.
-        with pytest.raises(ModelCallLimitExceededError):
+        with pytest.raises(ModelCallBudgetExceededError):
             run(
                 build_assistant(model, [add_tool.tool], transient=no_retries),
                 "add",
@@ -269,7 +269,24 @@ class TestToolError:
         answers = tool_messages(messages)
         assert add_tool.calls == [{"a": 1, "b": 2}]
         assert answers[both.tool_calls[0]["id"]] == ("success", "3")
-        assert answers[both.invalid_tool_calls[0]["id"]][0] == "error"
+        assert answers[both.invalid_tool_calls[0]["id"]] == (
+            "error",
+            "Error: the arguments for add are not valid JSON; send them again as a JSON object.",
+        )
+
+    def test_counter_example_a_malformed_call_without_an_id_beside_a_well_formed_one(
+        self, fake_llm, add_tool
+    ):
+        both = malformed("add", '{"a": 1,', with_id=False)
+        both.tool_calls = propose(("add", {"a": 1, "b": 2})).tool_calls
+        model = fake_llm([both, answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert add_tool.calls == [{"a": 1, "b": 2}]
+        assert tool_messages(messages) == {both.tool_calls[0]["id"]: ("success", "3")}
+        assert messages[1].invalid_tool_calls == []
+        assert model.calls == 2
 
     def test_counter_example_a_valid_call_beside_a_refused_one_still_runs(self, fake_llm, add_tool):
         proposal = propose(("add", {"a": 1, "b": 2}), ("multiply", {"a": 3, "b": 4}))
@@ -345,12 +362,12 @@ class TestModelCallBudget:
     `MODEL_CALLS_PER_RUN` model turns, a domain budget equal to 10; each turn SHALL
     make at most `1 + MODEL_RETRIES` attempts (ASSISTANT-TRANSIENT-RETRY), its
     retries spending none of the budget. A model still proposing tool calls when the
-    budget is spent SHALL end the run with `ModelCallLimitExceededError` -- never
-    with a message that reads like an answer, and never at the step ceiling first
-    under the ceiling the factory's graph runs with: `create_agent`'s 9,999
-    supersteps, where the budget needs 71 -- one more superstep per turn for each of
-    the tool-call budget (ASSISTANT-TOOL-CALL-BUDGET), the answer to invalid calls
-    (ASSISTANT-TOOL-ERROR) and the output budget (ASSISTANT-OUTPUT-BUDGET)."""
+    budget is spent SHALL end the run with `ModelCallBudgetExceededError`, naming
+    the budget -- never with a message that reads like an answer, and never at the
+    step ceiling first under the ceiling the factory's graph runs with: 9,999
+    supersteps (ASSISTANT-GRAPH-TOPOLOGY), where the budget needs 22 -- `start_run`,
+    then `call_model` and `run_tools` for each of the 10 turns, then the eleventh
+    `call_model`, which refuses."""
 
     def test_a_model_that_never_stops_proposing_calls_ends_in_the_budget_error(
         self, fake_llm, add_tool
@@ -359,8 +376,10 @@ class TestModelCallBudget:
         graph = build_assistant(model, [add_tool.tool], transient=no_retries)
 
         # Not GraphRecursionError: the budget, not the runtime's step ceiling, ends the run.
-        with pytest.raises(ModelCallLimitExceededError):
+        with pytest.raises(ModelCallBudgetExceededError) as ended:
             run(graph, "keep adding")
+
+        assert str(ended.value) == "a run may make 10 model calls, and this one has made them all"
 
         assert graph.config["recursion_limit"] == 9_999
         assert MODEL_CALLS_PER_RUN == 10
@@ -378,7 +397,7 @@ class TestModelCallBudget:
             model, [add_tool.tool], transient=is_transient_failure, initial_delay=0
         )
 
-        with pytest.raises(ModelCallLimitExceededError):
+        with pytest.raises(ModelCallBudgetExceededError):
             run(graph, "keep adding")
 
         assert model.calls == 2 * MODEL_CALLS_PER_RUN
@@ -399,9 +418,9 @@ class TestModelCallBudget:
 
     @pytest.mark.parametrize(
         ("recursion_limit", "ends_with"),
-        [(70, GraphRecursionError), (71, ModelCallLimitExceededError)],
+        [(21, GraphRecursionError), (22, ModelCallBudgetExceededError)],
     )
-    def test_counter_example_a_callers_step_ceiling_below_71_ends_the_run_first(
+    def test_counter_example_a_callers_step_ceiling_below_22_ends_the_run_first(
         self, fake_llm, add_tool, recursion_limit, ends_with
     ):
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
@@ -490,8 +509,10 @@ class TestTransientRetry:
 class TestToolCallBudget:
     """ASSISTANT-TOOL-CALL-BUDGET: A run SHALL execute at most `TOOL_CALLS_PER_RUN`
     (20) tool calls: a turn whose proposed calls would take the run past it SHALL
-    end the run with an error naming the run's limit, none of that turn's calls
-    executed."""
+    end the run with `ToolCallBudgetExceededError`, naming the count the turn would
+    reach and the limit, none of that turn's calls executed. Every well-formed call
+    counts, run or refused -- an unknown tool, arguments its schema refuses; a
+    malformed call is answered, never executed, and is not counted."""
 
     @staticmethod
     def turns(per_turn: int, count: int) -> list:
@@ -511,11 +532,41 @@ class TestToolCallBudget:
     ):
         model = fake_llm([*self.turns(3, 7), answer()])
 
-        with pytest.raises(ToolCallLimitExceededError) as ended:
+        with pytest.raises(ToolCallBudgetExceededError) as ended:
             run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
 
-        assert "run limit" in str(ended.value) and "/20 calls" in str(ended.value)
+        assert str(ended.value) == (
+            "a turn would take the run to 21 tool calls; the run's limit is 20"
+        )
+        assert (ended.value.count, ended.value.budget) == (21, 20)
         assert len(add_tool.calls) == 18
+
+    def test_a_malformed_call_beside_the_budget_is_answered_not_counted(self, fake_llm, add_tool):
+        # 19 and 1 malformed, then 1: counted, the malformed call would make 21.
+        turn = self.turns(19, 1)[0]
+        turn.invalid_tool_calls = malformed("add", '{"a": 1,').invalid_tool_calls
+        model = fake_llm([turn, *self.turns(1, 1), answer()])
+
+        messages = run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert len(add_tool.calls) == 20
+        assert tool_messages(messages)[turn.invalid_tool_calls[0]["id"]][0] == "error"
+        assert messages[-1].type == "ai" and messages[-1].tool_calls == []
+
+    @pytest.mark.parametrize(
+        "refused",
+        [("multiply", {"a": 1, "b": 2}), ("add", {"a": "x", "b": 1})],
+        ids=["no-such-tool", "arguments-its-schema-refuses"],
+    )
+    def test_a_refused_call_counts(self, fake_llm, add_tool, refused):
+        refused = propose(*[refused] * 20)
+        model = fake_llm([refused, *self.turns(1, 1), answer()])
+
+        with pytest.raises(ToolCallBudgetExceededError) as ended:
+            run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert ended.value.count == 21
+        assert add_tool.calls == []
 
     def test_counter_example_exactly_the_budget_is_not_past_it(self, fake_llm, add_tool):
         model = fake_llm([*self.turns(20, 1), answer()])
@@ -629,8 +680,8 @@ class TestContextBudget:
 
     @pytest.mark.parametrize(("total", "ends"), [(150_001, True), (150_000, False)])
     def test_as_the_server_runs_it_asynchronously(self, fake_llm, total, ends):
-        # The local server runs graphs with `astream`: a middleware with only a
-        # synchronous hook raises NotImplementedError there (measured).
+        # The local server runs graphs with `astream`, and an async-only tool
+        # runs only there: the context budget holds on that path too.
         import asyncio
 
         from langchain_core.tools import tool
@@ -679,6 +730,8 @@ class TestContextBudget:
         # refuses before the model is called either way.
         assert is_transient_failure(ContextBudgetExceededError(150_001, 150_000)) is False
         assert is_transient_failure(OutputBudgetExceededError(4096)) is False
+        assert is_transient_failure(ModelCallBudgetExceededError(10)) is False
+        assert is_transient_failure(ToolCallBudgetExceededError(21, 20)) is False
         assert model.calls == 1
 
     def test_counter_example_an_ai_messages_text_counts(self, fake_llm):
@@ -729,8 +782,9 @@ class TestOutputBudget:
     `MODEL_OUTPUT_TOKENS` (4,096) tokens (MODEL-OPENWEBUI-CLIENT) -- its finish
     reason `length`, or its output tokens reaching the cap -- SHALL end the run with
     `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor
-    its calls run. A backend that ignores the cap -- an Ollama model behind Open
-    WebUI without `num_predict` set there -- is outside this rule."""
+    its calls run, nor stored in the thread, nor retried. A backend that ignores the
+    cap -- an Ollama model behind Open WebUI without `num_predict` set there -- is
+    outside this rule."""
 
     @staticmethod
     def cut_off(message):
@@ -790,6 +844,28 @@ class TestOutputBudget:
         messages = run(build_assistant(fake_llm([reply]), [], transient=no_retries), "hello")
 
         assert messages[-1].type == "ai"
+
+    def test_a_cut_off_reply_is_not_stored_in_the_thread(self, fake_llm):
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        model = fake_llm([self.cut_off(answer("a long answer, cut"))])
+        graph = build_assistant(model, [], transient=no_retries).copy(
+            update={"checkpointer": InMemorySaver()}
+        )
+        thread = {"configurable": {"thread_id": "cut"}}
+
+        with pytest.raises(OutputBudgetExceededError):
+            graph.invoke({"messages": [HumanMessage("hello")]}, thread)
+
+        assert [m.type for m in graph.get_state(thread).values["messages"]] == ["human"]
+
+    def test_under_the_registrys_retry_predicate_it_is_not_retried(self, fake_llm):
+        model = fake_llm([self.cut_off(answer("cut")), answer()])
+
+        with pytest.raises(OutputBudgetExceededError):
+            run(retrying(model), "hello")
+
+        assert model.calls == 1
 
     def test_counter_example_a_reply_with_no_finish_reason_completes(self):
         from starter.infrastructure.models import build_offline_model

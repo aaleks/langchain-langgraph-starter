@@ -40,7 +40,7 @@ src/starter/
       registry.py         the only names langgraph.json may use
       factory.py          composition: settings in, dependencies wired, graph out
       checkpointers.py    in-memory for tests and the local server; durable for anything real
-      middleware.py       budget, telemetry and policy-enforcement adapters
+      middleware.py       budget, telemetry and policy-enforcement adapters, for a create_agent loop
       tools/              one per module, each with its capability manifest
       graphs/<name>/      state.py, graph.py, routes.py, nodes/, subgraphs/ -- thin adapters
       deepagents/         only if a requirement justifies a harness

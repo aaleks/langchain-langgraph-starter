@@ -12,6 +12,52 @@ MODEL_CALLS_PER_RUN = 10
 # the model turns. Measured with the model-call budget: at most 2 a run.
 TOOL_CALLS_PER_RUN = 20
 
+# The supersteps a run may take before LangGraph ends it with GraphRecursionError:
+# a backstop, never the budget that ends a run. The assistant's model-call budget
+# needs 22 (measured: ASSISTANT-MODEL-CALL-BUDGET); this is create_agent's, kept
+# when the assistant became a hand-written graph (assistant-as-a-graph).
+GRAPH_STEP_CEILING = 9_999
+
+
+class ModelCallBudgetExceededError(RuntimeError):
+    """A run has made its MODEL_CALLS_PER_RUN model calls and would make another:
+    the run ends, the model not called."""
+
+    def __init__(self, budget: int) -> None:
+        super().__init__(f"a run may make {budget} model calls, and this one has made them all")
+        self.budget = budget
+
+
+def check_model_calls(made: int) -> None:
+    """Refuse a model call once the run has made MODEL_CALLS_PER_RUN."""
+    if made >= MODEL_CALLS_PER_RUN:
+        raise ModelCallBudgetExceededError(MODEL_CALLS_PER_RUN)
+
+
+class ToolCallBudgetExceededError(RuntimeError):
+    """A turn's calls would take the run past TOOL_CALLS_PER_RUN: the run ends,
+    none of that turn's calls run."""
+
+    def __init__(self, count: int, budget: int) -> None:
+        super().__init__(
+            f"a turn would take the run to {count} tool calls; the run's limit is {budget}"
+        )
+        self.count = count
+        self.budget = budget
+
+
+def check_tool_calls(spent: int, *, well_formed: int, malformed: int) -> int:
+    """The run's tool calls once a turn's are added -- every well-formed call,
+    run or refused by its tool's schema; a malformed call is answered, never
+    run, and spends nothing: `malformed` is taken so the rule is stated here,
+    where the budget is. A turn that would take the run past
+    TOOL_CALLS_PER_RUN is refused whole, never in part."""
+    total = spent + well_formed
+    if total > TOOL_CALLS_PER_RUN:
+        raise ToolCallBudgetExceededError(total, TOOL_CALLS_PER_RUN)
+    return total
+
+
 # What one model call may send, in characters: the prompt, the messages, the
 # tool calls' arguments. One read at its measured bound is 132,713 (TASKS-LIST);
 # the prompt and a question fit beside it. Measured runs peaked at 16,148
@@ -53,6 +99,14 @@ class OutputBudgetExceededError(RuntimeError):
     def __init__(self, cap: int) -> None:
         super().__init__(f"a reply was cut off at its cap of {cap} tokens")
         self.cap = cap
+
+
+def check_reply_output(finish_reason: str | None, output_tokens: int) -> None:
+    """Refuse a reply stopped at the cap: its finish reason says so, or -- an
+    Ollama model behind Open WebUI reports `stop` even when its own `num_predict`
+    stopped it (measured) -- its output tokens reached the cap."""
+    if finish_reason == "length" or output_tokens >= MODEL_OUTPUT_TOKENS:
+        raise OutputBudgetExceededError(MODEL_OUTPUT_TOKENS)
 
 
 # How long the assistant waits on the model at any one point before abandoning

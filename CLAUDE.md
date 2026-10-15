@@ -3,10 +3,11 @@
 A LangChain / LangGraph starter, developed spec-first with proof.
 
 **A walking skeleton, on purpose.** What exists is the method, five layers with
-their contracts and checks, and one graph: `assistant`, a `create_agent` tool
-loop registered in `langgraph.json`, its model the owner's local Open WebUI when
-`.env` configures it and an offline fixed-answer model otherwise
-(`docs/decisions/0005-the-assistant-graph.md`), and two read-only tools over
+their contracts and checks, and one graph: `assistant`, a hand-written
+`StateGraph` tool loop registered in `langgraph.json`
+(`docs/decisions/0007-the-assistant-is-a-hand-written-graph.md`), its model the
+owner's local Open WebUI when `.env` configures it and an offline fixed-answer
+model otherwise (`docs/decisions/0005-the-assistant-graph.md`), and two read-only tools over
 the owner's task list -- a SQLite file the owner adds to with `starter tasks
 add` -- each with a capability manifest (`docs/decisions/0006-the-task-store.md`).
 It is becoming an

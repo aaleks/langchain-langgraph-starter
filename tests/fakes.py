@@ -73,7 +73,7 @@ class ScriptedChatModel(GenericFakeChatModel):
     """`GenericFakeChatModel`, one scripted reply per call, that accepts tools.
 
     Every fake in langchain_core inherits `bind_tools` from `BaseChatModel`, which
-    raises NotImplementedError, so `create_agent` cannot bind tools to a stock
+    raises NotImplementedError, so the assistant cannot bind tools to a stock
     fake. Here binding records the tools' names in `bound` and changes nothing
     else: the script decides what the model proposes. Each call is counted in
     `calls`, and its input recorded in `seen`. A scripted exception is raised by

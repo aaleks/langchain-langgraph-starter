@@ -6,6 +6,11 @@ from __future__ import annotations
 MODEL_RETRIES = 2
 RETRY_INITIAL_DELAY_SECONDS = 1.0
 RETRY_BACKOFF_FACTOR = 2.0
+# The longest wait between two tries, and no random part: one local client, so
+# no crowd of retries to spread out. The waits are 1 s, then 2 s.
+# (create_agent's middleware added +-25%; LangGraph's default adds up to 1 s.)
+RETRY_MAX_DELAY_SECONDS = 60.0
+RETRY_JITTER = False
 
 # A request the server may answer next time: a timeout, too many requests, or
 # a server-side failure. A 400 or a 401 will be the same on every try.

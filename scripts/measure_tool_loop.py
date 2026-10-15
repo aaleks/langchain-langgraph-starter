@@ -34,7 +34,7 @@ from starter.config.settings import settings_from_process
 from starter.domain.models import choose_model
 from starter.domain.tasks import new_task
 from starter.infrastructure.agents.factory import build_assistant
-from starter.infrastructure.agents.middleware import call_chars
+from starter.infrastructure.agents.graphs.assistant.nodes import call_chars
 from starter.infrastructure.agents.tools import task_tools
 from starter.infrastructure.models import build_model, is_transient_failure
 from starter.infrastructure.stores.tasks import TaskStore
