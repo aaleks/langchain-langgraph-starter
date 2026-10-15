@@ -1,9 +1,20 @@
 # Verify
 
-- **Verdict:** pass 1: DO NOT SHIP -- one MAJOR. The most important fix: prove
-  a rejection under a key already recorded (1).
-- **Reviewed at:** pass 1: `c56bb1e`, the whole change (`git diff
-  bf8fd62..c56bb1e`), committed before the lenses read it.
+- **Verdict:** SHIP at `17132b2` -- pass 2: no BLOCKER, no MAJOR. Its MINORs
+  were fixed after it (below). Pass 1: DO NOT SHIP -- one MAJOR, fixed.
+- **Reviewed at:** pass 2: `17132b2`, the fix diff `c56bb1e..17132b2`. Pass 1:
+  `c56bb1e`, the whole change (`git diff bf8fd62..c56bb1e`), committed before
+  the lenses read it.
+- **Evidence (pass 2):**
+  - `bash scripts/check.sh` at `17132b2`: all checks passed, suite 356; after
+    the pass-2 MINORs: all checks passed, suite 359.
+  - Mutations: 22, each red -- the 16 of pass 1, the six of its fixes, and
+    after pass 2 a writer skipping the version check and the largest id
+    refused (tasks.md 7.4, 8.3).
+  - Two fresh-context lenses over the fix diff: proof, and defects (60
+    processes racing closings, reassignments and adds on one list, 5 trials:
+    each task closed once; a COMMIT refused by a reader rolled back; awkward
+    local paths). Scratch files only; no `.env` read, no live test.
 - **Evidence (pass 1):**
   - `bash scripts/check.sh live` at `c56bb1e`: suite 346, and 8 of 9 live
     passed, the local server among them, opening the list at version 2. The
@@ -54,6 +65,22 @@
 Notes, no finding: the key's bound and the refusal texts are proved through
 the store, not at unit level (placement) -- the store is what the
 requirements describe.
+
+## Findings -- pass 2
+
+| # | Severity | Lens | Finding | Where | Outcome |
+|---|---|---|---|---|---|
+| 14 | MINOR | proof, defects | The writer never read the list's version: it applied a write to a list at version 3, which `open()` refuses, against TASKS-WRITES' new sentence | `stores/tasks.py:_decide` | Fixed: checked inside the transaction; rows for version 1 and 3, `ValueError` naming the file |
+| 15 | MINOR | proof | The full-disk test failed on the task, not "while the record is written" | `test_task_writes.py` | Fixed: records only beforehand, so the task is in when its record fails -- asserted |
+| 16 | MINOR | proof | Nothing showed `TASK_ID_MAX` itself accepted | unit test | Fixed: a row |
+| 17 | MINOR | proof | `open()`'s rollback goes through the same helper, unclaimed | `stores/tasks.py:_create` | Stated: design.md decision 2.4 |
+| 18 | MINOR | defects | The reader and the writer named the file resolved, `add` and `open()` as given: a symlinked list could get two rollback journals | `stores/tasks.py:_writing`, `_reading` | Fixed: every connection absolute, not resolved (design.md 2.5) |
+| 19 | MINOR | defects | A list on a network share: `add` works, the reader and writer cannot open it | `stores/tasks.py` | Accepted: ADR 0006 refuses a network share; unchanged since 3a |
+
+Note: `_apply` no longer reads the update's row count. The guard in the
+statement cannot fire while the status is read under the same write lock
+(defects, 60-process race); were it to, the write would be recorded as
+applied.
 
 ## Not checked
 

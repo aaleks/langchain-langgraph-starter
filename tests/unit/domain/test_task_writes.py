@@ -33,13 +33,19 @@ class TestTaskWriteValues:
                 CreateTask(NewTask("Renew passport", "sam", "")),
             ),
             (lambda: task_closing(7), CloseTask(7)),
+            (lambda: task_closing(2**63 - 1), CloseTask(2**63 - 1)),
             (lambda: task_reassignment(7, " ana "), ReassignTask(7, "ana")),
             (lambda: task_reassignment(7, ""), ReassignTask(7, "")),
         ],
-        ids=["creation", "closing", "reassignment", "unassigned"],
+        ids=["creation", "closing", "closing-task-id-max", "reassignment", "unassigned"],
     )
     def test_writes_are_built_from_valid_values(self, built, write):
         assert built() == write
+
+    def test_the_largest_id_is_sqlites(self):
+        from starter.domain.tasks import TASK_ID_MAX
+
+        assert TASK_ID_MAX == 2**63 - 1
 
     @pytest.mark.parametrize(
         ("built", "field"),
@@ -67,10 +73,6 @@ class TestTaskWriteValues:
         ],
     )
     def test_counter_example_a_value_refused_names_its_field(self, built, field):
-        from starter.domain.tasks import TASK_ID_MAX
-
-        assert TASK_ID_MAX == 2**63 - 1
-
         with pytest.raises(TaskRefused) as refused:
             built()
 

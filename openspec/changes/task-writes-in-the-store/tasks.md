@@ -63,3 +63,11 @@
 - [x] 7.4 Mutations: 20, each red, the six new ones among them -- the lookup
   on approvals only, an unconditional rollback, a writer creating files, no
   upper bound, the reassignment's id unchecked, the open status not decided
+
+## 8. Verify pass 2 -- the MINORs
+
+- [x] 8.1 The writer checks the list's version inside its transaction
+- [x] 8.2 The full disk fails on the record, the task already in; the largest
+  id accepted; one name for the file on every connection
+- [x] 8.3 Mutations of these, red: the version check skipped; the largest id
+  refused; a writer creating files; an unconditional rollback

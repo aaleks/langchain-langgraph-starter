@@ -58,8 +58,9 @@ class TestTaskWrites:
     task's assignee -- `applied`, with the task's id. A closing or reassignment of a
     task that does not exist, or is closed, SHALL change nothing -- `refused`, with
     the reason `no task 7` or `task 7 is closed`. A writer SHALL write only to a
-    list `open()` made or migrated: on a missing file, or a list at version 1, it
-    SHALL raise, creating and changing nothing."""
+    list at schema version 2, as `open()` makes or migrates it: on a missing file it
+    SHALL raise `sqlite3.OperationalError`, and on any other file -- a list at
+    version 1 or 3 -- `ValueError` naming the file, creating and changing nothing."""
 
     @pytest.mark.parametrize(
         ("write", "task_id", "after"),
@@ -123,10 +124,24 @@ class TestTaskWrites:
         path = version_1_list(tmp_path / "tasks.sqlite3", "Renew passport")
         before = path.read_bytes()
 
-        with pytest.raises(sqlite3.OperationalError):
+        with pytest.raises(ValueError) as refused:
             TaskStore(path).writer().apply(task_closing(1), "k1")
 
+        assert str(path) in str(refused.value)
         assert path.read_bytes() == before
+
+    def test_counter_example_a_writer_on_a_newer_list_changes_nothing(self, store):
+        db = sqlite3.connect(store.path)
+        db.execute("PRAGMA user_version = 3")
+        db.commit()
+        db.close()
+        before = store.path.read_bytes()
+
+        with pytest.raises(ValueError) as refused:
+            store.writer().apply(task_closing(1), "k1")
+
+        assert str(store.path) in str(refused.value)
+        assert store.path.read_bytes() == before
 
 
 class TestWriteOnce:
@@ -277,8 +292,10 @@ class TestAudit:
 
         store = TaskStore(tmp_path / "tasks.sqlite3")
         store.open()
-        for n in range(3):  # each table's first page all but full
-            store.writer().apply(task_creation(f"t{n}", "", "n" * 1000), f"k{n}")
+        # Records only, no task: the record's page all but full, the tasks' empty,
+        # so the task is written and its record is what the disk cannot take.
+        for n in range(3):
+            store.writer().reject(task_creation(f"t{n}", "", "n" * 1000), f"k{n}")
         before = (tasks(store), records(store))
         real = stores._writing
 
@@ -291,8 +308,19 @@ class TestAudit:
 
         # SQLite rolls this failure back itself; a second ROLLBACK would raise
         # "no transaction is active" in its place.
+        written = []
+        record = stores._record
+
+        def recording(db, *args, **kwargs):
+            written.append(db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+            return record(db, *args, **kwargs)
+
+        monkeypatch.setattr(stores, "_record", recording)
+
         with pytest.raises(sqlite3.OperationalError, match="database or disk is full"):
             store.writer().apply(task_creation("t3", "", "n" * 1000), "k3")
+
+        assert written == [1]  # the task was in when its record failed
 
         assert (tasks(store), records(store)) == before
 

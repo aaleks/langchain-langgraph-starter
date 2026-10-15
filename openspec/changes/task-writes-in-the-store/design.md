@@ -24,7 +24,9 @@ migration. Auditing does: a table at version 2.
 2. **The store's `writer()` returns a `TaskWriter`**, with `apply(write,
    key)` and `reject(write, key)`. Each opens its own connection -- `mode=rw`,
    so a writer never creates a file; only `open()` makes a list -- and runs
-   one `BEGIN IMMEDIATE` transaction:
+   one `BEGIN IMMEDIATE` transaction. That transaction first checks the list
+   is at version 2, with both tables: a list `open()` would refuse is never
+   written (verify pass 2). Then:
    1. Look the key up in `task_writes`. What a recorded key answers is the
       domain's `replayed`: the recorded outcome, or `ValueError` when the
       key records a different write. The precedence lives there (verify
@@ -42,7 +44,12 @@ migration. Auditing does: a table at version 2.
    4. Commit. Any failure rolls back what is still open. SQLite rolls some
       failures back itself -- a full disk -- and a second `ROLLBACK` would
       replace the real error with "no transaction is active" (verify pass
-      1, finding 6).
+      1, finding 6). `open()` rolls back through the same helper; the
+      writer's full-disk scenario proves it.
+   5. Every connection names the file the same way -- absolute, not
+      resolved -- so a list reached through a symlink keeps one rollback
+      journal, beside the name every connection uses (verify pass 2). A list
+      on a network share stays refused, as ADR 0006 says.
 3. **A task id is a whole number from 1 to `TASK_ID_MAX`**, 2^63 - 1, the
    largest SQLite stores. A larger one, which JSON and a schema allow, is
    refused as a value rather than failing in the store.

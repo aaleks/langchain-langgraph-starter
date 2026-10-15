@@ -157,6 +157,12 @@ class TaskWriter:
         with closing(_writing(self.path, self.timeout)) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
+                version, tables = _version_and_tables(db)
+                if not _is_task_list(version, tables):
+                    raise ValueError(
+                        f"{self.path} is not a task list this version writes: schema version "
+                        f"{version}, tables {sorted(tables)} -- version {SCHEMA_VERSION} expected"
+                    )
                 recorded = _recorded(db, key)
                 if recorded is not None:
                     outcome = replayed(recorded, write)
@@ -288,8 +294,14 @@ def _connect(path: Path, timeout: float, **options) -> sqlite3.Connection:
 def _writing(path: Path, timeout: float) -> sqlite3.Connection:
     """A connection to an existing file: `mode=rw`, so a writer never creates a
     list -- only `open()` does, at its version."""
-    uri = path.resolve().as_uri() + "?mode=rw"
-    return sqlite3.connect(uri, uri=True, timeout=timeout, isolation_level=None)
+    return sqlite3.connect(_existing(path), uri=True, timeout=timeout, isolation_level=None)
+
+
+def _existing(path: Path) -> str:
+    """The URI of an existing file, `mode=rw`: a missing one is an error, never a
+    new empty one. Absolute, not resolved: every connection names the file as
+    `_connect` does, so a symlinked list keeps one journal, beside the name."""
+    return path.absolute().as_uri() + "?mode=rw"
 
 
 def _roll_back(db: sqlite3.Connection) -> None:
@@ -304,8 +316,9 @@ def _reading(path: Path, timeout: float) -> Iterator[sqlite3.Connection]:
     """A connection to an existing file that refuses every write but SQLite's own
     recovery of an interrupted one. `mode=rw`: a missing file is an error, never
     a new empty one."""
-    uri = path.resolve().as_uri() + "?mode=rw"
-    with closing(sqlite3.connect(uri, uri=True, timeout=timeout, isolation_level=None)) as db:
+    with closing(
+        sqlite3.connect(_existing(path), uri=True, timeout=timeout, isolation_level=None)
+    ) as db:
         db.execute("PRAGMA query_only = ON")
         # query_only is a pragma its holder could switch off; the authorizer
         # cannot be removed from SQL, and lets nothing but reading through.

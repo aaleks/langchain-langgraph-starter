@@ -11,6 +11,7 @@ A write to the task list SHALL be built only from valid values: `task_creation(t
 |---|---|
 | `task_creation(" Renew passport ", " sam ", "")` | `CreateTask(NewTask("Renew passport", "sam", ""))` |
 | `task_closing(7)` | `CloseTask(7)` |
+| `task_closing(2**63 - 1)` -- `TASK_ID_MAX` | `CloseTask(2**63 - 1)` |
 | `task_reassignment(7, " ana ")` | `ReassignTask(7, "ana")` |
 | `task_reassignment(7, "")` | `ReassignTask(7, "")` -- unassigned |
 
@@ -28,7 +29,7 @@ A write to the task list SHALL be built only from valid values: `task_creation(t
 | `task_reassignment(7, "x\x1b")` | `assignee` |
 
 ### Requirement: TASKS-WRITES
-The task list's writer SHALL apply a write in one transaction and return its outcome: a creation SHALL add an open task -- `applied`, with the new task's id; a closing SHALL set an open task closed, and a reassignment an open task's assignee -- `applied`, with the task's id. A closing or reassignment of a task that does not exist, or is closed, SHALL change nothing -- `refused`, with the reason `no task 7` or `task 7 is closed`. A writer SHALL write only to a list `open()` made or migrated: on a missing file, or a list at version 1, it SHALL raise, creating and changing nothing.
+The task list's writer SHALL apply a write in one transaction and return its outcome: a creation SHALL add an open task -- `applied`, with the new task's id; a closing SHALL set an open task closed, and a reassignment an open task's assignee -- `applied`, with the task's id. A closing or reassignment of a task that does not exist, or is closed, SHALL change nothing -- `refused`, with the reason `no task 7` or `task 7 is closed`. A writer SHALL write only to a list at schema version 2, as `open()` makes or migrates it: on a missing file it SHALL raise `sqlite3.OperationalError`, and on any other file -- a list at version 1 or 3 -- `ValueError` naming the file, creating and changing nothing.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/infrastructure/test_task_writes.py::TestTaskWrites`
@@ -55,7 +56,8 @@ The task list's writer SHALL apply a write in one transaction and return its out
 | The file | Applying `task_closing(1)` | Afterwards |
 |---|---|---|
 | missing | raises `sqlite3.OperationalError` | no file |
-| a version-1 list holding task 1, never opened by this version | raises `sqlite3.OperationalError` | version 1, task 1 open |
+| a version-1 list holding task 1, never opened by this version | raises `ValueError`, naming the file | version 1, task 1 open |
+| a version-2 list holding task 1, its version then set to 3 | raises `ValueError`, naming the file | unchanged |
 
 ### Requirement: TASKS-WRITE-ONCE
 A write SHALL be applied at most once under its key: applying it, or rejecting it, under a key the task list already records SHALL change nothing and return the outcome recorded for that key. A key already recording a different write SHALL be refused with `ValueError`, nothing written. A key SHALL be 1 to `WRITE_KEY_MAX` (300) characters.
