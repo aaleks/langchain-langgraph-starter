@@ -14,20 +14,21 @@ The factory SHALL compile the assistant as a hand-written `StateGraph` whose nod
 
 #### Scenario: The retry policy is the model call's
 - **GIVEN** a graph the factory compiles with a predicate `transient` and the first wait 0
-- **THEN** `call_model` retries at most `1 + MODEL_RETRIES` attempts, on `transient`, waiting 0 then growing by `RETRY_BACKOFF_FACTOR`
+- **THEN** `call_model` retries at most `1 + MODEL_RETRIES` attempts, on `transient`, waiting 0 then growing by `RETRY_BACKOFF_FACTOR`, never longer than `RETRY_MAX_DELAY_SECONDS` (60), with no random part (`RETRY_JITTER` false) -- composed with the domain's first wait, 1 s then 2 s
 - **AND** `start_run` and `run_tools` have no retry policy
 
 #### Scenario: Counter-example -- no route ends straight after the tools
 - **THEN** `run_tools` has exactly one outgoing edge, to `call_model`: a tool's result always reaches the model
 
 ### Requirement: ASSISTANT-STATE-CONTRACT
-The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE_VERSION` 1, with exactly the fields `messages` -- the transcript, a message with an id already present replacing it -- `model_calls` and `tool_calls`, this run's counts. A run SHALL take only `messages` as input and return only `messages`, and a state SHALL come back unchanged through the checkpointer's serializer.
+The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE_VERSION` 1, with exactly the fields `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's counts, each one required. A reply whose id the transcript already holds SHALL be appended under a new id, never replace that message. A run SHALL take only `messages` as input and return only `messages`, and a state SHALL come back unchanged through the checkpointer's serializer.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant_graph.py::TestStateContract`
 
 #### Scenario: The fields, pinned to the version
 - **THEN** `ASSISTANT_STATE_VERSION` is 1 and the state's fields are exactly `messages: list of messages, appended by id`, `model_calls: int`, `tool_calls: int`
+- **AND** each field is required, and the compiled graph's channels beside LangGraph's own are exactly those three
 - **AND** the graph's input fields and output fields are exactly `messages`
 
 #### Scenario: Through the serializer
@@ -35,13 +36,18 @@ The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE
 - **WHEN** the checkpointer's serializer writes it, then reads it back
 - **THEN** what it reads equals what it wrote
 
+#### Scenario: A reply under an id the transcript holds
+- **GIVEN** a scripted model that proposes `add(a=1, b=2)` under the id `r1`, then answers under the id `r1` again
+- **WHEN** the assistant runs on the human message `add`
+- **THEN** the run completes with the transcript `human, ai, tool, ai`: the answer appended under a new id, the proposal kept
+
 #### Scenario: Counter-example -- a caller cannot set a count
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
 - **WHEN** a run's input carries `model_calls` -100 and `tool_calls` -100 beside the human message `keep adding`
-- **THEN** the run raises `ModelCallBudgetExceededError` after 10 model calls, as without them
+- **THEN** the run raises `ModelCallBudgetExceededError` after 10 model calls, as without them -- the input schema takes `messages` only, and `start_run` sets both counts besides. A caller of the local server's state-update endpoint can set them between runs: that caller is the owner, who can start any number of runs anyway
 
 ### Requirement: ASSISTANT-ROUTING
-After each reply, the assistant SHALL route by the domain policy `route_after_reply`: to `run_tools` when the reply proposes any call, well-formed or malformed, and to the end otherwise. It SHALL keep a reply's malformed calls only when every one of them has an id (`keep_malformed_calls`); otherwise the reply is stored without them.
+After each reply, the assistant SHALL route by the domain policy `route_after_reply`: to `run_tools` when the reply as stored proposes any call, well-formed or malformed, and to the end otherwise. The policy `keep_malformed_calls` SHALL keep a reply's malformed calls only when every one of them has an id; a reply it does not keep them for is stored without them (ASSISTANT-TOOL-ERROR).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_routing.py::TestRouteAfterReply`
@@ -82,6 +88,27 @@ Each run SHALL start its model-call and tool-call counts at zero: on a thread wh
 - **GIVEN** the same graph, and a model that proposes `add(a=1, b=1)` on every call
 - **WHEN** it runs on the thread `t2` with `keep adding`
 - **THEN** it raises `ModelCallBudgetExceededError` after 10 model calls
+
+### Requirement: ASSISTANT-NO-CALL-LEFT-UNANSWERED
+Every run SHALL start on a transcript in which every call is answered: `start_run` SHALL answer each call that an earlier run on the thread left without an answer -- the run ended between a reply and its tools -- with a tool message of status `error` reading exactly `Error: this call was not run; the run that proposed it ended first.`, placed after the reply that proposed it, before the model is called. A real endpoint refuses a transcript holding a call left unanswered, so without this every later turn on the thread would fail.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/integration/agents/test_assistant_graph.py::TestNoCallLeftUnanswered`
+
+#### Scenario: After a run that ended in its tools
+- **GIVEN** a graph the factory compiles with an in-memory checkpointer, on the thread `t3`
+
+| The first run ends | Its calls left unanswered | The second run, on `again` |
+|---|---|---|
+| a tool raises `RuntimeError` on `explode(a=1)` | 1 | completes; the model's first input holds that call's answer, as not run, right after the reply |
+| `ToolCallBudgetExceededError`, on 21 calls of `add` and 1 malformed call in one turn | 22 | completes; each of the 22 answered as not run, right after the reply; `add` never called |
+
+- **AND** no message the model receives in the second run proposes a call that no tool message answers
+
+#### Scenario: Counter-example -- a finished thread is left as it is
+- **GIVEN** a thread whose first run completed: `human, ai, tool, ai`
+- **WHEN** a second run starts on it with `again`
+- **THEN** the second run's transcript begins with those four messages unchanged, and no answer is added
 
 ## MODIFIED Requirements
 
@@ -162,10 +189,10 @@ A run of the assistant SHALL make at most `MODEL_CALLS_PER_RUN` model turns, a d
 #### Scenario: Counter-example -- a caller's step ceiling below 41 ends the run first
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
 - **WHEN** the assistant runs on the human message `keep adding` with `recursion_limit` 21, then again with 22
-- **THEN** at 21 the run raises `GraphRecursionError`; at 22 it raises `ModelCallBudgetExceededError` -- measured. The title's 41 was measured on `create_agent` before the tool-call budget, and 71 after it; 22 is this graph's
+- **THEN** at 21 the run raises `GraphRecursionError`; at 22 it raises `ModelCallBudgetExceededError` -- measured. The title's 41 is `create_agent`'s, before its tool-call budget; it needed 71 after. This graph needs 22, so a ceiling of 22 to 40 no longer ends the run first. The title stays: OpenSpec keeps a modified requirement's scenario titles
 
 ### Requirement: ASSISTANT-TOOL-CALL-BUDGET
-A run SHALL execute at most `TOOL_CALLS_PER_RUN` (20) tool calls: a turn whose proposed calls would take the run past it SHALL end the run with `ToolCallBudgetExceededError`, naming the count the turn would reach and the limit, none of that turn's calls executed. A malformed call is answered, never executed, and is not counted.
+A run SHALL execute at most `TOOL_CALLS_PER_RUN` (20) tool calls: a turn whose proposed calls would take the run past it SHALL end the run with `ToolCallBudgetExceededError`, naming the count the turn would reach and the limit, none of that turn's calls executed. Every well-formed call counts, run or refused -- an unknown tool, arguments its schema refuses; a malformed call is answered, never executed, and is not counted.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant.py::TestToolCallBudget`
@@ -176,6 +203,7 @@ A run SHALL execute at most `TOOL_CALLS_PER_RUN` (20) tool calls: a turn whose p
 | 4 calls a turn, for 5 turns, then answers | 20 | completes |
 | 3 calls a turn, for 7 turns | 18 -- the seventh turn's 3 not | raises `ToolCallBudgetExceededError` -- `a turn would take the run to 21 tool calls; the run's limit is 20` |
 | 19 calls and 1 malformed call in one turn, then 1 call, then answers | 20 | completes: the malformed call is answered, not counted |
+| 20 calls of `multiply` -- no such tool -- in one turn, then 1 call of `add` | 0 | raises `ToolCallBudgetExceededError`, naming 21: a refused call counts |
 
 #### Scenario: Counter-example -- exactly the budget is not past it
 - **GIVEN** a model proposing 20 calls in one turn, then answering
@@ -252,3 +280,25 @@ Task text that gives the model orders SHALL reach it only inside a tool message,
 #### Scenario: Counter-example -- the owner's question is not data
 - **GIVEN** the human message `list my tasks`
 - **THEN** it reaches the model as a human message, not inside a tool message
+
+### Requirement: ASSISTANT-OUTPUT-BUDGET
+A reply cut off at the client's cap of `MODEL_OUTPUT_TOKENS` (4,096) tokens (MODEL-OPENWEBUI-CLIENT) -- its finish reason `length`, or its output tokens reaching the cap -- SHALL end the run with `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor its calls run, nor stored in the thread, nor retried. A backend that ignores the cap -- an Ollama model behind Open WebUI without `num_predict` set there -- is outside this rule.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/integration/agents/test_assistant.py::TestOutputBudget`
+
+#### Scenario: A reply cut off at the cap
+| The model's reply | Its finish reason | The run |
+|---|---|---|
+| text | `length` | raises `OutputBudgetExceededError` -- `a reply was cut off at its cap of 4096 tokens` -- the model called once |
+| a call of `add` | `length` | raises it; the tool not called |
+| a call of `add` cut off mid-arguments -- not JSON | `length` | raises it; the call not handed back, the model called once |
+| text, its output tokens 4,096 | `stop` -- an Ollama model capped by its own `num_predict` reports no cut-off | raises it |
+| text, its output tokens 4,097 | `stop` -- a backend that went past the cap | raises it |
+| text, its output tokens 4,095 | `stop` | completes |
+
+- **AND** with an in-memory checkpointer, the thread's transcript after the error is `human`: the cut-off reply is not stored
+- **AND** under the registry's retry predicate, the model is called once: no budget error is transient
+#### Scenario: Counter-example -- a reply with no finish reason
+- **GIVEN** the offline model, whose replies carry no finish reason
+- **THEN** the run completes

@@ -45,7 +45,7 @@ def build_openwebui_model(settings: Settings) -> BaseChatModel:
       the whole reply; a call without tools streams, and the chunk timer -- else
       langchain-openai's own -- applies to each chunk.
     - `max_retries=0`: the openai client would otherwise retry twice on its own,
-      under the assistant's policy (ModelRetryMiddleware in the factory).
+      under the assistant's policy (`call_model`'s `RetryPolicy`).
     - `use_responses_api=False`: some model ids switch ChatOpenAI to
       `/responses`, which Open WebUI does not serve.
     - `base_url` and `api_key` explicit: left out, langchain-core may route a

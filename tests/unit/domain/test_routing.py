@@ -9,10 +9,11 @@ from starter.domain.agents.routing import keep_malformed_calls, route_after_repl
 
 class TestRouteAfterReply:
     """ASSISTANT-ROUTING: After each reply, the assistant SHALL route by the domain
-    policy `route_after_reply`: to `run_tools` when the reply proposes any call,
-    well-formed or malformed, and to the end otherwise. It SHALL keep a reply's
-    malformed calls only when every one of them has an id (`keep_malformed_calls`);
-    otherwise the reply is stored without them."""
+    policy `route_after_reply`: to `run_tools` when the reply as stored proposes any
+    call, well-formed or malformed, and to the end otherwise. The policy
+    `keep_malformed_calls` SHALL keep a reply's malformed calls only when every one
+    of them has an id; a reply it does not keep them for is stored without them
+    (ASSISTANT-TOOL-ERROR)."""
 
     @pytest.mark.parametrize(
         ("well_formed", "malformed", "route"),

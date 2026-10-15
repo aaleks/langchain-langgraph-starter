@@ -36,11 +36,18 @@ stay the same.
 3. **The retry is `call_model`'s `RetryPolicy`:**
    - `max_attempts = 1 + MODEL_RETRIES`;
    - `retry_on` = the factory's `transient` predicate;
-   - `initial_interval` and `backoff_factor` from the domain.
+   - `initial_interval`, `backoff_factor` and `max_interval` from the
+     domain;
+   - no random part: `RETRY_JITTER = False`. LangGraph's default adds up to
+     a second to every wait, and `create_agent`'s added +-25% (verify pass
+     1, finding 1). One local client spreads no crowd of retries, so the
+     waits are 1 s, then 2 s.
 
    A retry re-runs the node, and the counts are written only when it
    finishes, so a retry spends no budget. That is the living rule, now held
-   by construction.
+   by construction. The budget checks run inside the retried node, so only
+   the predicate keeps a budget error from being retried: each of the four
+   is asserted not transient.
 4. **Each node has a sync and an async body** (`RunnableLambda(func,
    afunc=...)`). The local server streams with `astream`, and a tool written
    async runs only on that path. Measured in bound-the-tool-loop: a
@@ -79,12 +86,36 @@ stay the same.
      until a node grows;
    - `middleware.py` is deleted: its checks are the nodes' now. `call_chars`
      moves to `nodes.py`, and the measurement script imports it from there.
+10. **A run starts with every call answered** (ASSISTANT-NO-CALL-LEFT-
+    UNANSWERED, verify pass 1, finding 2). A run that ends between a reply
+    and its tools -- a tool's exception, the tool-call budget -- leaves the
+    reply's calls unanswered on the thread, and a real endpoint refuses that
+    transcript on every later turn. `start_run` answers each such call as not
+    run, right after its reply.
+    - Each answer must follow its reply, so the transcript is written again
+      in order (`RemoveMessage(REMOVE_ALL_MESSAGES)`, then every message, the
+      ids kept). This happens only when a call was left.
+    - The alternatives: answering the calls before raising cannot be stored,
+      since a node that raises writes nothing; stripping the calls from the
+      reply hides from the model what it asked for.
+    - The bug was in the old loop too. It is fixed here because 4b makes it
+      common: new input on a thread paused for approval drops the pending
+      tools the same way.
+11. **A reply whose id the transcript already holds is appended under a new
+    one** (verify pass 1, finding 8). `add_messages` would otherwise replace
+    the earlier message where it stands, and the route reads the last
+    message.
+12. **The node names are deliberate.** `start_run`, `call_model` and
+    `run_tools` are LangGraph's common vocabulary for a tool loop, and they
+    name what each node does for the run. They become an interface with
+    slice 5's durable checkpoints, and changing one after that needs a
+    migration.
 
 ## Orchestration design
 
 | Node (a business outcome) | Kind (read, decide, write) | Reads | Writes or side effect | Routes to | Decided by (domain policy or model) |
 |---|---|---|---|---|---|
-| `start_run` | decide | -- | `model_calls = 0`, `tool_calls = 0` | `call_model` | fixed |
+| `start_run` | read -- it computes, with no effect outside the state | `messages` | `model_calls = 0`, `tool_calls = 0`; each call an earlier run left unanswered, answered as not run | `call_model` | `unanswered_calls` |
 | `call_model` | decide | `messages`, `model_calls` | refuses past `MODEL_CALLS_PER_RUN` or `CONTEXT_CHARS_PER_CALL`; sends `ASSISTANT_PROMPT` and the messages; refuses a cut-off reply; appends the reply -- without its malformed calls unless `keep_malformed_calls`; `model_calls + 1` | `run_tools` or `END` | `route_after_reply`, on the model's reply |
 | `run_tools` | read | the last reply, `tool_calls` | refuses past `TOOL_CALLS_PER_RUN`; runs the well-formed calls through `ToolNode`; answers each malformed call with the fixed error; `tool_calls + n` | `call_model` | fixed |
 
@@ -124,7 +155,9 @@ stay the same.
 - **Observability:** unchanged; slice 6.
 - **Runtime:** unchanged -- `scripts/serve.sh`, the registry, `langgraph.json`.
 - **Test plan:**
-  - unit: `route_after_reply`, `keep_malformed_calls`, the two budget checks;
+  - unit: `route_after_reply`, `keep_malformed_calls`. The budget checks are
+    proved through the graph, where each limit is a scenario of its own (verify
+    pass 1, finding 14);
   - integration: the topology and the state contract
     (`test_assistant_graph.py`); every route of the living spec through the
     factory, unchanged in what it asserts but the error classes
@@ -132,6 +165,21 @@ stay the same.
   - acceptance: the registered graph, offline and through the stand-in;
   - live: the local server and the owner's Open WebUI, `check.sh live`.
 - **Graph id:** `assistant`, unchanged.
+
+### Routes -- the ladder's checklist
+
+| Route | Requirement, or N-A |
+|---|---|
+| completion | ASSISTANT-TOOL-LOOP |
+| refusal | N-A: no request policy declines a question; the prompt tells the model what it cannot do (ASSISTANT-PROMPT) |
+| approval, rejection | N-A until 4b |
+| interruption and resume | N-A until 4b; ASSISTANT-NO-CALL-LEFT-UNANSWERED keeps a thread usable after a run stops |
+| retry exhaustion | ASSISTANT-TRANSIENT-RETRY |
+| limit exhaustion | ASSISTANT-MODEL-CALL-BUDGET, ASSISTANT-TOOL-CALL-BUDGET, ASSISTANT-CONTEXT-BUDGET, ASSISTANT-OUTPUT-BUDGET |
+| tool denial | ASSISTANT-TOOL-ERROR (a tool not given, refused arguments), TOOLS-MANIFEST (a manifest refused at compose). Denial by authorisation: N-A, one owner and no write |
+| malformed model output | ASSISTANT-TOOL-ERROR |
+| retrieval failure, timeout | the model: ASSISTANT-TRANSIENT-RETRY. The task store: ASSISTANT-ERRORS-PROPAGATE -- a tool's exception, the store's `sqlite3.Error` among them (its manifest), ends the run unchanged |
+| forbidden access | N-A until slice 5: one owner, one local server |
 
 ## Risks
 
@@ -151,6 +199,23 @@ stay the same.
   `create_agent` (channels `messages`, `thread_model_call_count`) ran on
   under the new graph -- its transcript kept, the new run counted from 0.
   Deleting `.langgraph_api/` drops them all. Nothing else stores a thread.
+  A thread the old graph left stopped mid-run (`next` names a node that no
+  longer exists) does nothing on a continue (verify pass 1, finding 16).
+  **The policy:** delete `.langgraph_api/` when upgrading across this change.
+- **[A thread outgrows the context budget]** -> the transcript is never cut.
+  Once it passes 150,000 characters, every run on the thread ends with
+  `ContextBudgetExceededError`, before calling the model, and each superstep
+  checkpoints the whole transcript again. It was so before this change. The
+  owner chose, 2026-10-14 ("Defer to slice 5 (Recommended)"), to leave it to
+  slice 5's retention and size budget. Until then: a new thread.
+- **[A caller sets the counts]** -> the local server's state-update endpoint
+  can write `model_calls` and `tool_calls` between runs, past the input
+  schema. Accepted: its caller is the owner, on 127.0.0.1, who can start
+  any number of runs anyway. Slice 5's thread ownership revisits it.
+- **[The state version is not in a checkpoint]** -> `ASSISTANT_STATE_VERSION`
+  is pinned in a test with the fields, their being required and the
+  compiled channels. Stamping it on each checkpoint, so a migration can
+  read it, is slice 5's, with the first durable one.
 
 ## Migration and rollback
 

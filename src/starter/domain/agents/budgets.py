@@ -46,11 +46,15 @@ class ToolCallBudgetExceededError(RuntimeError):
         self.budget = budget
 
 
-def check_tool_calls(executed: int, proposed: int) -> None:
-    """Refuse a turn whose `proposed` calls would take the run's `executed` past
-    TOOL_CALLS_PER_RUN -- all of them, never some."""
-    if executed + proposed > TOOL_CALLS_PER_RUN:
-        raise ToolCallBudgetExceededError(executed + proposed, TOOL_CALLS_PER_RUN)
+def check_tool_calls(spent: int, *, well_formed: int, malformed: int) -> int:
+    """The run's tool calls once a turn's are added -- every well-formed call,
+    run or refused by its tool's schema; a malformed call is answered, never
+    run, and spends nothing. A turn that would take the run past
+    TOOL_CALLS_PER_RUN is refused whole, never in part."""
+    total = spent + well_formed
+    if total > TOOL_CALLS_PER_RUN:
+        raise ToolCallBudgetExceededError(total, TOOL_CALLS_PER_RUN)
+    return total
 
 
 # What one model call may send, in characters: the prompt, the messages, the

@@ -211,7 +211,7 @@ class TestAssistantIsRegistered:
         assert registry.assistant.config["recursion_limit"] == built.config["recursion_limit"]
         exported = registry.assistant.builder.nodes["call_model"].retry_policy
         composed = built.builder.nodes["call_model"].retry_policy
-        assert exported.max_attempts == composed.max_attempts
+        assert exported._replace(retry_on=None) == composed._replace(retry_on=None)
         assert exported.retry_on is is_transient_failure
 
     def test_the_registered_graph_completes_a_run_with_the_network_refused(
@@ -320,6 +320,7 @@ class TestUntrustedTaskText:
                 registered.invoke({"messages": [HumanMessage("what is open?")]})
 
         assert task_list.read_bytes() == before
+        assert roles_carrying(stub.requests, ORDERS) == {"tool"}
 
     def test_counter_example_the_owners_question_is_not_data(self, task_list, monkeypatch):
         with openwebui_stub(replies=["done"]) as stub:

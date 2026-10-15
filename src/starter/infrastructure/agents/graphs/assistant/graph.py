@@ -12,7 +12,12 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
-from starter.domain.agents.retries import MODEL_RETRIES, RETRY_BACKOFF_FACTOR
+from starter.domain.agents.retries import (
+    MODEL_RETRIES,
+    RETRY_BACKOFF_FACTOR,
+    RETRY_JITTER,
+    RETRY_MAX_DELAY_SECONDS,
+)
 from starter.infrastructure.agents.graphs.assistant import nodes, routes
 from starter.infrastructure.agents.graphs.assistant.state import (
     AssistantInput,
@@ -32,12 +37,15 @@ def assistant_graph(
 
     A model failure `transient` accepts is retried by `call_model`'s policy, at
     most `MODEL_RETRIES` times, the first wait `initial_delay` and each next one
-    `RETRY_BACKOFF_FACTOR` times longer (ASSISTANT-TRANSIENT-RETRY); the last
+    `RETRY_BACKOFF_FACTOR` times longer, with no random part
+    (ASSISTANT-TRANSIENT-RETRY); the last
     failure ends the run."""
     retry = RetryPolicy(
         max_attempts=1 + MODEL_RETRIES,
         initial_interval=initial_delay,
         backoff_factor=RETRY_BACKOFF_FACTOR,
+        max_interval=RETRY_MAX_DELAY_SECONDS,
+        jitter=RETRY_JITTER,
         retry_on=transient,
     )
     builder = StateGraph(AssistantState, input_schema=AssistantInput, output_schema=AssistantInput)

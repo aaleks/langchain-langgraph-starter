@@ -96,7 +96,9 @@ durability, safety) arrives in the slice whose requirement asks for it.
 5. **Durability** (structural). The approval may wait: a durable checkpointer
    chosen with build-or-adopt (`langgraph-checkpoint-sqlite`); a run paused,
    the graph rebuilt on the same store, and resumed; thread ownership; an old
-   checkpoint resuming after a state change; retention.
+   checkpoint resuming after a state change, its version stamped on it;
+   retention, and a thread's size -- today a thread past the context budget
+   fails every run (deferred here by the owner, assistant-as-a-graph).
 6. **Operations** (structural). Local tracing and log correlation --
    OpenTelemetry to a collector on this machine, never LangSmith -- and a
    runbook.

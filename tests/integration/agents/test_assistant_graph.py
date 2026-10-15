@@ -15,7 +15,10 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-from starter.domain.agents.budgets import ModelCallBudgetExceededError
+from starter.domain.agents.budgets import (
+    ModelCallBudgetExceededError,
+    ToolCallBudgetExceededError,
+)
 from starter.domain.agents.retries import MODEL_RETRIES, RETRY_BACKOFF_FACTOR
 from starter.infrastructure.agents.factory import build_assistant
 from tests.fakes import answer, malformed, propose
@@ -56,6 +59,8 @@ class TestTopology:
             ("run_tools", "call_model", False),
         }
         assert graph.config["recursion_limit"] == 9_999
+        # No interrupt until 4b's approval.
+        assert (graph.interrupt_before_nodes, graph.interrupt_after_nodes) == ([], [])
 
     def test_the_retry_policy_is_the_model_calls(self, fake_llm):
         def transient(failure: Exception) -> bool:
@@ -67,6 +72,8 @@ class TestTopology:
         assert policy.max_attempts == 1 + MODEL_RETRIES
         assert policy.retry_on is transient
         assert (policy.initial_interval, policy.backoff_factor) == (0, RETRY_BACKOFF_FACTOR)
+        # No random part: LangGraph's default adds up to a second to every wait.
+        assert (policy.max_interval, policy.jitter) == (60.0, False)
         assert graph.builder.nodes["start_run"].retry_policy is None
         assert graph.builder.nodes["run_tools"].retry_policy is None
 
@@ -81,8 +88,9 @@ class TestTopology:
 class TestStateContract:
     """ASSISTANT-STATE-CONTRACT: The assistant's state SHALL be the contract
     `AssistantState` at `ASSISTANT_STATE_VERSION` 1, with exactly the fields
-    `messages` -- the transcript, a message with an id already present replacing
-    it -- `model_calls` and `tool_calls`, this run's counts. A run SHALL take only
+    `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's
+    counts, each one required. A reply whose id the transcript already holds SHALL
+    be appended under a new id, never replace that message. A run SHALL take only
     `messages` as input and return only `messages`, and a state SHALL come back
     unchanged through the checkpointer's serializer."""
 
@@ -105,7 +113,13 @@ class TestStateContract:
                 "tool_calls": int,
             }
         }
+        assert AssistantState.__required_keys__ == {"messages", "model_calls", "tool_calls"}
         graph = build_assistant(fake_llm([answer()]), [], transient=no_retries)
+        assert {c for c in graph.channels if not c.startswith(("__", "branch:"))} == {
+            "messages",
+            "model_calls",
+            "tool_calls",
+        }
         assert set(graph.get_input_jsonschema()["properties"]) == {"messages"}
         assert set(graph.get_output_jsonschema()["properties"]) == {"messages"}
 
@@ -125,7 +139,25 @@ class TestStateContract:
 
         assert serde.loads_typed(serde.dumps_typed(state)) == state
 
+    def test_a_reply_under_an_id_the_transcript_holds_is_appended(self, fake_llm, add_tool):
+        proposal = propose(("add", {"a": 1, "b": 2}))
+        proposal.id = "r1"
+        reply = answer()
+        reply.id = "r1"
+        model = fake_llm([proposal, reply])
+
+        messages = build_assistant(model, [add_tool.tool], transient=no_retries).invoke(
+            {"messages": [HumanMessage("add")]}
+        )["messages"]
+
+        assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
+        assert messages[1].id == "r1" and messages[1].tool_calls
+        assert messages[3].id not in {None, "r1"}
+
     def test_counter_example_a_caller_cannot_set_a_count(self, fake_llm, add_tool):
+        # The input schema's jsonschema, above, is what proves a count is not
+        # input; this run shows the budget holds either way -- `start_run`
+        # sets both counts besides.
         model = fake_llm(propose(("add", {"a": 1, "b": 1})) for _ in itertools.count())
         graph = build_assistant(model, [add_tool.tool], transient=no_retries)
 
@@ -177,3 +209,91 @@ class TestBudgetsPerRun:
             )
 
         assert model.calls == 10
+
+
+class TestNoCallLeftUnanswered:
+    """ASSISTANT-NO-CALL-LEFT-UNANSWERED: Every run SHALL start on a transcript in
+    which every call is answered: `start_run` SHALL answer each call that an earlier
+    run on the thread left without an answer -- the run ended between a reply and
+    its tools -- with a tool message of status `error` reading exactly `Error: this
+    call was not run; the run that proposed it ended first.`, placed after the reply
+    that proposed it, before the model is called. A real endpoint refuses a
+    transcript holding a call left unanswered, so without this every later turn on
+    the thread would fail."""
+
+    @staticmethod
+    def unanswered_in(messages) -> set[str]:
+        answered = {m.tool_call_id for m in messages if m.type == "tool"}
+        proposed = {c["id"] for m in messages if m.type == "ai" for c in m.tool_calls}
+        return proposed - answered
+
+    def test_after_a_tool_raised_the_next_run_answers_the_call_as_not_run(self, fake_llm):
+        from langchain_core.tools import tool
+
+        from starter.application.prompts import UNRUN_CALL_ANSWER
+        from tests.fakes import manifested
+
+        @tool
+        def explode(a: int) -> int:
+            """Fail."""
+            raise RuntimeError("explode failed")
+
+        proposal = propose(("explode", {"a": 1}))
+        model = fake_llm([proposal, answer()])
+        graph = build_assistant(model, [manifested(explode)], transient=no_retries).copy(
+            update={"checkpointer": InMemorySaver()}
+        )
+        thread = {"configurable": {"thread_id": "t3"}}
+
+        with pytest.raises(RuntimeError):
+            graph.invoke({"messages": [HumanMessage("explode")]}, thread)
+        out = graph.invoke({"messages": [HumanMessage("again")]}, thread)
+
+        sent = model.seen[1][1:]  # beside the prompt
+        assert [m.type for m in sent] == ["human", "ai", "tool", "human"]
+        assert (sent[2].tool_call_id, sent[2].status, sent[2].content) == (
+            proposal.tool_calls[0]["id"],
+            "error",
+            UNRUN_CALL_ANSWER,
+        )
+        assert UNRUN_CALL_ANSWER == (
+            "Error: this call was not run; the run that proposed it ended first."
+        )
+        assert self.unanswered_in(sent) == set()
+        assert out["messages"][-1].type == "ai"
+
+    def test_after_the_tool_budget_each_call_is_answered_as_not_run(self, fake_llm, add_tool):
+        turn = propose(*[("add", {"a": 1, "b": 2})] * 21)
+        turn.invalid_tool_calls = malformed("add", '{"a": 1,').invalid_tool_calls
+        model = fake_llm([turn, answer()])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries).copy(
+            update={"checkpointer": InMemorySaver()}
+        )
+        thread = {"configurable": {"thread_id": "t3"}}
+
+        with pytest.raises(ToolCallBudgetExceededError):
+            graph.invoke({"messages": [HumanMessage("add")]}, thread)
+        out = graph.invoke({"messages": [HumanMessage("again")]}, thread)
+
+        sent = model.seen[1][1:]
+        assert [m.type for m in sent] == ["human", "ai", *["tool"] * 22, "human"]
+        proposed = [c["id"] for c in [*turn.tool_calls, *turn.invalid_tool_calls]]
+        assert [m.tool_call_id for m in sent[2:24]] == proposed
+        assert {m.status for m in sent[2:24]} == {"error"}
+        assert self.unanswered_in(sent) == set()
+        assert add_tool.calls == []
+        assert out["messages"][-1].type == "ai"
+
+    def test_counter_example_a_finished_thread_is_left_as_it_is(self, fake_llm, add_tool):
+        model = fake_llm([propose(("add", {"a": 1, "b": 2})), answer(), answer()])
+        graph = build_assistant(model, [add_tool.tool], transient=no_retries).copy(
+            update={"checkpointer": InMemorySaver()}
+        )
+        thread = {"configurable": {"thread_id": "t4"}}
+
+        first = graph.invoke({"messages": [HumanMessage("add")]}, thread)["messages"]
+        second = graph.invoke({"messages": [HumanMessage("again")]}, thread)["messages"]
+
+        assert [m.type for m in first] == ["human", "ai", "tool", "ai"]
+        assert second[:4] == first
+        assert [m.type for m in second] == ["human", "ai", "tool", "ai", "human", "ai"]

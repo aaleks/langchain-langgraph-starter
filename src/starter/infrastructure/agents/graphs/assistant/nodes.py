@@ -11,26 +11,62 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    BaseMessage,
+    RemoveMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
 from langchain_core.tools import BaseTool
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.prebuilt import ToolNode
 
-from starter.application.prompts import ASSISTANT_PROMPT
+from starter.application.prompts import ASSISTANT_PROMPT, INVALID_CALL_ANSWER, UNRUN_CALL_ANSWER
 from starter.domain.agents.budgets import (
     check_context_chars,
     check_model_calls,
     check_reply_output,
     check_tool_calls,
 )
-from starter.domain.agents.routing import keep_malformed_calls
+from starter.domain.agents.routing import keep_malformed_calls, unanswered_calls
 from starter.infrastructure.agents.graphs.assistant.state import AssistantState
 
 
 def start_run(state: AssistantState) -> dict[str, Any]:
     """Every run starts its budgets at zero, whatever the thread holds from an
-    earlier run (ASSISTANT-BUDGETS-PER-RUN)."""
-    return {"model_calls": 0, "tool_calls": 0}
+    earlier run (ASSISTANT-BUDGETS-PER-RUN), and on a transcript with every call
+    answered: a call an earlier run left -- it ended between a reply and its
+    tools -- is answered as not run (ASSISTANT-NO-CALL-LEFT-UNANSWERED)."""
+    update: dict[str, Any] = {"model_calls": 0, "tool_calls": 0}
+    answered = _answer_left_calls(state["messages"])
+    if answered is not None:
+        # Each answer must follow its reply, before the next message: the
+        # transcript is written again, in order, its ids kept.
+        update["messages"] = [RemoveMessage(id=REMOVE_ALL_MESSAGES), *answered]
+    return update
+
+
+def _answer_left_calls(messages: list[AnyMessage]) -> list[AnyMessage] | None:
+    """The transcript with an answer after each reply for every call of it left
+    unanswered, or None when there is none."""
+    answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+    rewritten: list[AnyMessage] = []
+    added = False
+    for message in messages:
+        rewritten.append(message)
+        if not isinstance(message, AIMessage):
+            continue
+        proposed = [call["id"] for call in message.tool_calls if call.get("id")]
+        proposed += [call["id"] for call in message.invalid_tool_calls if call.get("id")]
+        for call_id in unanswered_calls(proposed, answered):
+            rewritten.append(
+                ToolMessage(content=UNRUN_CALL_ANSWER, tool_call_id=call_id, status="error")
+            )
+            added = True
+    return rewritten if added else None
 
 
 def call_model(model: BaseChatModel, tools: Sequence[BaseTool]) -> Runnable:
@@ -54,7 +90,12 @@ def call_model(model: BaseChatModel, tools: Sequence[BaseTool]) -> Runnable:
             check_reply_output(
                 reply.response_metadata.get("finish_reason"), usage.get("output_tokens", 0)
             )
-        return {"messages": [_stored(reply)], "model_calls": state["model_calls"] + 1}
+        stored = _stored(reply)
+        if stored.id is not None and any(m.id == stored.id for m in state["messages"]):
+            # An id the transcript holds would replace that message where it
+            # stands; without one, the reply is appended under a new id.
+            stored = stored.model_copy(update={"id": None})
+        return {"messages": [stored], "model_calls": state["model_calls"] + 1}
 
     def sync(state: AssistantState) -> dict[str, Any]:
         return update(state, bound.invoke(prepare(state)))
@@ -75,25 +116,26 @@ def run_tools(tools: Sequence[BaseTool]) -> Runnable:
     again. A turn that would pass `TOOL_CALLS_PER_RUN` runs none of its calls."""
     tool_node = ToolNode(list(tools))
 
-    def proposed(state: AssistantState) -> tuple[AIMessage, list[ToolMessage]]:
+    def proposed(state: AssistantState) -> tuple[AIMessage, int, list[ToolMessage]]:
         reply = state["messages"][-1]
-        check_tool_calls(state["tool_calls"], len(reply.tool_calls))
-        return reply, [_invalid_call_answer(call) for call in reply.invalid_tool_calls]
-
-    def update(state: AssistantState, reply: AIMessage, answers: list) -> dict[str, Any]:
-        return {"messages": answers, "tool_calls": state["tool_calls"] + len(reply.tool_calls)}
+        spent = check_tool_calls(
+            state["tool_calls"],
+            well_formed=len(reply.tool_calls),
+            malformed=len(reply.invalid_tool_calls),
+        )
+        return reply, spent, [_invalid_call_answer(call) for call in reply.invalid_tool_calls]
 
     def sync(state: AssistantState, config: RunnableConfig) -> dict[str, Any]:
-        reply, answers = proposed(state)
+        reply, spent, answers = proposed(state)
         if reply.tool_calls:
             answers = [*tool_node.invoke(state, config)["messages"], *answers]
-        return update(state, reply, answers)
+        return {"messages": answers, "tool_calls": spent}
 
     async def asynchronous(state: AssistantState, config: RunnableConfig) -> dict[str, Any]:
-        reply, answers = proposed(state)
+        reply, spent, answers = proposed(state)
         if reply.tool_calls:
             answers = [*(await tool_node.ainvoke(state, config))["messages"], *answers]
-        return update(state, reply, answers)
+        return {"messages": answers, "tool_calls": spent}
 
     return RunnableLambda(sync, afunc=asynchronous, name="run_tools")
 
@@ -110,20 +152,13 @@ def _stored(reply: BaseMessage) -> BaseMessage:
 
 
 def _invalid_call_answer(call: dict[str, Any]) -> ToolMessage:
-    """The fixed answer to a malformed call: the model's own output is never
-    repeated -- it would double in the context -- and a streamed reply records no
-    parse error to quote."""
-    name = call.get("name") or "the tool"
+    """The fixed answer to a malformed call (ASSISTANT-TOOL-ERROR)."""
     return ToolMessage(
-        content=invalid_call_answer(name),
+        content=INVALID_CALL_ANSWER.format(name=call.get("name") or "the tool"),
         tool_call_id=call["id"],
         name=call.get("name"),
         status="error",
     )
-
-
-def invalid_call_answer(name: str) -> str:
-    return f"Error: the arguments for {name} are not valid JSON; send them again as a JSON object."
 
 
 def call_chars(messages: Iterable[BaseMessage]) -> int:

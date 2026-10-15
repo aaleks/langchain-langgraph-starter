@@ -60,7 +60,7 @@ needs 22 supersteps.
 | Determinism -- honestly tagged; every evaluated rule split once more | Clear | all deterministic: routes, counts, state shape |
 | Data -- provenance, freshness, what happens when a source is withdrawn | N-A | no new data; the task list is read as before |
 | Untrusted input -- anything ingested that this project did not write | Partial | a caller's run input could carry a counter to reset a budget: refused by the input schema (ASSISTANT-STATE-CONTRACT). Task text: unchanged, its story test kept |
-| Interfaces -- a flag, env var, output schema, embedding, default or graph id | Partial | the graph id stays `assistant`. Changes: the nodes (`start_run`, `call_model`, `run_tools`), the state's fields, and two error classes -- now domain errors. The local server keeps no thread between starts, so no thread migrates (design.md) |
+| Interfaces -- a flag, env var, output schema, embedding, default or graph id | Partial | the graph id stays `assistant`. Changes: the nodes (`start_run`, `call_model`, `run_tools`), the state's fields, and two error classes -- now domain errors. The local server saves threads in `.langgraph_api/`; a finished one runs on, and the policy for the rest is to delete that folder (design.md, Risks) |
 | Failure -- what the user sees when a dependency is down | Clear | unchanged: transient failures retried twice, then raised |
 | Cost -- tokens, time, money and storage per run | Clear | no new model call; one superstep more per run (`start_run`) |
 | Ownership -- who decides when a requirement turns out to be wrong | Clear | the owner |

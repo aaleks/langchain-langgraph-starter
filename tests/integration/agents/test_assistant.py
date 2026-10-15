@@ -510,8 +510,9 @@ class TestToolCallBudget:
     """ASSISTANT-TOOL-CALL-BUDGET: A run SHALL execute at most `TOOL_CALLS_PER_RUN`
     (20) tool calls: a turn whose proposed calls would take the run past it SHALL
     end the run with `ToolCallBudgetExceededError`, naming the count the turn would
-    reach and the limit, none of that turn's calls executed. A malformed call is
-    answered, never executed, and is not counted."""
+    reach and the limit, none of that turn's calls executed. Every well-formed call
+    counts, run or refused -- an unknown tool, arguments its schema refuses; a
+    malformed call is answered, never executed, and is not counted."""
 
     @staticmethod
     def turns(per_turn: int, count: int) -> list:
@@ -551,6 +552,16 @@ class TestToolCallBudget:
         assert len(add_tool.calls) == 20
         assert tool_messages(messages)[turn.invalid_tool_calls[0]["id"]][0] == "error"
         assert messages[-1].type == "ai" and messages[-1].tool_calls == []
+
+    def test_a_refused_call_counts(self, fake_llm, add_tool):
+        refused = propose(*[("multiply", {"a": 1, "b": 2})] * 20)
+        model = fake_llm([refused, *self.turns(1, 1), answer()])
+
+        with pytest.raises(ToolCallBudgetExceededError) as ended:
+            run(build_assistant(model, [add_tool.tool], transient=no_retries), "add")
+
+        assert ended.value.count == 21
+        assert add_tool.calls == []
 
     def test_counter_example_exactly_the_budget_is_not_past_it(self, fake_llm, add_tool):
         model = fake_llm([*self.turns(20, 1), answer()])
@@ -664,8 +675,8 @@ class TestContextBudget:
 
     @pytest.mark.parametrize(("total", "ends"), [(150_001, True), (150_000, False)])
     def test_as_the_server_runs_it_asynchronously(self, fake_llm, total, ends):
-        # The local server runs graphs with `astream`: a middleware with only a
-        # synchronous hook raises NotImplementedError there (measured).
+        # The local server runs graphs with `astream`, and an async-only tool
+        # runs only there: the context budget holds on that path too.
         import asyncio
 
         from langchain_core.tools import tool
@@ -714,6 +725,8 @@ class TestContextBudget:
         # refuses before the model is called either way.
         assert is_transient_failure(ContextBudgetExceededError(150_001, 150_000)) is False
         assert is_transient_failure(OutputBudgetExceededError(4096)) is False
+        assert is_transient_failure(ModelCallBudgetExceededError(10)) is False
+        assert is_transient_failure(ToolCallBudgetExceededError(21, 20)) is False
         assert model.calls == 1
 
     def test_counter_example_an_ai_messages_text_counts(self, fake_llm):
@@ -764,8 +777,9 @@ class TestOutputBudget:
     `MODEL_OUTPUT_TOKENS` (4,096) tokens (MODEL-OPENWEBUI-CLIENT) -- its finish
     reason `length`, or its output tokens reaching the cap -- SHALL end the run with
     `OutputBudgetExceededError`, naming the cap: never handed on as an answer, nor
-    its calls run. A backend that ignores the cap -- an Ollama model behind Open
-    WebUI without `num_predict` set there -- is outside this rule."""
+    its calls run, nor stored in the thread, nor retried. A backend that ignores the
+    cap -- an Ollama model behind Open WebUI without `num_predict` set there -- is
+    outside this rule."""
 
     @staticmethod
     def cut_off(message):
@@ -825,6 +839,28 @@ class TestOutputBudget:
         messages = run(build_assistant(fake_llm([reply]), [], transient=no_retries), "hello")
 
         assert messages[-1].type == "ai"
+
+    def test_a_cut_off_reply_is_not_stored_in_the_thread(self, fake_llm):
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        model = fake_llm([self.cut_off(answer("a long answer, cut"))])
+        graph = build_assistant(model, [], transient=no_retries).copy(
+            update={"checkpointer": InMemorySaver()}
+        )
+        thread = {"configurable": {"thread_id": "cut"}}
+
+        with pytest.raises(OutputBudgetExceededError):
+            graph.invoke({"messages": [HumanMessage("hello")]}, thread)
+
+        assert [m.type for m in graph.get_state(thread).values["messages"]] == ["human"]
+
+    def test_under_the_registrys_retry_predicate_it_is_not_retried(self, fake_llm):
+        model = fake_llm([self.cut_off(answer("cut")), answer()])
+
+        with pytest.raises(OutputBudgetExceededError):
+            run(retrying(model), "hello")
+
+        assert model.calls == 1
 
     def test_counter_example_a_reply_with_no_finish_reason_completes(self):
         from starter.infrastructure.models import build_offline_model

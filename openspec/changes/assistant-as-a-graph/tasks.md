@@ -68,3 +68,28 @@
   the local server and the owner's Open WebUI included
 - [x] 6.4 Documents: CLAUDE.md, ADR 0005's status, the roadmap, the
   measurement script's import
+
+## 7. Verify pass 1 -- the fixes
+
+- [x] 7.1 The retry waits: `RETRY_JITTER = False`, `RETRY_MAX_DELAY_SECONDS =
+  60` in the domain, pinned in `TestTopology`. The default suite went from
+  about 30 s to 18 s: the random waits are gone
+- [x] 7.2 ASSISTANT-NO-CALL-LEFT-UNANSWERED: `start_run` answers what an
+  earlier run left, in order (`unanswered_calls` in the domain)
+- [x] 7.3 A reply under a repeated id is appended under a new one
+- [x] 7.4 The tool budget's rule in the domain: `check_tool_calls(spent, *,
+  well_formed, malformed)`; a refused call counts, a row says so
+- [x] 7.5 The output budget: not stored, never retried; every budget error
+  asserted not transient
+- [x] 7.6 The proof gaps: every retry field compared; the budget row's AND; the
+  required keys and channels pinned; no interrupt asserted
+- [x] 7.7 The malformed-call and not-run sentences in `application/prompts.py`
+- [x] 7.8 Documents: the route table, the decisions, the risks accepted or
+  deferred, frame and design reconciled, stale text reworded
+- [x] 7.9 Mutations of the fixes, each red after one survivor was closed: a
+  malformed call left by a failed turn went unproved -- the budget row now
+  carries one. Red: jitter on; no max interval; left calls not answered;
+  answers appended at the end; a repeated id kept; refused calls free
+- [ ] 7.10 `check.sh live`: suite 310 and 8 live passed. The Open WebUI test
+  could not connect -- the owner's Open WebUI was not running
+  (`localhost:8080` refused). To re-run when it is
