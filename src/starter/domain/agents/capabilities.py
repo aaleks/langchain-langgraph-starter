@@ -42,11 +42,17 @@ class Capability:
 
 
 def check_capability(
-    tool_name: str, capability: object, calls_per_run: int, *, writer_given: bool
+    tool_name: str,
+    capability: object,
+    calls_per_run: int,
+    *,
+    writer_given: bool,
+    builder_given: bool = False,
 ) -> None:
     """Refuse, naming the tool, a manifest the assistant cannot honour.
     `calls_per_run` is the run's tool-call budget, the one limit enforced;
-    `writer_given`, whether the task list's writer was composed with the tools."""
+    `writer_given`, whether the task list's writer was composed with the tools;
+    `builder_given`, whether the tool says how its arguments become a write."""
     if not isinstance(capability, Capability):
         raise ValueError(f"tool {tool_name!r} has no capability manifest")
     if capability.name != tool_name:
@@ -57,7 +63,7 @@ def check_capability(
             "a tool reads, or writes after the owner's approval"
         )
     if capability.side_effect == "write":
-        _check_write(tool_name, capability, writer_given)
+        _check_write(tool_name, capability, writer_given, builder_given)
     if capability.retry != "none":
         raise ValueError(
             f"tool {tool_name!r} declares the retry class {capability.retry!r}: "
@@ -70,7 +76,9 @@ def check_capability(
         )
 
 
-def _check_write(tool_name: str, capability: Capability, writer_given: bool) -> None:
+def _check_write(
+    tool_name: str, capability: Capability, writer_given: bool, builder_given: bool
+) -> None:
     """A write runs once per key and is recorded, through the writer, after the
     owner approves: a manifest that promises less, or a write with no writer to
     apply it, is refused."""
@@ -82,3 +90,5 @@ def _check_write(tool_name: str, capability: Capability, writer_given: bool) -> 
         raise ValueError(f"tool {tool_name!r} declares a write that is not idempotent")
     if capability.audit_event is None:
         raise ValueError(f"tool {tool_name!r} declares a write with no audit event")
+    if not builder_given:
+        raise ValueError(f"tool {tool_name!r} declares a write with no builder for it")

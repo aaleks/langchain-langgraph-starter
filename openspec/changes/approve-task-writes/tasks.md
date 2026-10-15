@@ -74,3 +74,22 @@
   closed with rows: a reader's wait other than its manifest; one review config
   per tool; writes spending the tool-call budget
 - [x] 10.2 Documents: CLAUDE.md, the roadmap, the measurement script
+
+## 11. Verify pass 1 -- the fixes
+
+- [x] 11.1 Each well-formed call of a reply under an id of its own
+  (`calls_to_rename`); the owner's `reject, approve` on two writes once under
+  one id now rejects the one and applies the other
+- [x] 11.2 One write a step, answered and routed from the outcome the store
+  recorded; a failure part-way then new input; a replay deciding otherwise;
+  rules changed while a write waited
+- [x] 11.3 The task's title and status in the description, quoted as JSON;
+  strict schema; the key a JSON array, checked with the proposal; no thread,
+  no proposal; a write without a builder refused
+- [x] 11.4 Browsers: `CORS_ALLOW_ORIGINS=http://localhost:3000`, the owner's
+  choice -- `TestBrowserOrigins`, live preflights from three origins
+- [x] 11.5 Test gaps closed: NO-CALL row 4, the write tools' defaults and
+  every direct call, the registered graph's write reaching `TASKS_DB`, the
+  replay re-running, the read beside a write succeeding
+- [x] 11.6 Mutations of the fixes, 18, each red -- one, at first an error
+  rather than a red, closed with the changed-rules scenario

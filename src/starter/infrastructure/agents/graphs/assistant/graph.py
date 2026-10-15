@@ -58,7 +58,7 @@ def assistant_graph(
     writes = {t.name: t for t in tools if t.metadata["capability"].side_effect == "write"}
     reads = [t for t in tools if t.name not in writes]
     builder.add_node("run_tools", nodes.run_tools(reads, writes))
-    builder.add_node("review_writes", nodes.review_writes(writes))
+    builder.add_node("review_writes", nodes.review_writes(writes, writer))
     builder.add_node("apply_writes", nodes.apply_writes(writes, writer))
     builder.add_edge(START, "start_run")
     builder.add_edge("start_run", "call_model")
@@ -67,5 +67,7 @@ def assistant_graph(
         "run_tools", routes.after_tools(writes), ["review_writes", "call_model"]
     )
     builder.add_edge("review_writes", "apply_writes")
-    builder.add_conditional_edges("apply_writes", routes.after_writes, ["call_model", END])
+    builder.add_conditional_edges(
+        "apply_writes", routes.after_writes(writes), ["apply_writes", "call_model", END]
+    )
     return builder

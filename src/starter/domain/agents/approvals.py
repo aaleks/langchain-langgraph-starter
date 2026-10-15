@@ -3,6 +3,8 @@ and the key a decision is recorded under (docs/decisions/0009)."""
 
 from __future__ import annotations
 
+import json
+
 from starter.domain.tasks import (
     CreateTask,
     Decision,
@@ -13,16 +15,31 @@ from starter.domain.tasks import (
 )
 
 
-def describe_write(write: TaskWrite) -> str:
-    """One line the owner reads before deciding."""
+def describe_write(write: TaskWrite, found: tuple[str, str] | None = None) -> str:
+    """One line the owner reads before deciding. A task named by its id is named
+    by its title and status as the list holds them -- `found` -- never by the
+    model's word for it. Text from the list or the model is quoted as JSON, so a
+    quote or a line break in it cannot read as another action."""
     if isinstance(write, CreateTask):
-        assigned = f", assigned to {write.task.assignee}" if write.task.assignee else ""
-        return f'Add the task "{write.task.title}"{assigned}'
+        assigned = f", assigned to {_quoted(write.task.assignee)}" if write.task.assignee else ""
+        return f"Add the task {_quoted(write.task.title)}{assigned}"
+    task = f"task {write.task_id}{_as_found(found)}"
     if isinstance(write, ReassignTask):
         if not write.assignee:
-            return f"Unassign task {write.task_id}"
-        return f"Reassign task {write.task_id} to {write.assignee}"
-    return f"Close task {write.task_id}"
+            return f"Unassign {task}"
+        return f"Reassign {task}, to {_quoted(write.assignee)}"
+    return f"Close {task}"
+
+
+def _as_found(found: tuple[str, str] | None) -> str:
+    if found is None:
+        return ", which does not exist"
+    title, status = found
+    return f", {_quoted(title)}" + ("" if status == "open" else f", {status}")
+
+
+def _quoted(text: str) -> str:
+    return json.dumps(text, ensure_ascii=False)
 
 
 def read_decisions(resume: object, count: int) -> list[Decision]:
@@ -39,8 +56,10 @@ def read_decisions(resume: object, count: int) -> list[Decision]:
 def write_key(thread_id: str, reply_id: str, call_id: str) -> str:
     """The key a decision is recorded under: the thread, the reply that proposed
     the call, the call -- the same however often the write is replayed. Not the
-    superstep: a replay runs the write at another one (ASSISTANT-WRITE-KEY)."""
-    key = f"{thread_id}:{reply_id}:{call_id}"
+    superstep: a replay runs the write at another one. A JSON array: each part
+    comes from outside, and a `:` in one must not make it another's
+    (ASSISTANT-WRITE-KEY)."""
+    key = json.dumps([thread_id, reply_id, call_id], ensure_ascii=False)
     check_write_key(key)
     return key
 

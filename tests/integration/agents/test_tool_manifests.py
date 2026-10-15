@@ -67,11 +67,12 @@ class TestToolManifests:
     assistant cannot honour: none, or one that is not a manifest; one naming another
     tool; a side effect other than `read` or `write`; a `write` that is not
     idempotent or names no audit event, or that arrives without the task list's
-    writer -- each write runs only through the approval route
-    (ASSISTANT-WRITE-APPROVAL), applied by that writer; a retry class other than
-    `none` -- a tool's failure propagates; a rate limit other than the run's
-    `TOOL_CALLS_PER_RUN`, the one limit enforced. A tool declaring `read` SHALL be
-    given only a view of its store that refuses a write, never the store."""
+    writer or without a builder turning its arguments into a write -- each write
+    runs only through the approval route (ASSISTANT-WRITE-APPROVAL), applied by that
+    writer; a retry class other than `none` -- a tool's failure propagates; a rate
+    limit other than the run's `TOOL_CALLS_PER_RUN`, the one limit enforced. A tool
+    declaring `read` SHALL be given only a view of its store that refuses a write,
+    never the store."""
 
     def test_the_task_tools_manifests(self, store, fake_llm):
         tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
@@ -155,6 +156,7 @@ class TestToolManifests:
             ([plain(capability=WRITE)], False, ["add", "writer"]),
             ([plain(capability=replace(WRITE, idempotent=False))], True, ["add", "idempotent"]),
             ([plain(capability=replace(WRITE, audit_event=None))], True, ["add", "audit"]),
+            ([plain(capability=WRITE)], True, ["add", "builder"]),
             ([plain(capability=replace(READ, side_effect="network"))], False, ["add", "network"]),
             ([plain(capability=replace(READ, retry="transient"))], False, ["add", "transient"]),
             ([plain(capability=replace(READ, retry="always"))], False, ["add", "always"]),
@@ -169,6 +171,7 @@ class TestToolManifests:
             "a-write-without-a-writer",
             "a-write-not-idempotent",
             "a-write-without-an-audit-event",
+            "a-write-without-a-builder",
             "another-side-effect",
             "a-retry",
             "another-retry-class",
@@ -210,6 +213,11 @@ class TestTaskWriteTools:
         types = {name: spec["type"] for name, spec in parameters["properties"].items()}
         return sorted(parameters.get("required", [])), types
 
+    @staticmethod
+    def defaults(built) -> dict[str, object]:
+        properties = convert_to_openai_tool(built)["function"]["parameters"]["properties"]
+        return {name: spec["default"] for name, spec in properties.items() if "default" in spec}
+
     def test_the_schemas_the_model_sees(self):
         tools = {t.name: t for t in write_tools()}
 
@@ -217,16 +225,27 @@ class TestTaskWriteTools:
             ["title"],
             {"title": "string", "assignee": "string", "notes": "string"},
         )
+        assert self.defaults(tools["add_task"]) == {"assignee": "", "notes": ""}
         assert self.schema(tools["close_task"]) == (["task_id"], {"task_id": "integer"})
+        assert self.defaults(tools["close_task"]) == {}
+        assert self.defaults(tools["reassign_task"]) == {}
         assert self.schema(tools["reassign_task"]) == (
             ["assignee", "task_id"],
             {"task_id": "integer", "assignee": "string"},
         )
 
-    def test_counter_example_called_directly_nothing_is_written(self, store):
-        add_task = next(t for t in write_tools() if t.name == "add_task")
+    @pytest.mark.parametrize(
+        ("name", "arguments"),
+        [
+            ("add_task", {"title": "Renew passport"}),
+            ("close_task", {"task_id": 1}),
+            ("reassign_task", {"task_id": 1, "assignee": "ana"}),
+        ],
+    )
+    def test_counter_example_called_directly_nothing_is_written(self, store, name, arguments):
+        called = next(t for t in write_tools() if t.name == name)
 
         with pytest.raises(RuntimeError):
-            add_task.invoke({"title": "Renew passport"})
+            called.invoke(arguments)
 
         assert store.reader(1.0).open_tasks(50) == {"tasks": [], "more": 0}

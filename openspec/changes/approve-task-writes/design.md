@@ -14,16 +14,28 @@ decision. This change joins them through the owner's approval.
    - `review_writes` is a decide node. It builds the approval request from
      the reply's waiting write calls, and `interrupt()`s. On resume it
      returns the decisions as state.
-   - `apply_writes` is a write node. It applies or rejects each waiting
-     write through the writer, and answers each call.
+   - `apply_writes` is a write node. It decides one waiting write a step
+     through the writer, and answers it, then routes back to itself while
+     another waits. A write's answer is stored with it, so a failure after
+     it never leaves it unanswered, nor answered "not run" by the next run
+     (verify pass 1, finding 3).
+   - The answer and the route follow the outcome the writer returns -- the
+     one recorded under the key -- never a later decision: a replay that
+     decides otherwise is told what was done (finding 4).
    - They are separate nodes, so the write sits after the interrupt in its
      own step, and the interrupt's node, re-run on resume, writes nothing.
 2. **`run_tools` splits the reply's calls:**
    - Reads and unknown tools go through `ToolNode`, as before. It is given a
      copy of the reply holding only those calls.
-   - Write calls are checked, by the tool's schema (pydantic) and the
-     domain's builder (TASKS-WRITE-VALUES). A refused one is answered then
-     and there; an accepted one is left unanswered, waiting.
+   - Write calls are checked:
+     - by the tool's schema (pydantic, strict, so `true` or `"1"` is no task
+       id);
+     - by the domain's builder (TASKS-WRITE-VALUES);
+     - for a thread to pause on;
+     - for a key short enough to record.
+
+     A refused one is answered then and there; an accepted one is left
+     unanswered, waiting.
    - Malformed calls are answered as before.
    - The tool-call budget counts every well-formed call, writes included.
 
@@ -35,6 +47,11 @@ decision. This change joins them through the owner's approval.
    - `action_requests`: one per waiting call, in the reply's order -- the
      tool's name, the checked arguments, and a description from the
      domain's `describe_write`.
+     - A task named by its id is described by its title and status, read
+       from the list by the writer's `task()`. The model's word for it
+       never reaches the owner: task text could steer it (finding 5).
+     - Text from the list or the model is quoted as JSON, so a quote or a
+       line break cannot read as another action (finding 6).
    - `review_configs`: one per tool named, in first-named order, each
      allowing `approve` and `reject`.
 
@@ -43,12 +60,18 @@ decision. This change joins them through the owner's approval.
      any other decision rejects it.
    - A resume that is not `{"decisions": [...]}` of the right length
      rejects every action.
-4. **The key is `<thread id>:<reply id>:<call id>`**, from the domain's
-   `write_key`, checked against `WRITE_KEY_MAX`.
+4. **The key is `["<thread id>", "<reply id>", "<call id>"]`**, a JSON
+   array from the domain's `write_key`, so a `:` in one part never makes it
+   another's (finding 8). It is checked against `WRITE_KEY_MAX` with the
+   proposal, before the owner is asked (finding 9).
    - The thread id is `config["configurable"]["thread_id"]`.
    - The reply id is the stored id of the AI message that proposed the
      call. It is unique in the transcript (ASSISTANT-STATE-CONTRACT), and
      the same on every replay.
+   - The call id is unique in its reply: `call_model` gives a well-formed
+     call whose id is missing, or used already in the reply, a new one
+     (`calls_to_rename`). Two calls under one id once let the owner's
+     rejection of one become an approval of both (finding 1).
    - The superstep was the first design, and is wrong. Measured: a replay
      from the checkpoint before `apply_writes` ran it at step 6 where the
      first run used 5, and the write was applied twice. The roadmap's "per
@@ -62,9 +85,12 @@ decision. This change joins them through the owner's approval.
    - refused: the same keys plus a `reason`, status `error`;
    - rejected: the fixed sentence `REJECTED_ANSWER` in `application/prompts.py`,
      status `error`.
-6. **After the writes**, the domain's `route_after_writes` on the decisions
-   goes to `call_model` when all approved, and to the end when any rejected
-   -- the owner's rule.
+6. **After a write**, the domain's `route_after_writes` goes back to
+   `apply_writes` while a write of the reply waits. Then it goes to
+   `call_model` when none was rejected, and to the end when one was -- the
+   owner's rule. A write the rules refuse by the time it is decided -- they
+   changed while it waited -- is answered as not proposed, recorded as
+   `refused`, and does not end the run.
 7. **State version 2** adds `write_decisions: dict[str, str]`, by call id.
    - `start_run` resets it to `{}`.
    - `review_writes` writes it whole, the channel being last-value.
@@ -79,14 +105,23 @@ decision. This change joins them through the owner's approval.
      into a write.
 9. **The factory takes the writer**: `build_assistant(model, tools, *,
    transient, initial_delay, writer=None)`.
-   - A write tool given without a writer is refused when the graph is
-     composed (TOOLS-MANIFEST), as is a write manifest that is not
-     idempotent or names no audit event.
+   - Refused when the graph is composed (TOOLS-MANIFEST):
+     - a write tool given without a writer;
+     - a write manifest that is not idempotent, or names no audit event;
+     - a write tool with no builder in `metadata["write"]`.
    - The registry passes `store.writer()`.
    - Reads are built over `store.reader(...)`, never the store (4b1's
      finding 4): `read_tools(reader)` and `write_tools()`.
 10. **Prompt version 2** names the five tools and says each write waits for
     the owner's approval. Its digest is pinned.
+11. **Browsers: only `http://localhost:3000`.** LangGraph's server allows
+    every origin by default, so a page in the owner's browser could read a
+    paused run and approve it (finding 2). The owner chose, 2026-10-15, to
+    allow only Agent Chat UI's default origin.
+    - `scripts/serve.sh` starts the server with `CORS_ALLOW_ORIGINS` set to
+      that origin, on the `exec` line, outside the local-only environment's
+      `export`s, which the method holds equal to the session's settings.
+    - The SDK and `curl` are not browsers, and are unaffected.
 
 ## Orchestration design
 
@@ -96,7 +131,7 @@ decision. This change joins them through the owner's approval.
 | `call_model` | decide | `messages`, `model_calls` | the reply, within the budgets | `run_tools`, `END` | `route_after_reply` |
 | `run_tools` | read | the reply, `tool_calls` | reads and malformed calls answered; write calls checked, refused ones answered | `review_writes`, `call_model` | `route_after_tools` |
 | `review_writes` | decide | the waiting write calls | `interrupt()`; on resume, `write_decisions` | `apply_writes` | the owner (`read_decisions`) |
-| `apply_writes` | write | the waiting write calls, `write_decisions` | each applied or rejected by the writer, once per key; each answered | `call_model`, `END` | `route_after_writes` |
+| `apply_writes` | write | the next waiting write call, `write_decisions` | it applied or rejected by the writer, once per key, and answered from the outcome | `apply_writes`, `call_model`, `END` | `route_after_writes` |
 
 - **State:** `AssistantState` v2: `messages`, `model_calls`, `tool_calls`,
   `write_decisions`.
@@ -109,9 +144,10 @@ decision. This change joins them through the owner's approval.
   - a refused write after approval: answered with its reason, the run goes
     on;
   - a rejection: answered, the run ends;
-  - the store's error at apply: raised, the thread paused at
-    `apply_writes`, and a continue re-runs it under the same keys;
-  - a key too long: `ValueError`.
+  - the store's error at apply: raised. The writes before it are answered
+    and stored, and the thread stays at `apply_writes`: a continue re-runs
+    the failed one under its key; new input answers it as not run;
+  - a key too long, or no thread: the proposal refused.
 - **Interrupts:** `review_writes` only; resumed on the same thread with
   `Command(resume=...)`.
 - **Tools:** reads hold a reader; writes hold nothing and are applied by
@@ -159,7 +195,7 @@ decision. This change joins them through the owner's approval.
 - **[A resume the owner got wrong]** -> it rejects. The safe outcome is no
   effect.
 - **[The model proposes the same write twice in two turns]** -> two
-  proposals, two decisions. The key holds the step, so each is its own
+  proposals, two decisions. The key holds the reply, so each is its own
   write. That is what the owner approved.
 
 ## Migration and rollback

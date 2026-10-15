@@ -218,6 +218,32 @@ class TestAssistantIsRegistered:
         assert exported._replace(retry_on=None) == composed._replace(retry_on=None)
         assert exported.retry_on is is_transient_failure
 
+    def test_the_registered_graphs_approved_write_reaches_the_list_tasks_db_names(
+        self, monkeypatch, tmp_path
+    ):
+        import sqlite3
+
+        from langgraph.checkpoint.memory import InMemorySaver
+        from langgraph.types import Command
+
+        task_list = tmp_path / "tasks.sqlite3"
+        monkeypatch.setenv("TASKS_DB", str(task_list))
+        replies = [tool_call("add_task", {"title": "Call the plumber"}), "done"]
+        with openwebui_stub(replies=replies) as stub:
+            monkeypatch.setenv("OPENWEBUI_URL", stub.url)
+            monkeypatch.setenv("OPENWEBUI_API_KEY", "sk-local")
+            monkeypatch.setenv("OPENWEBUI_MODEL", "llama3.1:8b")
+            registered, _ = load_registered("assistant")
+            paused = registered.copy(update={"checkpointer": InMemorySaver()})
+            thread = {"configurable": {"thread_id": "registered"}}
+            paused.invoke({"messages": [HumanMessage("add the plumber")]}, thread)
+            paused.invoke(Command(resume={"decisions": [{"type": "approve"}]}), thread)
+
+        db = sqlite3.connect(task_list)
+        titles = [title for (title,) in db.execute("SELECT title FROM tasks")]
+        db.close()
+        assert titles == ["Call the plumber"]
+
     def test_the_registered_graph_completes_a_run_with_the_network_refused(
         self, no_network, monkeypatch
     ):

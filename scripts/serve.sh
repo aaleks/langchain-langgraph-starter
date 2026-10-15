@@ -96,4 +96,9 @@ export LANGSMITH_API_KEY='' LANGCHAIN_API_KEY='' LANGSMITH_CONTROL_PLANE_API_KEY
 export LANGSMITH_ENDPOINT=http://127.0.0.1:9 LANGCHAIN_ENDPOINT=http://127.0.0.1:9
 export LANGGRAPH_CLI_NO_ANALYTICS=1 LANGGRAPH_NO_VERSION_CHECK=true
 
-exec uv run langgraph dev --config "$config" --host 127.0.0.1 --port "$port" --no-browser ${args[@]+"${args[@]}"}
+# Browsers: only Agent Chat UI's default origin may call the server -- the
+# owner's choice (approve-task-writes, verify finding 2). LangGraph's default,
+# every origin, would let any web page approve a write. Not part of the
+# local-only environment above: it guards the owner's writes, not LangSmith.
+CORS_ALLOW_ORIGINS=http://localhost:3000 \
+  exec uv run langgraph dev --config "$config" --host 127.0.0.1 --port "$port" --no-browser ${args[@]+"${args[@]}"}

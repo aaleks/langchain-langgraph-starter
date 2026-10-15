@@ -20,8 +20,9 @@ class TestRouteAfterReply:
     of them has an id; a reply it does not keep them for is stored without them
     (ASSISTANT-TOOL-ERROR). After the tools, `route_after_tools` SHALL go to
     `review_writes` when a write call waits for the owner, and to `call_model`
-    otherwise; after the writes, `route_after_writes` SHALL go to `call_model` when
-    every decision approved, and to the end when any rejected."""
+    otherwise; after a write, `route_after_writes` SHALL go back to `apply_writes`
+    while a write of the reply waits, then to `call_model` when none was rejected,
+    and to the end when any was."""
 
     @pytest.mark.parametrize(
         ("well_formed", "malformed", "route"),
@@ -45,16 +46,18 @@ class TestRouteAfterReply:
         assert route_after_tools(waiting_writes=waiting) == route
 
     @pytest.mark.parametrize(
-        ("decisions", "route"),
+        ("decisions", "waiting", "route"),
         [
-            (["approve", "approve"], "call_model"),
-            (["approve", "reject"], "end"),
-            ([], "call_model"),
+            (["approve", "approve"], 0, "call_model"),
+            (["approve", "reject"], 0, "end"),
+            (["refused"], 0, "call_model"),
+            ([], 0, "call_model"),
+            (["reject"], 1, "apply_writes"),
         ],
-        ids=["all-approved", "one-rejected", "none"],
+        ids=["all-approved", "one-rejected", "refused", "none", "one-waiting"],
     )
-    def test_after_the_writes_a_rejection_ends_the_run(self, decisions, route):
-        assert route_after_writes(decisions) == route
+    def test_after_a_write_the_next_then_a_rejection_ends_the_run(self, decisions, waiting, route):
+        assert route_after_writes(decisions, waiting=waiting) == route
 
     def test_counter_example_an_empty_id_is_no_id(self):
         assert keep_malformed_calls(["a", ""]) is False

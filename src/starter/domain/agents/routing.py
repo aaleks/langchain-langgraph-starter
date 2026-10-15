@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Set
+from collections.abc import Iterable, Sequence, Set
 from typing import Literal
 
 Route = Literal["run_tools", "end"]
@@ -36,7 +36,27 @@ def route_after_tools(*, waiting_writes: int) -> Literal["review_writes", "call_
     return "review_writes" if waiting_writes else "call_model"
 
 
-def route_after_writes(decisions: Iterable[str]) -> Literal["call_model", "end"]:
-    """Every write approved: the model goes on. Any rejected: the run ends, the
-    model not called again -- the owner's rule (ASSISTANT-WRITE-DECISIONS)."""
-    return "end" if any(decision != "approve" for decision in decisions) else "call_model"
+def route_after_writes(
+    decisions: Iterable[str], *, waiting: int
+) -> Literal["apply_writes", "call_model", "end"]:
+    """One write is decided per step, so the next waits its turn. When none is
+    left: any the owner rejected ends the run, the model not called again -- the
+    owner's rule; otherwise the model goes on (ASSISTANT-WRITE-DECISIONS)."""
+    if waiting:
+        return "apply_writes"
+    return "end" if any(decision == "reject" for decision in decisions) else "call_model"
+
+
+def calls_to_rename(ids: Sequence[str | None], taken: Set[str]) -> list[int]:
+    """The positions of a reply's well-formed calls whose id is missing, or used
+    already -- by an earlier call of the reply, or in `taken`: each gets an id of
+    its own, so no answer, decision or key can be another call's
+    (ASSISTANT-STATE-CONTRACT)."""
+    seen = set(taken)
+    renamed = []
+    for position, call_id in enumerate(ids):
+        if not call_id or call_id in seen:
+            renamed.append(position)
+        else:
+            seen.add(call_id)
+    return renamed

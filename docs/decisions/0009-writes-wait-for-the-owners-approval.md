@@ -34,7 +34,7 @@ What is settled here is the interface a client depends on:
 - **Anything but an exact approval rejects.** A malformed resume rejects
   every action.
 - **`apply_writes` decides each write through the store's writer**, under
-  the key `<thread>:<reply>:<call>` -- the reply that proposed it, whose id
+  the key `[thread, reply, call]`, a JSON array -- the reply that proposed it, whose id
   is the same on every replay; the superstep is not (measured). Approved:
   applied once, answered with
   its outcome. Rejected: recorded, answered, and the run ends.
@@ -42,6 +42,15 @@ What is settled here is the interface a client depends on:
   schema and the task list's rules -- and is checked again when it is
   applied.
 - **Write tools are proposals only:** they cannot be run directly.
+- **The owner is shown the task by its title and status as the list holds
+  them**, never by the model's word for it.
+- **Writes are decided one a step**, each answered with the outcome the
+  store recorded for its key.
+- **Each call of a reply has an id of its own**, so a decision is never
+  another call's.
+- **Browsers:** only `http://localhost:3000` may call the local server --
+  the owner's choice, 2026-10-15. Any other page in the owner's browser
+  gets no CORS permission, and so cannot approve a write.
 
 ## Consequences
 

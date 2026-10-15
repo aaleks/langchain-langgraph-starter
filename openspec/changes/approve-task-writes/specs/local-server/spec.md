@@ -15,3 +15,20 @@ Through the local server's API (`bash scripts/serve.sh`), a run whose model prop
 #### Scenario: Counter-example -- rejected through the server
 - **WHEN** the same, resumed with a rejection
 - **THEN** the thread's status is `idle`, its last message the rejection's tool message, and the list holds no task of that thread's
+
+### Requirement: LOCAL-SERVER-BROWSER-ORIGINS
+`bash scripts/serve.sh` SHALL let a web page call the server only from `http://localhost:3000`, Agent Chat UI's default origin -- the owner's choice (2026-10-15): a cross-origin request from any other origin SHALL get no CORS permission, so no other page in the owner's browser can read a paused run or approve a write. A client that is not a browser -- the SDK, `curl` -- is unaffected.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/acceptance/agents/test_local_server.py::TestBrowserOrigins`
+
+#### Scenario: A browser's preflight
+| `Origin` of a preflight to `/threads` | `Access-Control-Allow-Origin` in the answer |
+|---|---|
+| `http://localhost:3000` | `http://localhost:3000` |
+| `https://evil.example` | none |
+| `http://localhost:8080` | none |
+
+#### Scenario: Counter-example -- set by the script, not by chance
+- **THEN** `scripts/serve.sh` starts the server with `CORS_ALLOW_ORIGINS` exactly `http://localhost:3000`, and outside the local-only environment's `export` lines
+

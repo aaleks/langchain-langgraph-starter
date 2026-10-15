@@ -35,7 +35,14 @@ def after_tools(writes: Mapping[str, BaseTool]):
     return route
 
 
-def after_writes(state: AssistantState) -> str:
-    """To the model when every write was approved; the end when any was rejected."""
-    route = route_after_writes(state["write_decisions"].values())
-    return END if route == "end" else route
+def after_writes(writes: Mapping[str, BaseTool]):
+    def route(state: AssistantState) -> str:
+        """The next waiting write; then the model when none was rejected, the end
+        when one was."""
+        route = route_after_writes(
+            state["write_decisions"].values(),
+            waiting=len(waiting_writes(state["messages"], writes)),
+        )
+        return END if route == "end" else route
+
+    return route

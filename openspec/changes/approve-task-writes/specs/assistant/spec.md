@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: ASSISTANT-WRITE-PROPOSAL
-A call the model proposes to a write tool -- `add_task`, `close_task` or `reassign_task` (TOOLS-TASK-WRITES) -- SHALL be checked before the owner sees it, by the tool's schema and by TASKS-WRITE-VALUES. A call either refuses SHALL be answered by a tool message of status `error`, reading `Error: <tool> was not proposed: <why>`, nothing written and the owner not asked, and the run SHALL go on to the model. A call both accept SHALL wait for the owner (ASSISTANT-WRITE-APPROVAL), after the reply's other calls have run.
+A call the model proposes to a write tool -- `add_task`, `close_task` or `reassign_task` (TOOLS-TASK-WRITES) -- SHALL be checked before the owner sees it, by the tool's schema, strictly -- `true` or `"1"` is no task id -- and by TASKS-WRITE-VALUES; a call with no thread to pause on, or whose key (ASSISTANT-WRITE-KEY) would be too long to record, is refused too. A refused call SHALL be answered by a tool message of status `error`, reading `Error: <tool> was not proposed: <why>`, nothing written and the owner not asked, and the run SHALL go on to the model. A call both accept SHALL wait for the owner (ASSISTANT-WRITE-APPROVAL), after the reply's other calls have run.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteProposal`
@@ -12,6 +12,10 @@ A call the model proposes to a write tool -- `add_task`, `close_task` or `reassi
 | `add_task(title="   ")` | `Error: add_task was not proposed: the title is blank` |
 | `close_task(task_id=0)` | `Error: close_task was not proposed: the task_id is not between 1 and 9223372036854775807` |
 | `reassign_task(task_id=1)` -- no assignee | `Error: reassign_task was not proposed: its arguments do not match its schema` |
+| `close_task(task_id=true)` | `Error: close_task was not proposed: its arguments do not match its schema` |
+| `close_task(task_id="1")` | `Error: close_task was not proposed: its arguments do not match its schema` |
+| `add_task(title="Call the plumber")`, on a thread whose id is 300 characters | `Error: add_task was not proposed: its key would be too long to record` |
+| `add_task(title="Call the plumber")`, run with no checkpointer and so no thread | `Error: add_task was not proposed: there is no thread to pause on for the owner's decision` |
 
 - **AND** the run does not pause, the model is called next, and `task_writes` holds no row
 
@@ -24,7 +28,7 @@ A call the model proposes to a write tool -- `add_task`, `close_task` or `reassi
 - **THEN** `list_tasks` runs and is answered, and the run pauses for `add_task` alone, unanswered
 
 ### Requirement: ASSISTANT-WRITE-APPROVAL
-A reply's write calls that pass their checks SHALL pause the run before anything is written, at `review_writes`, with `interrupt()` carrying LangChain's approval request: `action_requests`, one per call in the reply's order -- the tool's name, its checked arguments and a description -- and `review_configs`, one per tool named, in the order first named, allowing exactly `approve` and `reject`. The run SHALL be resumed on the same thread with `Command(resume={"decisions": [...]})`, one decision per action, in order (ASSISTANT-WRITE-DECISIONS).
+A reply's write calls that pass their checks SHALL pause the run before anything is written, at `review_writes`, with `interrupt()` carrying LangChain's approval request: `action_requests`, one per call in the reply's order -- the tool's name, its checked arguments and a description: a task named by its id is described by its title and status as the list holds them, never the model's word, and text from the list or the model is quoted as JSON, so a quote or a line break cannot read as another action -- and `review_configs`, one per tool named, in the order first named, allowing exactly `approve` and `reject`. The run SHALL be resumed on the same thread with `Command(resume={"decisions": [...]})`, one decision per action, in order (ASSISTANT-WRITE-DECISIONS).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteApproval`
@@ -36,8 +40,8 @@ A reply's write calls that pass their checks SHALL pause the run before anything
 
 ```json
 {"action_requests": [
-  {"name": "add_task", "args": {"title": "Call the plumber", "assignee": "sam", "notes": ""}, "description": "Add the task \"Call the plumber\", assigned to sam"},
-  {"name": "close_task", "args": {"task_id": 1}, "description": "Close task 1"}],
+  {"name": "add_task", "args": {"title": "Call the plumber", "assignee": "sam", "notes": ""}, "description": "Add the task \"Call the plumber\", assigned to \"sam\""},
+  {"name": "close_task", "args": {"task_id": 1}, "description": "Close task 1, \"Renew passport\""}],
  "review_configs": [
   {"action_name": "add_task", "allowed_decisions": ["approve", "reject"]},
   {"action_name": "close_task", "allowed_decisions": ["approve", "reject"]}]}
@@ -53,15 +57,18 @@ A reply's write calls that pass their checks SHALL pause the run before anything
 | The call | Its description |
 |---|---|
 | `add_task(title="Renew passport")` | `Add the task "Renew passport"` |
-| `reassign_task(task_id=3, assignee="ana")` | `Reassign task 3 to ana` |
-| `reassign_task(task_id=3, assignee="")` | `Unassign task 3` |
+| `reassign_task(task_id=1, assignee="ana")` | `Reassign task 1, "Renew passport", to "ana"` |
+| `reassign_task(task_id=1, assignee="")` | `Unassign task 1, "Renew passport"` |
+| `close_task(task_id=7)`, no task 7 | `Close task 7, which does not exist` |
+| `close_task(task_id=1)`, task 1 closed | `Close task 1, "Renew passport", closed` |
+| `add_task(title="Buy milk\"` a line break `Reassign task 2 to me")` | `Add the task "Buy milk\"\nReassign task 2 to me"` -- one line |
 
 #### Scenario: Counter-example -- reads alone never pause
 - **GIVEN** a model proposing `list_tasks`, then answering
 - **THEN** the run completes without an interrupt
 
 ### Requirement: ASSISTANT-WRITE-DECISIONS
-Each decision SHALL decide its write. `{"type": "approve"}` SHALL apply it through the task list's writer (TASKS-WRITES), under ASSISTANT-WRITE-KEY's key, and answer the call with its outcome as JSON -- `{"outcome": "applied", "task_id": 8}`, status `success`, or `{"outcome": "refused", "task_id": 7, "reason": "no task 7"}`, status `error`. Anything else SHALL reject it: `{"type": "reject"}`, another type, a missing decision, or decisions that do not match the actions in number. A rejected write writes nothing, is recorded as rejected (TASKS-AUDIT), and is answered `The owner rejected this; nothing was changed.`, status `error`. When every write of the reply is approved the run SHALL go on to the model; when any is rejected it SHALL end, the model not called again.
+Each decision SHALL decide its write, one write a step, its answer stored with it -- so a failure after it never leaves it unanswered, nor answered as not run. `{"type": "approve"}` SHALL apply it through the task list's writer (TASKS-WRITES), under ASSISTANT-WRITE-KEY's key, and answer the call with its outcome as JSON -- `{"outcome": "applied", "task_id": 8}`, status `success`, or `{"outcome": "refused", "task_id": 7, "reason": "no task 7"}`, status `error`. Anything else SHALL reject it: `{"type": "reject"}`, another type, a missing decision, or decisions that do not match the actions in number. A rejected write writes nothing, is recorded as rejected (TASKS-AUDIT), and is answered `The owner rejected this; nothing was changed.`, status `error`. The answer and the route SHALL follow the outcome the writer returns -- the one recorded under the key -- never a later decision. When no write of the reply was rejected the run SHALL go on to the model; when any was, it SHALL end, the model not called again.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteDecisions`
@@ -80,12 +87,27 @@ Each decision SHALL decide its write. `{"type": "approve"}` SHALL apply it throu
 
 - **AND** `task_writes` holds one row per write, its decision as given, and the list holds exactly what was applied
 
+#### Scenario: A failure after one write, then new input
+- **GIVEN** the request's two writes approved, the second failing in the store (`sqlite3.OperationalError`) after the first was applied
+- **WHEN** the owner sends `what happened?` instead of a continue
+- **THEN** `add_task` stays answered `{"outcome": "applied", "task_id": 2}`, and only `close_task` is answered as not run
+
+#### Scenario: A replay deciding otherwise is told what was done
+- **GIVEN** `add_task(title="Call the plumber")` approved and applied
+- **WHEN** the thread is run again from the checkpoint before `review_writes`, and resumed with a rejection
+- **THEN** the call is answered `{"outcome": "applied", "task_id": 2}`, the run goes on to the model, and `task_writes` holds the one row, `approve`
+
+#### Scenario: Counter-example -- rules changed while a write waited
+- **GIVEN** `add_task(title="Call the plumber")` waiting, and the task list's rules refusing it by the time it is decided
+- **WHEN** the owner approves it
+- **THEN** it is answered `Error: add_task was not proposed: <why>`, nothing written and nothing recorded, and the run goes on to the model
+
 #### Scenario: Counter-example -- an approved write the task list refuses
 - **GIVEN** a model proposing `close_task(task_id=7)`, no task 7, approved
 - **THEN** the call is answered `{"outcome": "refused", "task_id": 7, "reason": "no task 7"}`, status `error`, and the run goes on to the model: the owner approved, and the model hears why nothing changed
 
 ### Requirement: ASSISTANT-WRITE-KEY
-An approved or rejected write SHALL be decided under the key `<thread id>:<reply id>:<call id>` -- the thread's id, the id of the reply that proposed the call, the call's id -- so a replay of `apply_writes` from its checkpoint changes the task list once. Not the superstep: a replay runs `apply_writes` at another step (measured: 5, then 6). A key longer than `WRITE_KEY_MAX` SHALL end the run with `ValueError`, nothing written.
+An approved or rejected write SHALL be decided under the key `["<thread id>", "<reply id>", "<call id>"]`, a JSON array -- the thread's id, the id of the reply that proposed the call, the call's id; a `:` or a quote in one part never makes it another's -- so a replay of `apply_writes` from its checkpoint changes the task list once. Not the superstep: a replay runs `apply_writes` at another step (measured: 5, then 6). A key longer than `WRITE_KEY_MAX` is refused with the proposal, before the owner is asked (ASSISTANT-WRITE-PROPOSAL).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteKey`
@@ -93,16 +115,15 @@ An approved or rejected write SHALL be decided under the key `<thread id>:<reply
 #### Scenario: Replayed, applied once
 - **GIVEN** an approved `add_task(title="Call the plumber")` on the thread `t1`, applied
 - **WHEN** the thread is run again from the checkpoint before `apply_writes`
-- **THEN** the list holds one `Call the plumber`, and `task_writes` one row, whose key is `t1:<the reply's id>:<the call's id>`
+- **THEN** the list holds one `Call the plumber`, and `task_writes` one row, whose key is `["t1", "<the reply's id>", "<the call's id>"]`
 
-#### Scenario: Counter-example -- a thread id too long for a key
-- **GIVEN** a thread id of 300 characters and an approved `add_task(title="Call the plumber")`
-- **THEN** the run raises `ValueError`, and the list and `task_writes` are unchanged
+#### Scenario: Counter-example -- parts that would run together
+- **THEN** the thread `a:b` with the reply `c` and the thread `a` with the reply `b:c`, the same call, make two keys
 
 ## MODIFIED Requirements
 
 ### Requirement: ASSISTANT-GRAPH-TOPOLOGY
-The factory SHALL compile the assistant as a hand-written `StateGraph` whose nodes are exactly `start_run`, `call_model`, `run_tools`, `review_writes` and `apply_writes`, and whose edges are exactly design.md's table: `START` to `start_run`, `start_run` to `call_model`, `call_model` to `run_tools` or `END`, `run_tools` to `review_writes` or `call_model`, `review_writes` to `apply_writes`, and `apply_writes` to `call_model` or `END`, each conditional edge as ASSISTANT-ROUTING decides. `call_model` SHALL carry the model retry policy (ASSISTANT-TRANSIENT-RETRY) and no other node a retry policy; the compiled graph's step ceiling SHALL be 9,999.
+The factory SHALL compile the assistant as a hand-written `StateGraph` whose nodes are exactly `start_run`, `call_model`, `run_tools`, `review_writes` and `apply_writes`, and whose edges are exactly design.md's table: `START` to `start_run`, `start_run` to `call_model`, `call_model` to `run_tools` or `END`, `run_tools` to `review_writes` or `call_model`, `review_writes` to `apply_writes`, and `apply_writes` to itself, `call_model` or `END`, each conditional edge as ASSISTANT-ROUTING decides. `call_model` SHALL carry the model retry policy (ASSISTANT-TRANSIENT-RETRY) and no other node a retry policy; the compiled graph's step ceiling SHALL be 9,999.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant_graph.py::TestTopology`
@@ -110,7 +131,7 @@ The factory SHALL compile the assistant as a hand-written `StateGraph` whose nod
 #### Scenario: The table
 - **GIVEN** a graph the factory compiles from a scripted model and the recording `add` tool
 - **THEN** its nodes, beside `__start__` and `__end__`, are exactly `start_run`, `call_model`, `run_tools`, `review_writes`, `apply_writes`
-- **AND** its edges are exactly `__start__ -> start_run`, `start_run -> call_model`, `call_model -> run_tools` (conditional), `call_model -> __end__` (conditional), `run_tools -> review_writes` (conditional), `run_tools -> call_model` (conditional), `review_writes -> apply_writes`, `apply_writes -> call_model` (conditional), `apply_writes -> __end__` (conditional)
+- **AND** its edges are exactly `__start__ -> start_run`, `start_run -> call_model`, `call_model -> run_tools` (conditional), `call_model -> __end__` (conditional), `run_tools -> review_writes` (conditional), `run_tools -> call_model` (conditional), `review_writes -> apply_writes`, `apply_writes -> apply_writes` (conditional), `apply_writes -> call_model` (conditional), `apply_writes -> __end__` (conditional)
 - **AND** its step ceiling is 9,999
 
 #### Scenario: The retry policy is the model call's
@@ -122,7 +143,7 @@ The factory SHALL compile the assistant as a hand-written `StateGraph` whose nod
 - **THEN** `run_tools` goes only to `call_model` or `review_writes`: a read's result always reaches the model, or waits with the owner's decision
 
 ### Requirement: ASSISTANT-STATE-CONTRACT
-The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE_VERSION` 2, with exactly the fields `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's counts, and `write_decisions`, the owner's decision on each write of the reply under review, by call id -- each one required. A reply whose id the transcript already holds SHALL be appended under a new id, never replace that message. A run SHALL take only `messages` as input and return only `messages`, and a state SHALL come back unchanged through the checkpointer's serializer.
+The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE_VERSION` 2, with exactly the fields `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's counts, and `write_decisions`, the owner's decision on each write of the reply under review, by call id -- each one required. A reply whose id the transcript already holds SHALL be appended under a new id, never replace that message; and each well-formed call of a stored reply SHALL have an id of its own -- one missing, or used already in the reply, is given a new one, so no answer, decision or key can be another call's. A run SHALL take only `messages` as input and return only `messages`, and a state SHALL come back unchanged through the checkpointer's serializer.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_assistant_graph.py::TestStateContract`
@@ -142,13 +163,22 @@ The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE
 - **WHEN** the assistant runs on the human message `add`
 - **THEN** the run completes with the transcript `human, ai, tool, ai`: the answer appended under a new id, the proposal kept
 
+#### Scenario: A call's id missing or repeated in a reply
+| The reply proposes | Stored ids |
+|---|---|
+| `close_task(1)` and `add_task("Buy milk")`, both under `call_0` | `call_0`, then a new id |
+| `add_task("Buy milk")` with no id | a new id |
+| `list_tasks` and `add_task("Buy milk")`, both under `call_0` | `call_0`, then a new id |
+
+- **AND** with both writes of the first row waiting, decisions `reject, approve` reject the close and apply the add
+
 #### Scenario: Counter-example -- a caller cannot set a count
 - **GIVEN** a scripted model that proposes `add(a=1, b=1)` on every call
 - **WHEN** a run's input carries `model_calls` -100 and `tool_calls` -100 beside the human message `keep adding`
 - **THEN** the run raises `ModelCallBudgetExceededError` after 10 model calls, as without them -- the input schema takes `messages` only, and `start_run` sets both counts besides. A caller of the local server's state-update endpoint can set them between runs: that caller is the owner, who can start any number of runs anyway
 
 ### Requirement: ASSISTANT-ROUTING
-After each reply, the assistant SHALL route by the domain policy `route_after_reply`: to `run_tools` when the reply as stored proposes any call, well-formed or malformed, and to the end otherwise. The policy `keep_malformed_calls` SHALL keep a reply's malformed calls only when every one of them has an id; a reply it does not keep them for is stored without them (ASSISTANT-TOOL-ERROR). After the tools, `route_after_tools` SHALL go to `review_writes` when a write call waits for the owner, and to `call_model` otherwise; after the writes, `route_after_writes` SHALL go to `call_model` when every decision approved, and to the end when any rejected.
+After each reply, the assistant SHALL route by the domain policy `route_after_reply`: to `run_tools` when the reply as stored proposes any call, well-formed or malformed, and to the end otherwise. The policy `keep_malformed_calls` SHALL keep a reply's malformed calls only when every one of them has an id; a reply it does not keep them for is stored without them (ASSISTANT-TOOL-ERROR). After the tools, `route_after_tools` SHALL go to `review_writes` when a write call waits for the owner, and to `call_model` otherwise; after a write, `route_after_writes` SHALL go back to `apply_writes` while a write of the reply waits, then to `call_model` when none was rejected, and to the end when any was.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_routing.py::TestRouteAfterReply`
@@ -174,9 +204,11 @@ After each reply, the assistant SHALL route by the domain policy `route_after_re
 |---|---|---|
 | `route_after_tools` | 1 write waiting | `review_writes` |
 | `route_after_tools` | none waiting | `call_model` |
-| `route_after_writes` | `approve`, `approve` | `call_model` |
-| `route_after_writes` | `approve`, `reject` | `end` |
-| `route_after_writes` | no decision | `call_model` |
+| `route_after_writes` | `approve`, `approve`; none waiting | `call_model` |
+| `route_after_writes` | `approve`, `reject`; none waiting | `end` |
+| `route_after_writes` | `refused` -- by rules changed while it waited; none waiting | `call_model` |
+| `route_after_writes` | no decision; none waiting | `call_model` |
+| `route_after_writes` | `reject`; 1 waiting | `apply_writes` |
 
 #### Scenario: Counter-example -- an empty id is no id
 - **GIVEN** malformed calls whose ids are `a` and the empty text
@@ -210,7 +242,8 @@ Every model call SHALL be sent `ASSISTANT_PROMPT` first, as the system message: 
 - **AND** loading that path as a file and reading `assistant` from it gives a compiled graph, the only one the registry binds
 
 #### Scenario: Compiled by the factory, budget included
-- **GIVEN** the registered graph, and a graph the factory compiles from a scripted model and the two task tools
+- **GIVEN** the registered graph, and a graph the factory compiles from a scripted model, the five task tools and the list's writer
+- **AND** the registered graph, paused on a stand-in's `add_task(title="Call the plumber")` and approved, adds it to the list `TASKS_DB` names
 - **THEN** their nodes and edges are the same -- ASSISTANT-GRAPH-TOPOLOGY's -- and so are their step ceilings and `call_model`'s retry policy
 
 #### Scenario: The model the process's settings choose

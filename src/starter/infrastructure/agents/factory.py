@@ -34,11 +34,13 @@ def build_assistant(
     """
     # Every tool's manifest, before anything is compiled (TOOLS-MANIFEST).
     for given in tools:
+        metadata = given.metadata or {}
         check_capability(
             given.name,
-            (given.metadata or {}).get("capability"),
+            metadata.get("capability"),
             TOOL_CALLS_PER_RUN,
             writer_given=writer is not None,
+            builder_given=callable(metadata.get("write")),
         )
     builder = assistant_graph(
         model, tools, transient=transient, initial_delay=initial_delay, writer=writer

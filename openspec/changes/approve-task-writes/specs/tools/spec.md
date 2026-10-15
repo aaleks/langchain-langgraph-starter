@@ -20,7 +20,7 @@ The assistant SHALL offer the model three write tools, each with its input schem
 ## MODIFIED Requirements
 
 ### Requirement: TOOLS-MANIFEST
-Every tool the factory is given SHALL carry a capability manifest -- the tool's name, its output's type, the errors it raises, whether it is idempotent, its timeout, its retry class, its rate limit and its side-effect level, and its audit event; its input's schema is the tool's own. The factory SHALL refuse, before compiling anything and naming the tool, a manifest the assistant cannot honour: none, or one that is not a manifest; one naming another tool; a side effect other than `read` or `write`; a `write` that is not idempotent or names no audit event, or that arrives without the task list's writer -- each write runs only through the approval route (ASSISTANT-WRITE-APPROVAL), applied by that writer; a retry class other than `none` -- a tool's failure propagates; a rate limit other than the run's `TOOL_CALLS_PER_RUN`, the one limit enforced. A tool declaring `read` SHALL be given only a view of its store that refuses a write, never the store.
+Every tool the factory is given SHALL carry a capability manifest -- the tool's name, its output's type, the errors it raises, whether it is idempotent, its timeout, its retry class, its rate limit and its side-effect level, and its audit event; its input's schema is the tool's own. The factory SHALL refuse, before compiling anything and naming the tool, a manifest the assistant cannot honour: none, or one that is not a manifest; one naming another tool; a side effect other than `read` or `write`; a `write` that is not idempotent or names no audit event, or that arrives without the task list's writer or without a builder turning its arguments into a write -- each write runs only through the approval route (ASSISTANT-WRITE-APPROVAL), applied by that writer; a retry class other than `none` -- a tool's failure propagates; a rate limit other than the run's `TOOL_CALLS_PER_RUN`, the one limit enforced. A tool declaring `read` SHALL be given only a view of its store that refuses a write, never the store.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_tool_manifests.py::TestToolManifests`
@@ -46,6 +46,7 @@ Every tool the factory is given SHALL carry a capability manifest -- the tool's 
 | a manifest declaring the side effect `write`, no writer given | `add` and `writer` |
 | a manifest declaring `write`, not idempotent, with a writer | `add` and `idempotent` |
 | a manifest declaring `write`, no audit event, with a writer | `add` and `audit` |
+| a manifest declaring `write`, with a writer, no builder in `metadata["write"]` | `add` and `builder` |
 | a manifest declaring the side effect `network` | `add` and `network` |
 | a manifest declaring the retry class `transient` | `add` and `transient` |
 | a manifest declaring the retry class `always` | `add` and `always` |

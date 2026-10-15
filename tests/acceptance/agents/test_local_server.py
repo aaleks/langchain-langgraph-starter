@@ -62,6 +62,28 @@ def binds_beyond_loopback(records: list[dict]) -> list[dict]:
     ]
 
 
+ORIGINS = ["http://localhost:3000", "https://evil.example", "http://localhost:8080"]
+
+
+def preflight(url: str, origin: str) -> str | None:
+    """A browser's CORS preflight to `/threads` from `origin`: the origin the
+    server allows, or None. Straight to 127.0.0.1: no proxy."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        url + "/threads",
+        method="OPTIONS",
+        headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=10) as answer:
+            return answer.headers.get("Access-Control-Allow-Origin")
+    except urllib.error.HTTPError as refused:
+        return refused.headers.get("Access-Control-Allow-Origin")
+
+
 def message_types(values: dict) -> list[str]:
     return [message["type"] for message in values["messages"]]
 
@@ -95,6 +117,7 @@ def session(tmp_path_factory):
         thread = client.threads.create()["thread_id"]
         seen["events"], seen["last"] = stream(client, thread, stream_mode=["values", "updates"])
         seen["runs"] = [run["status"] for run in client.runs.list(thread)]
+        seen["preflights"] = {origin: preflight(server.url, origin) for origin in ORIGINS}
         seen["second"] = subprocess.run(
             [sys.executable, "-c", READ_THREAD, server.url, thread],
             capture_output=True,
@@ -358,3 +381,31 @@ class TestApprovalThroughTheServer:
         assert rejected["last"]["content"] == "The owner rejected this; nothing was changed."
         # The list holds the first thread's approved task only.
         assert rejected["tasks"] == ["Call the plumber"]
+
+
+class TestBrowserOrigins:
+    """LOCAL-SERVER-BROWSER-ORIGINS: `bash scripts/serve.sh` SHALL let a web page call the
+    server only from `http://localhost:3000`, Agent Chat UI's default origin -- the
+    owner's choice (2026-10-15): a cross-origin request from any other origin SHALL
+    get no CORS permission, so no other page in the owner's browser can read a
+    paused run or approve a write. A client that is not a browser -- the SDK, `curl`
+    -- is unaffected."""
+
+    @pytest.mark.live
+    def test_a_browsers_preflight(self, session):
+        assert session["preflights"] == {
+            "http://localhost:3000": "http://localhost:3000",
+            "https://evil.example": None,
+            "http://localhost:8080": None,
+        }
+
+    def test_counter_example_set_by_the_script_not_by_chance(self):
+        import re
+
+        from tests.architecture.contract import REPO, shell_exports
+
+        script = (REPO / "scripts" / "serve.sh").read_text(encoding="utf-8")
+        assert re.findall(r"^CORS_ALLOW_ORIGINS=(\S+) \\$", script, re.M) == [
+            "http://localhost:3000"
+        ]
+        assert "CORS_ALLOW_ORIGINS" not in shell_exports(script)

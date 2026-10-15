@@ -42,10 +42,10 @@ class TestTopology:
     `review_writes` and `apply_writes`, and whose edges are exactly design.md's
     table: `START` to `start_run`, `start_run` to `call_model`, `call_model` to
     `run_tools` or `END`, `run_tools` to `review_writes` or `call_model`,
-    `review_writes` to `apply_writes`, and `apply_writes` to `call_model` or `END`,
-    each conditional edge as ASSISTANT-ROUTING decides. `call_model` SHALL carry the
-    model retry policy (ASSISTANT-TRANSIENT-RETRY) and no other node a retry policy;
-    the compiled graph's step ceiling SHALL be 9,999."""
+    `review_writes` to `apply_writes`, and `apply_writes` to itself, `call_model` or
+    `END`, each conditional edge as ASSISTANT-ROUTING decides. `call_model` SHALL
+    carry the model retry policy (ASSISTANT-TRANSIENT-RETRY) and no other node a
+    retry policy; the compiled graph's step ceiling SHALL be 9,999."""
 
     def test_the_nodes_and_edges_are_the_designs_table(self, fake_llm, add_tool):
         graph = build_assistant(fake_llm([answer()]), [add_tool.tool], transient=no_retries)
@@ -67,6 +67,7 @@ class TestTopology:
             ("run_tools", "review_writes", True),
             ("run_tools", "call_model", True),
             ("review_writes", "apply_writes", False),
+            ("apply_writes", "apply_writes", True),
             ("apply_writes", "call_model", True),
             ("apply_writes", "__end__", True),
         }
@@ -109,9 +110,12 @@ class TestStateContract:
     `messages` -- the transcript -- `model_calls` and `tool_calls`, this run's
     counts, and `write_decisions`, the owner's decision on each write of the reply
     under review, by call id -- each one required. A reply whose id the transcript
-    already holds SHALL be appended under a new id, never replace that message. A
-    run SHALL take only `messages` as input and return only `messages`, and a state
-    SHALL come back unchanged through the checkpointer's serializer."""
+    already holds SHALL be appended under a new id, never replace that message; and
+    each well-formed call of a stored reply SHALL have an id of its own -- one
+    missing, or used already in the reply, is given a new one, so no answer,
+    decision or key can be another call's. A run SHALL take only `messages` as input
+    and return only `messages`, and a state SHALL come back unchanged through the
+    checkpointer's serializer."""
 
     def test_the_fields_are_pinned_to_the_version(self, fake_llm):
         from langchain_core.messages import AnyMessage
@@ -180,6 +184,60 @@ class TestStateContract:
         assert [m.type for m in messages] == ["human", "ai", "tool", "ai"]
         assert messages[1].id == "r1" and messages[1].tool_calls
         assert messages[3].id not in {None, "r1"}
+
+    @pytest.mark.parametrize(
+        ("calls", "ids"),
+        [
+            (
+                [
+                    (("close_task", {"task_id": 1}), "call_0"),
+                    (("add_task", {"title": "Buy milk"}), "call_0"),
+                ],
+                "two-writes-one-id",
+            ),
+            ([(("add_task", {"title": "Buy milk"}), None)], "no-id"),
+            (
+                [
+                    (("list_tasks", {}), "call_0"),
+                    (("add_task", {"title": "Buy milk"}), "call_0"),
+                ],
+                "a-read-and-a-write-one-id",
+            ),
+        ],
+        ids=["two-writes-one-id", "no-id", "a-read-and-a-write-one-id"],
+    )
+    def test_a_calls_id_missing_or_repeated_is_given_its_own(self, fake_llm, tmp_path, calls, ids):
+        from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS, new_task
+        from starter.infrastructure.agents.tools import read_tools, write_tools
+        from starter.infrastructure.stores.tasks import TaskStore
+
+        store = TaskStore(tmp_path / "tasks.sqlite3")
+        store.open()
+        store.add(new_task("Renew passport"))
+        reply = propose(*[call for call, _ in calls])
+        for position, (_, given) in enumerate(calls):
+            reply.tool_calls[position]["id"] = given
+        tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        graph = build_assistant(
+            fake_llm([reply, answer()]), tools, transient=no_retries, writer=store.writer()
+        ).copy(update={"checkpointer": InMemorySaver()})
+        paused = {"configurable": {"thread_id": "ids"}}
+
+        graph.invoke({"messages": [HumanMessage("do both")]}, paused)
+
+        stored = [c["id"] for c in graph.get_state(paused).values["messages"][1].tool_calls]
+        assert len(set(stored)) == len(stored) and all(stored)
+        if calls[0][1]:
+            assert stored[0] == calls[0][1]
+        if ids == "two-writes-one-id":
+            from langgraph.types import Command
+
+            graph.invoke(
+                Command(resume={"decisions": [{"type": "reject"}, {"type": "approve"}]}), paused
+            )
+            rows = store.reader(1.0).open_tasks(50)["tasks"]
+            # The close was rejected: task 1 still open; the add approved: task 2.
+            assert [(t["id"], t["title"]) for t in rows] == [(1, "Renew passport"), (2, "Buy milk")]
 
     def test_counter_example_a_caller_cannot_set_a_count(self, fake_llm, add_tool):
         # The input schema's jsonschema, above, is what proves a count is not
@@ -408,9 +466,15 @@ class TestNoCallLeftUnanswered:
             proposal.tool_calls[0]["id"],
             UNRUN_CALL_ANSWER,
         )
+        assert sent[2].status == "error"
         assert out["messages"][-1].type == "ai"
         assert store.reader(1.0).open_tasks(50) == {"tasks": [], "more": 0}
         assert graph.get_state(paused).values["write_decisions"] == {}
+        import sqlite3
+
+        db = sqlite3.connect(store.path)
+        assert db.execute("SELECT COUNT(*) FROM task_writes").fetchone()[0] == 0
+        db.close()
 
     def test_counter_example_a_finished_thread_is_left_as_it_is(self, fake_llm, add_tool):
         model = fake_llm([propose(("add", {"a": 1, "b": 2})), answer(), answer()])
