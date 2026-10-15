@@ -57,7 +57,9 @@ class TestTaskWrites:
     task's id; a closing SHALL set an open task closed, and a reassignment an open
     task's assignee -- `applied`, with the task's id. A closing or reassignment of a
     task that does not exist, or is closed, SHALL change nothing -- `refused`, with
-    the reason `no task 7` or `task 7 is closed`."""
+    the reason `no task 7` or `task 7 is closed`. A writer SHALL write only to a
+    list `open()` made or migrated: on a missing file, or a list at version 1, it
+    SHALL raise, creating and changing nothing."""
 
     @pytest.mark.parametrize(
         ("write", "task_id", "after"),
@@ -106,6 +108,25 @@ class TestTaskWrites:
 
         assert outcome == WriteOutcome("refused", write.task_id, reason)
         assert tasks(store) == before
+
+    def test_counter_example_a_writer_on_a_missing_file_creates_nothing(self, tmp_path):
+        path = tmp_path / "tasks.sqlite3"
+
+        with pytest.raises(sqlite3.OperationalError):
+            TaskStore(path).writer().apply(task_closing(1), "k1")
+
+        assert not path.exists()
+
+    def test_counter_example_a_writer_on_a_list_not_migrated_changes_nothing(self, tmp_path):
+        from tests.integration.infrastructure.test_task_store import version_1_list
+
+        path = version_1_list(tmp_path / "tasks.sqlite3", "Renew passport")
+        before = path.read_bytes()
+
+        with pytest.raises(sqlite3.OperationalError):
+            TaskStore(path).writer().apply(task_closing(1), "k1")
+
+        assert path.read_bytes() == before
 
 
 class TestWriteOnce:
@@ -157,13 +178,30 @@ class TestWriteOnce:
         assert rejected == applied == WriteOutcome("rejected", None, "")
         assert tasks(store) == []
 
-    def test_counter_example_a_key_reused_for_another_write_is_refused(self, store):
+    @pytest.mark.parametrize(
+        ("first", "second", "outcome", "status"),
+        [("apply", "reject", "applied", "closed"), ("reject", "reject", "rejected", "open")],
+        ids=["applied-then-rejected", "rejected-twice"],
+    )
+    def test_a_rejection_under_a_recorded_key_returns_what_it_records(
+        self, store, first, second, outcome, status
+    ):
+        getattr(store.writer(), first)(task_closing(1), self.KEY)
+
+        again = getattr(store.writer(), second)(task_closing(1), self.KEY)
+
+        assert again == WriteOutcome(outcome, 1, "")
+        assert tasks(store)[0][4] == status
+        assert len(records(store)) == 1
+
+    @pytest.mark.parametrize("decide", ["apply", "reject"])
+    def test_counter_example_a_key_reused_for_another_write_is_refused(self, store, decide):
         store.add(new_task("Call the plumber"))
         store.writer().apply(task_closing(1), self.KEY)
         before = (tasks(store), records(store))
 
         with pytest.raises(ValueError):
-            store.writer().apply(task_closing(2), self.KEY)
+            getattr(store.writer(), decide)(task_closing(2), self.KEY)
 
         assert (tasks(store), records(store)) == before
 
@@ -192,7 +230,8 @@ class TestAudit:
     `approve` when applied, `reject` when rejected -- the outcome -- `applied`,
     `refused` or `rejected` -- the task's id when there is one, the reason, and when
     it was recorded. A write whose transaction fails SHALL leave neither its effect
-    nor its record."""
+    nor its record. The owner's own `starter tasks add` SHALL NOT be recorded: the
+    record is of decisions on proposed writes."""
 
     def test_one_row_per_decision(self, store):
         store.writer().apply(task_creation("Call the plumber", "sam", ""), "k1")
@@ -220,7 +259,9 @@ class TestAudit:
         store = TaskStore(tmp_path / "tasks.sqlite3")
         store.open()
 
-        def fails(*args, **kwargs):
+        def fails(db, *args, **kwargs):
+            # The effect is in, and is what the failure must take back with it.
+            assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
             raise sqlite3.OperationalError("failed before the record")
 
         monkeypatch.setattr(stores, "_record", fails)
@@ -229,4 +270,37 @@ class TestAudit:
             store.writer().apply(task_creation("Renew passport", "", ""), "k1")
 
         assert tasks(store) == []
+        assert records(store) == []
+
+    def test_counter_example_a_full_disk_propagates_its_own_error(self, tmp_path, monkeypatch):
+        from starter.infrastructure.stores import tasks as stores
+
+        store = TaskStore(tmp_path / "tasks.sqlite3")
+        store.open()
+        for n in range(3):  # each table's first page all but full
+            store.writer().apply(task_creation(f"t{n}", "", "n" * 1000), f"k{n}")
+        before = (tasks(store), records(store))
+        real = stores._writing
+
+        def full(path, timeout):
+            db = real(path, timeout)
+            db.execute(f"PRAGMA max_page_count = {db.execute('PRAGMA page_count').fetchone()[0]}")
+            return db
+
+        monkeypatch.setattr(stores, "_writing", full)
+
+        # SQLite rolls this failure back itself; a second ROLLBACK would raise
+        # "no transaction is active" in its place.
+        with pytest.raises(sqlite3.OperationalError, match="database or disk is full"):
+            store.writer().apply(task_creation("t3", "", "n" * 1000), "k3")
+
+        assert (tasks(store), records(store)) == before
+
+    def test_counter_example_the_owners_own_add_is_not_recorded(self, tmp_path):
+        store = TaskStore(tmp_path / "tasks.sqlite3")
+        store.open()
+
+        store.add(new_task("Renew passport"))
+
+        assert [row[:2] for row in tasks(store)] == [(1, "Renew passport")]
         assert records(store) == []

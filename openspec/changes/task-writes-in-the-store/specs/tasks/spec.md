@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: TASKS-WRITE-VALUES
-A write to the task list SHALL be built only from valid values: `task_creation(title, assignee, notes)` by TASKS-ADD's rule for each field; `task_closing(task_id)` and `task_reassignment(task_id, assignee)` from a task id that is a positive integer, not a boolean, and an assignee by TASKS-ADD's rule for one -- empty unassigns. A value refused SHALL raise `TaskRefused`, naming the field: `title`, `assignee`, `notes` or `task_id`.
+A write to the task list SHALL be built only from valid values: `task_creation(title, assignee, notes)` by TASKS-ADD's rule for each field; `task_closing(task_id)` and `task_reassignment(task_id, assignee)` from a task id that is a whole number from 1 to `TASK_ID_MAX` (2^63 - 1, the largest SQLite stores), not a boolean, and an assignee by TASKS-ADD's rule for one -- empty unassigns. A value refused SHALL raise `TaskRefused`, naming the field: `title`, `assignee`, `notes` or `task_id`.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_task_writes.py::TestTaskWriteValues`
@@ -21,11 +21,14 @@ A write to the task list SHALL be built only from valid values: `task_creation(t
 | `task_closing(0)` | `task_id` |
 | `task_closing(-1)` | `task_id` |
 | `task_closing(True)` | `task_id` |
+| `task_closing("7")` | `task_id` |
+| `task_closing(2**63)` | `task_id` |
+| `task_reassignment(0, "ana")` | `task_id` |
 | `task_reassignment(7, "a" * 101)` | `assignee` |
 | `task_reassignment(7, "x\x1b")` | `assignee` |
 
 ### Requirement: TASKS-WRITES
-The task list's writer SHALL apply a write in one transaction and return its outcome: a creation SHALL add an open task -- `applied`, with the new task's id; a closing SHALL set an open task closed, and a reassignment an open task's assignee -- `applied`, with the task's id. A closing or reassignment of a task that does not exist, or is closed, SHALL change nothing -- `refused`, with the reason `no task 7` or `task 7 is closed`.
+The task list's writer SHALL apply a write in one transaction and return its outcome: a creation SHALL add an open task -- `applied`, with the new task's id; a closing SHALL set an open task closed, and a reassignment an open task's assignee -- `applied`, with the task's id. A closing or reassignment of a task that does not exist, or is closed, SHALL change nothing -- `refused`, with the reason `no task 7` or `task 7 is closed`. A writer SHALL write only to a list `open()` made or migrated: on a missing file, or a list at version 1, it SHALL raise, creating and changing nothing.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/infrastructure/test_task_writes.py::TestTaskWrites`
@@ -48,6 +51,12 @@ The task list's writer SHALL apply a write in one transaction and return its out
 | `task_closing(1)`, task 1 already closed | `refused`, `task 1 is closed` | unchanged |
 | `task_reassignment(1, "ana")`, task 1 closed | `refused`, `task 1 is closed` | unchanged |
 
+#### Scenario: Counter-example -- a writer on a list not opened
+| The file | Applying `task_closing(1)` | Afterwards |
+|---|---|---|
+| missing | raises `sqlite3.OperationalError` | no file |
+| a version-1 list holding task 1, never opened by this version | raises `sqlite3.OperationalError` | version 1, task 1 open |
+
 ### Requirement: TASKS-WRITE-ONCE
 A write SHALL be applied at most once under its key: applying it, or rejecting it, under a key the task list already records SHALL change nothing and return the outcome recorded for that key. A key already recording a different write SHALL be refused with `ValueError`, nothing written. A key SHALL be 1 to `WRITE_KEY_MAX` (300) characters.
 
@@ -61,17 +70,20 @@ A write SHALL be applied at most once under its key: applying it, or rejecting i
 | `task_closing(1)` applied | the same, applied | `applied`, task 1 | task 1 closed once |
 | `task_closing(7)` applied, no task 7 | task 7 created by the owner meanwhile; the same closing applied | `refused`, `no task 7` -- recorded | task 7 still open |
 | `task_creation("Renew passport", "", "")` rejected | the same, applied | `rejected` -- recorded | no task |
+| `task_closing(1)` applied | the same, rejected | `applied`, task 1 -- recorded | task 1 closed |
+| `task_closing(1)` rejected | the same, rejected | `rejected`, task 1 -- recorded | task 1 open |
 
 #### Scenario: Counter-example -- a key reused for another write, or out of bounds
 | Under the key | Applied | Raises | The list and its record |
 |---|---|---|---|
 | `t1:4:call_1`, which records `task_closing(1)` | `task_closing(2)` | `ValueError` | unchanged |
+| `t1:4:call_1`, which records `task_closing(1)` | `task_closing(2)`, rejected | `ValueError` | unchanged |
 | the empty text | `task_closing(1)` | `ValueError` | unchanged |
 | 301 characters | `task_closing(1)` | `ValueError` | unchanged |
 | 300 characters | `task_closing(1)` | -- | task 1 closed |
 
 ### Requirement: TASKS-AUDIT
-Every decision on a write SHALL be recorded in the table `task_writes`, in the same transaction as its effect: its key, its action -- `create`, `close` or `reassign` -- its arguments as JSON, the decision -- `approve` when applied, `reject` when rejected -- the outcome -- `applied`, `refused` or `rejected` -- the task's id when there is one, the reason, and when it was recorded. A write whose transaction fails SHALL leave neither its effect nor its record.
+Every decision on a write SHALL be recorded in the table `task_writes`, in the same transaction as its effect: its key, its action -- `create`, `close` or `reassign` -- its arguments as JSON, the decision -- `approve` when applied, `reject` when rejected -- the outcome -- `applied`, `refused` or `rejected` -- the task's id when there is one, the reason, and when it was recorded. A write whose transaction fails SHALL leave neither its effect nor its record. The owner's own `starter tasks add` SHALL NOT be recorded: the record is of decisions on proposed writes.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/infrastructure/test_task_writes.py::TestAudit`
@@ -81,7 +93,7 @@ Every decision on a write SHALL be recorded in the table `task_writes`, in the s
 - **WHEN** `task_creation("Call the plumber", "sam", "")` is applied under `k1`, `task_closing(7)` under `k2`, and `task_reassignment(1, "ana")` rejected under `k3`
 - **THEN** `task_writes` holds, in order:
 
-| Key | Action | Arguments | Decision | Outcome | Task | Reason |
+| Key | Action | Arguments, a JSON object equal to | Decision | Outcome | Task | Reason |
 |---|---|---|---|---|---|---|
 | `k1` | `create` | `{"title": "Call the plumber", "assignee": "sam", "notes": ""}` | `approve` | `applied` | 2 | empty |
 | `k2` | `close` | `{"task_id": 7}` | `approve` | `refused` | 7 | `no task 7` |
@@ -93,6 +105,11 @@ Every decision on a write SHALL be recorded in the table `task_writes`, in the s
 - **GIVEN** a list holding no task, and a failure raised after the creation's task is inserted, before its record is
 - **WHEN** `task_creation("Renew passport", "", "")` is applied under `k1`
 - **THEN** the failure propagates, the list holds no task, and `task_writes` no row
+- **AND** so it is when the disk fills while the record is written: the disk's own error, `database or disk is full`, propagates
+
+#### Scenario: Counter-example -- the owner's own add is not recorded
+- **WHEN** the owner adds `Renew passport` with `starter tasks add`
+- **THEN** the list holds task 1, and `task_writes` no row
 
 ## MODIFIED Requirements
 

@@ -17,13 +17,16 @@ from starter.domain.tasks import (
     WRITE_KEY_MAX,
     CloseTask,
     CreateTask,
+    Decision,
     NewTask,
+    RecordedWrite,
     TaskPage,
     TaskRow,
     TaskWrite,
     WriteOutcome,
     check_write_key,
     readable,
+    replayed,
     write_action,
     write_arguments,
     write_refusal,
@@ -129,7 +132,7 @@ class TaskStore:
                     db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 db.execute("COMMIT")
             except BaseException:
-                db.execute("ROLLBACK")
+                _roll_back(db)
                 raise
 
 
@@ -149,13 +152,15 @@ class TaskWriter:
         """Record that the owner rejected `write`; nothing else changes."""
         return self._decide(write, key, "reject")
 
-    def _decide(self, write: TaskWrite, key: str, decision: str) -> WriteOutcome:
+    def _decide(self, write: TaskWrite, key: str, decision: Decision) -> WriteOutcome:
         check_write_key(key)
-        with closing(_connect(self.path, self.timeout, isolation_level=None)) as db:
+        with closing(_writing(self.path, self.timeout)) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                outcome = _recorded(db, write, key)
-                if outcome is None:
+                recorded = _recorded(db, key)
+                if recorded is not None:
+                    outcome = replayed(recorded, write)
+                else:
                     if decision == "approve":
                         outcome = _apply(db, write)
                     else:
@@ -163,14 +168,12 @@ class TaskWriter:
                     _record(db, write, key, decision, outcome)
                 db.execute("COMMIT")
             except BaseException:
-                db.execute("ROLLBACK")
+                _roll_back(db)
                 raise
         return outcome
 
 
-def _recorded(db: sqlite3.Connection, write: TaskWrite, key: str) -> WriteOutcome | None:
-    """The outcome recorded under `key`, if any. A key recording a different
-    write is a caller's bug: refused, never applied."""
+def _recorded(db: sqlite3.Connection, key: str) -> RecordedWrite | None:
     row = db.execute(
         "SELECT action, arguments, outcome, task_id, reason FROM task_writes WHERE write_key = ?",
         (key,),
@@ -178,9 +181,7 @@ def _recorded(db: sqlite3.Connection, write: TaskWrite, key: str) -> WriteOutcom
     if row is None:
         return None
     action, arguments, outcome, task_id, reason = row
-    if (action, json.loads(arguments)) != (write_action(write), write_arguments(write)):
-        raise ValueError(f"the key {key!r} already records another write")
-    return WriteOutcome(outcome, task_id, reason)
+    return RecordedWrite(action, json.loads(arguments), WriteOutcome(outcome, task_id, reason))
 
 
 def _apply(db: sqlite3.Connection, write: TaskWrite) -> WriteOutcome:
@@ -191,26 +192,27 @@ def _apply(db: sqlite3.Connection, write: TaskWrite) -> WriteOutcome:
             (task.title, task.assignee, task.notes),
         )
         return WriteOutcome("applied", cursor.lastrowid, "")
+    found = db.execute("SELECT status FROM tasks WHERE id = ?", (write.task_id,)).fetchone()
+    refusal = write_refusal(write.task_id, found[0] if found else None)
+    if refusal is not None:
+        return WriteOutcome("refused", write.task_id, refusal)
+    # The transaction holds the write lock since the status was read; the
+    # guard in the statement is a second one, never the decision.
     if isinstance(write, CloseTask):
-        cursor = db.execute(
+        db.execute(
             "UPDATE tasks SET status = 'closed' WHERE id = ? AND status = 'open'",
             (write.task_id,),
         )
     else:
-        cursor = db.execute(
+        db.execute(
             "UPDATE tasks SET assignee = ? WHERE id = ? AND status = 'open'",
             (write.assignee, write.task_id),
         )
-    if cursor.rowcount == 1:
-        return WriteOutcome("applied", write.task_id, "")
-    found = db.execute("SELECT status FROM tasks WHERE id = ?", (write.task_id,)).fetchone()
-    return WriteOutcome(
-        "refused", write.task_id, write_refusal(write.task_id, found[0] if found else None)
-    )
+    return WriteOutcome("applied", write.task_id, "")
 
 
 def _record(
-    db: sqlite3.Connection, write: TaskWrite, key: str, decision: str, outcome: WriteOutcome
+    db: sqlite3.Connection, write: TaskWrite, key: str, decision: Decision, outcome: WriteOutcome
 ) -> None:
     db.execute(
         "INSERT INTO task_writes (write_key, action, arguments, decision, outcome, task_id, reason) "
@@ -281,6 +283,20 @@ class TaskReader:
 
 def _connect(path: Path, timeout: float, **options) -> sqlite3.Connection:
     return sqlite3.connect(path, timeout=timeout, **options)
+
+
+def _writing(path: Path, timeout: float) -> sqlite3.Connection:
+    """A connection to an existing file: `mode=rw`, so a writer never creates a
+    list -- only `open()` does, at its version."""
+    uri = path.resolve().as_uri() + "?mode=rw"
+    return sqlite3.connect(uri, uri=True, timeout=timeout, isolation_level=None)
+
+
+def _roll_back(db: sqlite3.Connection) -> None:
+    """Roll back what is open. SQLite rolls some failures back itself -- a full
+    disk -- and a second ROLLBACK would replace the real error with its own."""
+    if db.in_transaction:
+        db.execute("ROLLBACK")
 
 
 @contextmanager

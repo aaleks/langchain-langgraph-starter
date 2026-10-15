@@ -22,26 +22,35 @@ migration. Auditing does: a table at version 2.
    - Each write's action name and JSON arguments, for the audit, are domain
      functions: `write_action` and `write_arguments`.
 2. **The store's `writer()` returns a `TaskWriter`**, with `apply(write,
-   key)` and `reject(write, key)`. Each opens its own connection and runs
+   key)` and `reject(write, key)`. Each opens its own connection -- `mode=rw`,
+   so a writer never creates a file; only `open()` makes a list -- and runs
    one `BEGIN IMMEDIATE` transaction:
-   1. Look the key up in `task_writes`.
-      - Recorded, for the same action and arguments: return that outcome,
-        and write nothing.
-      - Recorded for a different write: `ValueError`.
+   1. Look the key up in `task_writes`. What a recorded key answers is the
+      domain's `replayed`: the recorded outcome, or `ValueError` when the
+      key records a different write. The precedence lives there (verify
+      pass 1, finding 3).
    2. Apply the effect (`apply` only):
       - an `INSERT` for a creation;
-      - an `UPDATE ... WHERE id = ? AND status = 'open'` for a closing or
-        a reassignment;
-      - when no row is updated, read the task's status to name the
-        refusal -- `no task 7` or `task 7 is closed`, decided by the
-        domain's `write_refusal`.
+      - for a closing or a reassignment, read the task's status. The
+        domain's `write_refusal` decides from it whether the task may
+        change: `no task 7`, `task 7 is closed`, or no refusal. Only then
+        does the store run the `UPDATE`. The transaction holds the write
+        lock since the status was read; the `AND status = 'open'` in the
+        statement is a second guard, never the decision (verify pass 1,
+        finding 2).
    3. Insert the audit row.
-   4. Commit. Any failure rolls the whole transaction back.
-3. **The key is the caller's.** It is checked for 1 to `WRITE_KEY_MAX` (300)
+   4. Commit. Any failure rolls back what is still open. SQLite rolls some
+      failures back itself -- a full disk -- and a second `ROLLBACK` would
+      replace the real error with "no transaction is active" (verify pass
+      1, finding 6).
+3. **A task id is a whole number from 1 to `TASK_ID_MAX`**, 2^63 - 1, the
+   largest SQLite stores. A larger one, which JSON and a schema allow, is
+   refused as a value rather than failing in the store.
+4. **The key is the caller's.** It is checked for 1 to `WRITE_KEY_MAX` (300)
    characters by the domain's `check_write_key`, and held there by the
    schema. 4b2 builds it from the thread, the step and the call. The store
    only promises that one key is one write, applied once.
-4. **The audit table** -- `task_writes`, schema version 2:
+5. **The audit table** -- `task_writes`, schema version 2:
 
    ```sql
    CREATE TABLE task_writes (
@@ -61,7 +70,7 @@ migration. Auditing does: a table at version 2.
      of the write's own fields. A repeat is compared on the action and those
      fields, never on the JSON text.
    - The time is SQLite's, at insert, so no clock passes through the domain.
-5. **Migration, forward only, in one transaction.** `open()`:
+6. **Migration, forward only, in one transaction.** `open()`:
    - a version-2 list is used as it is, the file untouched;
    - a version-1 list (version 1, with `tasks`) gets `task_writes` and
      version 2;
@@ -72,9 +81,11 @@ migration. Auditing does: a table at version 2.
    the file again inside it. A version-2 list opened by the previous version
    of this project is refused there, as ADR 0006 already says of a newer
    version.
-6. **The reader is unchanged.** It reads `tasks` only, and its authorizer
-   still refuses every write. The tools never hold a writer; 4b2's approval
-   node will.
+7. **The reader is unchanged.** It reads `tasks` only, and its authorizer
+   still refuses every write. A tool's builder is still given the whole
+   store, which now also hands out a writer. 4b2 rewires the tools, and
+   gives each a reader instead (verify pass 1, finding 4). Only the
+   approval node will hold a writer.
 
 ## Orchestration design
 

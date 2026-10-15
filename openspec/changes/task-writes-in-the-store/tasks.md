@@ -50,3 +50,16 @@
   not connect: the owner's Open WebUI was not running (`localhost:8080`
   refused); in verify.md's Not checked
 - [x] 6.3 Documents: ADR 0006's status, the roadmap
+
+## 7. Verify pass 1 -- the fixes
+
+- [x] 7.1 A rejection under a recorded key: three rows, the tests over apply
+  and reject
+- [x] 7.2 The domain decides which task may change (`write_refusal`) and what
+  a recorded key answers (`replayed`)
+- [x] 7.3 `TASK_ID_MAX`; a writer that never creates a file; rolled back only
+  when open, proved with a full disk; the owner's add not recorded; the
+  migration compared on every column
+- [x] 7.4 Mutations: 20, each red, the six new ones among them -- the lookup
+  on approvals only, an unconditional rollback, a writer creating files, no
+  upper bound, the reassignment's id unchecked, the open status not decided

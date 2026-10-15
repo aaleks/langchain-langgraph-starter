@@ -146,6 +146,10 @@ class TestTaskSchema:
                     raise sqlite3.OperationalError("interrupted before the version")
                 return self.db.execute(sql, *args)
 
+            @property
+            def in_transaction(self):
+                return self.db.in_transaction
+
             def close(self):
                 self.db.close()
 
@@ -176,6 +180,10 @@ class TestTaskSchema:
                     raise sqlite3.OperationalError("interrupted before the version")
                 return self.db.execute(sql, *args)
 
+            @property
+            def in_transaction(self):
+                return self.db.in_transaction
+
             def close(self):
                 self.db.close()
 
@@ -201,16 +209,28 @@ class TestTaskSchema:
 
     def test_a_version_1_list_is_migrated_its_tasks_unchanged(self, tmp_path):
         path = version_1_list(tmp_path / "tasks.sqlite3", "Renew passport", "Call the plumber")
+        sqlite_file(
+            path,
+            "UPDATE tasks SET assignee = 'sam', notes = 'photos', status = 'closed' WHERE id = 1",
+        )
+        every_column = "SELECT * FROM tasks ORDER BY id"
+        db = sqlite3.connect(path)
+        before = db.execute(every_column).fetchall()
+        db.close()
 
         TaskStore(path).open()
 
         assert version_and_tasks(path) == (2, 2)
         assert tables(path) == ["task_writes", "tasks"]
         db = sqlite3.connect(path)
-        rows = db.execute("SELECT id, title, status FROM tasks ORDER BY id").fetchall()
+        rows = db.execute(every_column).fetchall()
         writes = db.execute("SELECT COUNT(*) FROM task_writes").fetchone()[0]
         db.close()
-        assert rows == [(1, "Renew passport", "open"), (2, "Call the plumber", "open")]
+        assert rows == before
+        assert [row[:5] for row in rows] == [
+            (1, "Renew passport", "sam", "photos", "closed"),
+            (2, "Call the plumber", "", "", "open"),
+        ]
         assert writes == 0
 
     def test_a_version_2_list_is_left_as_it_is(self, tmp_path):

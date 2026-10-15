@@ -20,9 +20,10 @@ class TestTaskWriteValues:
     """TASKS-WRITE-VALUES: A write to the task list SHALL be built only from valid
     values: `task_creation(title, assignee, notes)` by TASKS-ADD's rule for each
     field; `task_closing(task_id)` and `task_reassignment(task_id, assignee)` from a
-    task id that is a positive integer, not a boolean, and an assignee by
-    TASKS-ADD's rule for one -- empty unassigns. A value refused SHALL raise
-    `TaskRefused`, naming the field: `title`, `assignee`, `notes` or `task_id`."""
+    task id that is a whole number from 1 to `TASK_ID_MAX` (2^63 - 1, the largest
+    SQLite stores), not a boolean, and an assignee by TASKS-ADD's rule for one --
+    empty unassigns. A value refused SHALL raise `TaskRefused`, naming the field:
+    `title`, `assignee`, `notes` or `task_id`."""
 
     @pytest.mark.parametrize(
         ("built", "write"),
@@ -47,12 +48,29 @@ class TestTaskWriteValues:
             (lambda: task_closing(0), "task_id"),
             (lambda: task_closing(-1), "task_id"),
             (lambda: task_closing(True), "task_id"),
+            (lambda: task_closing("7"), "task_id"),
+            (lambda: task_closing(2**63), "task_id"),
+            (lambda: task_reassignment(0, "ana"), "task_id"),
             (lambda: task_reassignment(7, "a" * 101), "assignee"),
             (lambda: task_reassignment(7, "x\x1b"), "assignee"),
         ],
-        ids=["blank-title", "id-0", "id-negative", "id-boolean", "long-assignee", "control"],
+        ids=[
+            "blank-title",
+            "id-0",
+            "id-negative",
+            "id-boolean",
+            "id-text",
+            "id-past-sqlite",
+            "reassign-id-0",
+            "long-assignee",
+            "control",
+        ],
     )
     def test_counter_example_a_value_refused_names_its_field(self, built, field):
+        from starter.domain.tasks import TASK_ID_MAX
+
+        assert TASK_ID_MAX == 2**63 - 1
+
         with pytest.raises(TaskRefused) as refused:
             built()
 
