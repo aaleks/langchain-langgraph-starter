@@ -1,7 +1,8 @@
 # 6. The task list is one SQLite file, through the standard library, its schema versioned from the first
 
 Date: 2026-10-13
-Status: Accepted
+Status: Accepted. Its schema moved to version 2, with a record of each
+write, by ADR 0008 (task-writes-in-the-store).
 
 ## Context
 

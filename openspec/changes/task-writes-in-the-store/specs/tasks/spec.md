@@ -170,6 +170,7 @@ Opening the task list SHALL create the file -- its directory included -- and its
 |---|---|---|
 | a SQLite file at schema version 3 | the file, and version `3` | unchanged |
 | a SQLite file at version 1 holding another table, no `tasks` | the file | unchanged |
+| a SQLite file at version 2 holding `tasks` but no `task_writes` | the file | unchanged |
 | a SQLite file at version 0 holding another table | the file | unchanged |
 | a text file, not SQLite | the file | unchanged |
 

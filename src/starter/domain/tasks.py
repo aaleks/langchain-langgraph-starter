@@ -19,7 +19,7 @@ NOTES_MAX = 1000
 # read and by the owner's add alike. A local file; a starting policy.
 TASK_STORE_TIMEOUT_SECONDS = 5.0
 
-Field = Literal["title", "assignee", "notes"]
+Field = Literal["title", "assignee", "notes", "task_id"]
 
 
 class TaskRefused(ValueError):
@@ -51,15 +51,19 @@ def new_task(title: str, assignee: str = "", notes: str = "") -> NewTask:
     task = NewTask(title=title.strip(), assignee=assignee.strip(), notes=notes.strip())
     if not task.title:
         raise TaskRefused("title", "is blank")
-    for field, limit in LIMITS.items():
-        value = getattr(task, field)
-        if len(value) > limit:
-            raise TaskRefused(field, f"is longer than {limit} characters")
-        if CONTROL.intersection(value):
-            raise TaskRefused(field, "holds a control character")
-        if not _encodable(value):
-            raise TaskRefused(field, "holds a character UTF-8 cannot encode")
+    for field in LIMITS:
+        _check_field(field, getattr(task, field))
     return task
+
+
+def _check_field(field: Field, value: str) -> None:
+    limit = LIMITS[field]
+    if len(value) > limit:
+        raise TaskRefused(field, f"is longer than {limit} characters")
+    if CONTROL.intersection(value):
+        raise TaskRefused(field, "holds a control character")
+    if not _encodable(value):
+        raise TaskRefused(field, "holds a character UTF-8 cannot encode")
 
 
 def readable(value: str, field: Field) -> str:
@@ -91,3 +95,98 @@ class TaskPage(TypedDict):
 
     tasks: list[TaskRow]
     more: int
+
+
+# -- writes: what the assistant may propose, once the owner approves (slice 4b) --
+
+
+@dataclass(frozen=True)
+class CreateTask:
+    task: NewTask
+
+
+@dataclass(frozen=True)
+class CloseTask:
+    task_id: int
+
+
+@dataclass(frozen=True)
+class ReassignTask:
+    task_id: int
+    assignee: str
+
+
+TaskWrite = CreateTask | CloseTask | ReassignTask
+
+
+def task_creation(title: str, assignee: str = "", notes: str = "") -> CreateTask:
+    """A new task to add, by the owner's own rules (`new_task`)."""
+    return CreateTask(new_task(title, assignee, notes))
+
+
+def task_closing(task_id: int) -> CloseTask:
+    return CloseTask(_checked_id(task_id))
+
+
+def task_reassignment(task_id: int, assignee: str) -> ReassignTask:
+    """The assignee by the rule for one, without the spaces around it; empty
+    unassigns."""
+    assignee = assignee.strip()
+    _check_field("assignee", assignee)
+    return ReassignTask(_checked_id(task_id), assignee)
+
+
+def _checked_id(task_id: int) -> int:
+    # A boolean is an int to Python, and to JSON a model may send one.
+    if isinstance(task_id, bool) or not isinstance(task_id, int) or task_id < 1:
+        raise TaskRefused("task_id", "is not a positive whole number")
+    return task_id
+
+
+# The longest key a write is recorded under: thread, step and call, joined.
+WRITE_KEY_MAX = 300
+
+WriteAction = Literal["create", "close", "reassign"]
+Outcome = Literal["applied", "refused", "rejected"]
+
+
+@dataclass(frozen=True)
+class WriteOutcome:
+    """What became of a write: applied, refused -- the reason says why -- or
+    rejected by the owner. `task_id` is the task's, when there is one."""
+
+    outcome: Outcome
+    task_id: int | None
+    reason: str
+
+
+def check_write_key(key: str) -> None:
+    """Refuse a key that is empty or longer than WRITE_KEY_MAX."""
+    if not 1 <= len(key) <= WRITE_KEY_MAX:
+        raise ValueError(f"a write's key is 1 to {WRITE_KEY_MAX} characters, not {len(key)}")
+
+
+def write_action(write: TaskWrite) -> WriteAction:
+    if isinstance(write, CreateTask):
+        return "create"
+    return "close" if isinstance(write, CloseTask) else "reassign"
+
+
+def write_arguments(write: TaskWrite) -> dict[str, str | int]:
+    """The write's own values, as its record holds them."""
+    if isinstance(write, CreateTask):
+        task = write.task
+        return {"title": task.title, "assignee": task.assignee, "notes": task.notes}
+    if isinstance(write, CloseTask):
+        return {"task_id": write.task_id}
+    return {"task_id": write.task_id, "assignee": write.assignee}
+
+
+def write_task_id(write: TaskWrite) -> int | None:
+    """The task a write names; a creation names none until it is applied."""
+    return None if isinstance(write, CreateTask) else write.task_id
+
+
+def write_refusal(task_id: int, status: str | None) -> str:
+    """Why a closing or reassignment changed nothing: the task, as it is found."""
+    return f"no task {task_id}" if status is None else f"task {task_id} is {status}"

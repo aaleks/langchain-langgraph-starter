@@ -133,7 +133,7 @@ class TestTasksAdd:
     ):
         db = sqlite3.connect(tasks_db)
         db.execute("CREATE TABLE t (x)")
-        db.execute("PRAGMA user_version = 2")
+        db.execute("PRAGMA user_version = 3")
         db.commit()
         db.close()
         before = tasks_db.read_bytes()
