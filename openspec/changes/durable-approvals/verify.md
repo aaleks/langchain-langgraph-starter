@@ -1,7 +1,16 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 1 found seven MAJORs, fixed below; pass 2
-  reviews the fixes.
+- **Verdict:** DO NOT SHIP -- pass 2 found no BLOCKER and no MAJOR; its fixes,
+  one wording of code among them, go to pass 3.
+- **Pass 2:** no BLOCKER, no MAJOR; MINORs 21-34 fixed or recorded. Reviewed at
+  `a365256`, the pass-1 fixes (`git diff 5a49478..a365256`), by the proof,
+  defects and durability lenses: strict reads re-checked over 94 rows of real
+  state with nothing blocked, a full pause, approve and copy cycle behind the
+  server's own wrapper; 18 mutants, 7 surviving -- each now red.
+- **Evidence (pass 2's fixes, run now):** `bash scripts/check.sh`; the live
+  local-server tests through `serve.sh`, 3 of 3 for durability; the real-model
+  test refused on the owner's expired key ("Your API key has expired"), not
+  this change.
 - **Pass 1:** DO NOT SHIP -- no BLOCKER, seven MAJOR. The most important fix: a
   checkpoint file could name any importable callable, called on load (2).
 - **Reviewed at:** pass 1: `5a49478`, the whole change (`git diff
@@ -56,6 +65,25 @@
 | 20 | Accepted |
 
 Mutations of the fixes: 7, each red.
+
+## Findings -- pass 2
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 21 | MINOR | proof | A copy's refusal proved on an all-newer thread only: checking the latest checkpoint, or each as copied, survived | tests | A thread `3`, then none: refused, nothing under `t2` |
+| 22 | MINOR | proof | The copy's fidelity -- pending writes, parents, the copy's thread id -- unclaimed and unchecked: without its writes, a copied pause lost its interrupt | spec, tests | Stated; a paused thread copied asks the owner |
+| 23 | MINOR | proof, durability | The hook's no-argument path, the server's, ran in no default test | tests | Called with no argument, `CHECKPOINTS_DB` in the environment |
+| 24 | MINOR | proof | "Its history is listed as stored" had no assertion | tests | Listed by the checkpointer itself |
+| 25 | MINOR | proof | The kill counter-example could not fail | spec, live test | An approval before re-registering: not found, or applied once |
+| 26 | MINOR | proof | A shell exporting `LANGGRAPH_STRICT_MSGPACK` would make the strict test unable to fail | `tests/conftest.py` | Removed from the suite's environment |
+| 27 | MINOR | proof | An empty `CHECKPOINTS_DB` refused with a message saying it "names" the task list | `config/settings.py` | Worded as it is; a row, red first |
+| 28 | MINOR | proof | `serve.sh` still called the server in-memory | `scripts/serve.sh` | Reworded |
+| 29 | MINOR | proof | The method's rules deferred with no date | `docs/learnings.md` | Due by 2026-10-31 |
+| 30 | MINOR | defects, durability | A copy refused by the stamp leaves the server's new thread record, idle and empty | the server | Stated; recorded; 5c |
+| 31 | MINOR | durability | Request headers -- every `x-*`, `user-agent` -- are copied into each checkpoint's metadata | the server | Recorded: 5b's token must not travel in one |
+| 32 | MINOR | durability | Deferral 15 placed in 5b, which cannot close it for the owner | roadmap | Accepted for the owner; who else may copy is 5b's |
+| 33 | MINOR | defects | A Windows alias of the task list (`tasks.sqlite3.`) passes the refusal until the file exists | `config/settings.py` | Accepted: it needs a typo |
+| 34 | MINOR | proof | verify.md recorded no evidence after the pass-1 fixes | verify.md | Recorded above |
 
 ## Not checked
 

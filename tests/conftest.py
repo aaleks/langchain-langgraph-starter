@@ -41,6 +41,9 @@ LOCAL_ONLY = {
     "LANGGRAPH_NO_VERSION_CHECK": "true",
 }
 os.environ.update(LOCAL_ONLY)
+# The durable checkpointer is strict in code; a shell exporting LangGraph's own
+# switch would make that unprovable (ASSISTANT-CHECKPOINT-STRICT).
+os.environ.pop("LANGGRAPH_STRICT_MSGPACK", None)
 
 # The owner's .env may configure a real model. The environment wins over .env
 # (SETTINGS-ENVIRONMENT-WINS), so these empty values keep every default test --

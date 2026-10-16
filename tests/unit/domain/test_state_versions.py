@@ -17,9 +17,11 @@ class TestCheckpointVersion:
     cannot be read through the checkpointer either; its history is listed as stored. One
     that carries no version -- written before the stamp -- or an older one SHALL be
     loaded as it is, the state contract deciding the rest (ASSISTANT-STATE-CONTRACT). A
-    thread's copy SHALL keep each checkpoint's stamp, and a thread holding a checkpoint
-    the code refuses SHALL not be copied. What a version found means is the domain's
-    `checkpoint_version_refusal`."""
+    thread's copy SHALL hold the source's checkpoints, their parents and pending writes
+    -- a paused thread copied still asks the owner -- each checkpoint keeping its stamp
+    and the copy's metadata its own thread id; a thread holding any checkpoint the code
+    refuses SHALL not be copied, nothing written to the file. What a version found means
+    is the domain's `checkpoint_version_refusal`."""
 
     @pytest.mark.parametrize(
         "found", [None, 1, 2], ids=["written-before-the-stamp", "older", "the-same"]

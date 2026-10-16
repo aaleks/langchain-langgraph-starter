@@ -96,8 +96,8 @@ def checkpoints_db_path(settings: Settings) -> Path:
     )
     if path.resolve() == tasks_db_path(settings).resolve():
         raise ValueError(
-            f"CHECKPOINTS_DB names the task list's own file, {path}: give the "
-            "checkpoints a file of their own, apart from TASKS_DB"
+            f"the checkpoint file, {path}, is the task list's own (TASKS_DB): "
+            "set CHECKPOINTS_DB to a file of its own"
         )
     return path
 

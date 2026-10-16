@@ -232,6 +232,22 @@ class TestCheckpointsDb:
             checkpoints_db_path(settings)
         assert "TASKS_DB" in str(refused.value)
 
+    def test_counter_example_the_default_is_the_task_lists_file(self, tmp_path):
+        from starter.config.settings import checkpoints_db_path
+
+        settings = read_settings(
+            {**EVERY_SETTING, "TASKS_DB": ".data/checkpoints.sqlite3", "CHECKPOINTS_DB": ""},
+            tmp_path / ".env",
+        )
+
+        with pytest.raises(ValueError) as refused:
+            checkpoints_db_path(settings)
+        # Said as it is: the default file is the task list's, not a value CHECKPOINTS_DB holds.
+        assert str(refused.value) == (
+            f"the checkpoint file, {REPO / '.data' / 'checkpoints.sqlite3'}, is the task "
+            "list's own (TASKS_DB): set CHECKPOINTS_DB to a file of its own"
+        )
+
 
 class TestKeyNeverShown:
     """SETTINGS-KEY-NEVER-SHOWN: The Open WebUI API key SHALL appear neither in a

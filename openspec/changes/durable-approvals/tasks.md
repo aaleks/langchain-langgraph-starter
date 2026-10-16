@@ -58,3 +58,17 @@ server's composition. The story test is LOCAL-SERVER-DURABLE-APPROVAL's live
   file `CHECKPOINTS_DB` names; the kill counter-example no longer a race
 - [x] 7.7 The suite's `CHECKPOINTS_DB` isolated; SQLite's `-wal`/`-shm`
   ignored; the encryption decision, the limits and the migration recorded
+
+## 8. Verify pass 2 -- the MINORs
+
+- [x] 8.1 A copy of a thread holding any newer checkpoint refused; a paused
+  thread's copy keeps its checkpoints, parents, writes and interrupt, its
+  metadata its own thread id; history listed by the checkpointer itself
+- [x] 8.2 The hook called with no argument, as the server calls it
+- [x] 8.3 The kill counter-example approves before re-registering: not found,
+  or applied once
+- [x] 8.4 `LANGGRAPH_STRICT_MSGPACK` removed from the suite's environment; the
+  refusal of the default file worded as it is -- red first
+- [x] 8.5 `serve.sh`'s comment; the headers in each checkpoint, the refused
+  copy's empty thread, the Windows alias, the copy applied twice -- recorded
+- [x] 8.6 The proof lens's 7 surviving mutants, each now red

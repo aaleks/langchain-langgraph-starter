@@ -21,6 +21,10 @@ The threads' checkpoint file SHALL be the setting `CHECKPOINTS_DB` -- a relative
 - **GIVEN** `TASKS_DB` and `CHECKPOINTS_DB` both `<tmp>/tasks.sqlite3`
 - **THEN** the checkpoint file is refused, naming `CHECKPOINTS_DB` and `TASKS_DB`
 
+#### Scenario: Counter-example -- the default, the task list's own file
+- **GIVEN** `CHECKPOINTS_DB` empty and `TASKS_DB` `.data/checkpoints.sqlite3`
+- **THEN** it is refused: `the checkpoint file, <repository>/.data/checkpoints.sqlite3, is the task list's own (TASKS_DB): set CHECKPOINTS_DB to a file of its own`
+
 ## MODIFIED Requirements
 
 ### Requirement: SETTINGS-ENVIRONMENT-WINS

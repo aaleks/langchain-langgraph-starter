@@ -125,6 +125,18 @@ class Older(VersionedSqliteSaver):
     state_version = 1
 
 
+class ServerShaped(VersionedSqliteSaver):
+    """The durable checkpointer as the server wraps it: the server writes the
+    thread's id into each checkpoint's metadata (`langgraph_api`'s
+    `_enrich_metadata`); LangGraph itself leaves it out."""
+
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        thread = config["configurable"]["thread_id"]
+        return await super().aput(
+            config, checkpoint, {**metadata, "thread_id": thread}, new_versions
+        )
+
+
 async def stamps_of(path, thread: str = "t1") -> list:
     """Every checkpoint's stamp on `thread`, read as stored -- no refusal."""
     config = {"configurable": {"thread_id": thread}}
@@ -142,9 +154,11 @@ class TestCheckpointVersion:
     cannot be read through the checkpointer either; its history is listed as stored. One
     that carries no version -- written before the stamp -- or an older one SHALL be
     loaded as it is, the state contract deciding the rest (ASSISTANT-STATE-CONTRACT). A
-    thread's copy SHALL keep each checkpoint's stamp, and a thread holding a checkpoint
-    the code refuses SHALL not be copied. What a version found means is the domain's
-    `checkpoint_version_refusal`."""
+    thread's copy SHALL hold the source's checkpoints, their parents and pending writes
+    -- a paused thread copied still asks the owner -- each checkpoint keeping its stamp
+    and the copy's metadata its own thread id; a thread holding any checkpoint the code
+    refuses SHALL not be copied, nothing written to the file. What a version found means
+    is the domain's `checkpoint_version_refusal`."""
 
     def test_stamped(self, tmp_path, store):
         from starter.infrastructure.agents.graphs.assistant.state import ASSISTANT_STATE_VERSION
@@ -167,6 +181,8 @@ class TestCheckpointVersion:
 
         # Refused before any node: no checkpoint of its own written over the newer ones.
         assert asyncio.run(stamps_of(path)) == before == [3] * len(before)
+        # Its history is listed as stored, by the same checkpointer.
+        assert asyncio.run(history(path)) == before
         assert model.calls == 0
         assert titles(store) == ["Renew passport"]
         assert records(store) == []
@@ -182,9 +198,11 @@ class TestCheckpointVersionAcrossVersions:
     cannot be read through the checkpointer either; its history is listed as stored. One
     that carries no version -- written before the stamp -- or an older one SHALL be
     loaded as it is, the state contract deciding the rest (ASSISTANT-STATE-CONTRACT). A
-    thread's copy SHALL keep each checkpoint's stamp, and a thread holding a checkpoint
-    the code refuses SHALL not be copied. What a version found means is the domain's
-    `checkpoint_version_refusal`."""
+    thread's copy SHALL hold the source's checkpoints, their parents and pending writes
+    -- a paused thread copied still asks the owner -- each checkpoint keeping its stamp
+    and the copy's metadata its own thread id; a thread holding any checkpoint the code
+    refuses SHALL not be copied, nothing written to the file. What a version found means
+    is the domain's `checkpoint_version_refusal`."""
 
     @pytest.mark.parametrize(
         "writer", [Older, AsyncSqliteSaver], ids=["stamped-1", "written-before-the-stamp"]
@@ -228,6 +246,53 @@ class TestCheckpointVersionAcrossVersions:
             asyncio.run(copy(path, "t1", "t2"))
 
         assert asyncio.run(stamps_of(path, "t2")) == []
+
+    def test_counter_example_a_thread_holding_a_newer_checkpoint_is_not_copied(
+        self, tmp_path, store
+    ):
+        path = tmp_path / "checkpoints.sqlite3"
+        asyncio.run(
+            run_on(path, store, [answer()], {"messages": [HumanMessage("hi")]}, saver=Newer)
+        )
+        # The latest checkpoint carries none; an earlier one, 3.
+        asyncio.run(
+            run_on(
+                path,
+                store,
+                [answer()],
+                {"messages": [HumanMessage("again")]},
+                saver=AsyncSqliteSaver,
+            )
+        )
+        assert asyncio.run(stamps_of(path))[0] is None
+
+        with pytest.raises(CheckpointVersionError, match="3, newer than 2"):
+            asyncio.run(copy(path, "t1", "t2"))
+
+        assert asyncio.run(stamps_of(path, "t2")) == []
+
+    def test_a_paused_thread_copied_still_asks_the_owner(self, tmp_path, store):
+        path = tmp_path / "checkpoints.sqlite3"
+        asyncio.run(
+            run_on(
+                path,
+                store,
+                [propose(PLUMBER)],
+                {"messages": [HumanMessage("add the plumber")]},
+                saver=ServerShaped,
+            )
+        )
+
+        asyncio.run(copy(path, "t1", "t2"))
+        source, target = asyncio.run(chains(path, "t1")), asyncio.run(chains(path, "t2"))
+        state = asyncio.run(state_of(path, store, "t2"))
+
+        # The same checkpoints, their parents and stamps; the copy's own thread id.
+        assert [c[:3] for c in target] == [c[:3] for c in source]
+        assert {c[3] for c in source} == {"t1"}
+        assert {c[3] for c in target} == {"t2"}
+        assert state.next == ("review_writes",)
+        assert len(state.interrupts) == 1
 
 
 async def copy(path, source: str, target: str) -> None:
@@ -334,10 +399,69 @@ class TestTheServersCheckpointer:
         assert target.is_file()
         assert asyncio.run(stamps_of(target))
 
+    def test_called_as_the_server_calls_it_with_no_argument(self, tmp_path, store, monkeypatch):
+        import importlib.util
+
+        from tests.architecture.contract import REPO
+
+        config = json.loads((REPO / "langgraph.json").read_text(encoding="utf-8"))
+        module_path, name = config["checkpointer"]["path"].rsplit(":", 1)
+        spec = importlib.util.spec_from_file_location("server_checkpointer_2", REPO / module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        target = tmp_path / "nested" / "checkpoints.sqlite3"
+        monkeypatch.setenv("CHECKPOINTS_DB", str(target))
+
+        async def pause_on_it():
+            async with getattr(module, name)() as checkpointer:
+                tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+                model = ScriptedChatModel(messages=iter([propose(PLUMBER)]))
+                graph = build_assistant(
+                    model, tools, transient=lambda failure: False, writer=store.writer()
+                ).copy(update={"checkpointer": checkpointer})
+                return await graph.ainvoke({"messages": [HumanMessage("add it")]}, THREAD)
+
+        assert "__interrupt__" in asyncio.run(pause_on_it())
+        assert asyncio.run(stamps_of(target))
+
     def test_the_registered_graph_carries_no_checkpointer(self):
         from starter.infrastructure.agents import registry
 
         assert registry.assistant.checkpointer is None
+
+
+async def history(path, thread: str = "t1") -> list:
+    """Every checkpoint's stamp, listed by the durable checkpointer itself."""
+    config = {"configurable": {"thread_id": thread}}
+    async with VersionedSqliteSaver.from_conn_string(str(path)) as checkpointer:
+        return [c.metadata.get("state_version") async for c in checkpointer.alist(config)]
+
+
+async def chains(path, thread: str) -> list[tuple]:
+    """Each checkpoint of `thread`: its id, its parent's, its stamp, its thread id."""
+    config = {"configurable": {"thread_id": thread}}
+    async with VersionedSqliteSaver.from_conn_string(str(path)) as checkpointer:
+        return [
+            (
+                c.config["configurable"]["checkpoint_id"],
+                (c.parent_config or {}).get("configurable", {}).get("checkpoint_id"),
+                c.metadata.get("state_version"),
+                c.metadata.get("thread_id"),
+            )
+            async for c in checkpointer.alist(config)
+        ]
+
+
+async def state_of(path, store, thread: str):
+    tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+    async with VersionedSqliteSaver.from_conn_string(str(path)) as checkpointer:
+        graph = build_assistant(
+            ScriptedChatModel(messages=iter([])),
+            tools,
+            transient=lambda failure: False,
+            writer=store.writer(),
+        ).copy(update={"checkpointer": checkpointer})
+        return await graph.aget_state({"configurable": {"thread_id": thread}})
 
 
 async def run_with(path, store, model, value):

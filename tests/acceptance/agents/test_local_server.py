@@ -486,6 +486,7 @@ def paused_across_a_restart(workdir, kill: bool) -> dict:
     """A run paused for approval, the server stopped -- gracefully, or killed --
     and started again on the same files, then the thread resumed with an
     approval: what the owner sees at each point."""
+    import httpx
     from langgraph_sdk import get_sync_client
     from langgraph_sdk.errors import NotFoundError
 
@@ -511,18 +512,23 @@ def paused_across_a_restart(workdir, kill: bool) -> dict:
         seen["stopped_gracefully"] = server.stopped_gracefully
         with local_server(workdir, settings=settings) as server:
             client = get_sync_client(url=server.url)
+            approve = {"resume": {"decisions": [{"type": "approve"}]}}
             if kill:
+                # An approval before re-registering: the server's records flush on
+                # a 10-second clock, so it may or may not know the thread.
                 try:
-                    client.threads.get(thread)
-                    seen["before_re_registered"] = "found"
-                except NotFoundError:
-                    seen["before_re_registered"] = "not found"
+                    client.runs.wait(thread, "assistant", command=approve)
+                    seen["approved_before"] = "applied"
+                except (NotFoundError, httpx.HTTPStatusError) as refused:
+                    # runs.wait raises httpx's own error for a 404 (langgraph-sdk 0.4).
+                    status = getattr(getattr(refused, "response", None), "status_code", 404)
+                    assert status == 404, refused
+                    seen["approved_before"] = "not found"
                 seen["tasks_before"] = task_titles(task_list)
                 client.threads.create(thread_id=thread, if_exists="do_nothing")
             else:
                 seen["restarted"] = client.threads.get(thread)["status"]
                 seen["next"] = client.threads.get_state(thread)["next"]
-            approve = {"resume": {"decisions": [{"type": "approve"}]}}
             client.runs.wait(thread, "assistant", command=approve)
             seen["thread"] = client.threads.get(thread)["status"]
     seen["tasks"] = task_titles(task_list)
@@ -593,10 +599,11 @@ class TestDurableApprovals:
     def test_counter_example_killed_not_re_registered(self, restarts):
         killed = restarts["killed"]
 
-        # Found or not: the server's own records are flushed on a 10-second clock,
-        # so a flush may have caught the thread before the kill (measured).
-        assert killed["before_re_registered"] in {"found", "not found"}
-        assert killed["tasks_before"] == []
+        # Not found, nothing written -- or found by a flush before the kill, and
+        # applied once; the approval after re-registering applies nothing more.
+        expected = {"not found": [], "applied": ["Call the plumber"]}
+        assert killed["tasks_before"] == expected[killed["approved_before"]]
+        assert killed["tasks"] == ["Call the plumber"]
 
     def test_the_checkpointer_named_not_by_chance(self):
         from tests.architecture.contract import REPO

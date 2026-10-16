@@ -16,15 +16,17 @@
 - **WHEN** it is started again on the same files, the thread re-registered under its id, and resumed with an approval
 - **THEN** the list holds `Call the plumber`, once, and the thread's checkpoints are in the file `CHECKPOINTS_DB` names
 
-#### Scenario: Counter-example -- killed, not re-registered
+#### Scenario: Counter-example -- killed, approved before re-registering
 - **GIVEN** the same pause, the server killed and started again
-- **WHEN** a client asks for the thread before re-registering it
-- **THEN** the server finds it or not -- a flush may have caught it -- and the list holds no task
+- **WHEN** the owner approves before re-registering the thread
+- **THEN** the server answers not found and the list holds no task -- or, a flush having caught the thread before the kill, the write is applied, once
+- **AND** an approval after re-registering applies nothing more: the list holds `Call the plumber`, once
 
 #### Scenario: Loaded as the server loads it
 - **GIVEN** `durable_checkpointer`, loaded from the file `langgraph.json` names, handed settings whose `CHECKPOINTS_DB` is `<tmp>/nested/checkpoints.sqlite3`
 - **WHEN** a run pauses on it
 - **THEN** it is a `VersionedSqliteSaver`, `<tmp>/nested/` and the file exist, and the file holds the thread's checkpoints
+- **AND** called as the server calls it, with no argument, `CHECKPOINTS_DB` naming that file in the process's environment, it is the same
 - **AND** the registered graph's own checkpointer is none
 
 #### Scenario: The checkpointer named, not by chance

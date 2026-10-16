@@ -18,7 +18,7 @@ A run of the assistant paused for the owner's approval on the durable checkpoint
 - **THEN** the list holds `Renew passport` alone, and `task_writes` one row, `reject`, `rejected`
 
 ### Requirement: ASSISTANT-CHECKPOINT-VERSION
-Every checkpoint the durable checkpointer writes SHALL carry the state's version in its metadata, `state_version`, `ASSISTANT_STATE_VERSION`: the version of the code that wrote it. A thread whose latest checkpoint carries a version newer than the code's SHALL be refused before any node runs -- `CheckpointVersionError`, naming both versions, nothing written to the task list or the checkpoint file and the model not called -- and its state cannot be read through the checkpointer either; its history is listed as stored. One that carries no version -- written before the stamp -- or an older one SHALL be loaded as it is, the state contract deciding the rest (ASSISTANT-STATE-CONTRACT). A thread's copy SHALL keep each checkpoint's stamp, and a thread holding a checkpoint the code refuses SHALL not be copied. What a version found means is the domain's `checkpoint_version_refusal`.
+Every checkpoint the durable checkpointer writes SHALL carry the state's version in its metadata, `state_version`, `ASSISTANT_STATE_VERSION`: the version of the code that wrote it. A thread whose latest checkpoint carries a version newer than the code's SHALL be refused before any node runs -- `CheckpointVersionError`, naming both versions, nothing written to the task list or the checkpoint file and the model not called -- and its state cannot be read through the checkpointer either; its history is listed as stored. One that carries no version -- written before the stamp -- or an older one SHALL be loaded as it is, the state contract deciding the rest (ASSISTANT-STATE-CONTRACT). A thread's copy SHALL hold the source's checkpoints, their parents and pending writes -- a paused thread copied still asks the owner -- each checkpoint keeping its stamp and the copy's metadata its own thread id; a thread holding any checkpoint the code refuses SHALL not be copied, nothing written to the file. What a version found means is the domain's `checkpoint_version_refusal`.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_state_versions.py::TestCheckpointVersion`, `tests/integration/agents/test_durable_checkpoints.py::TestCheckpointVersion`, `tests/integration/agents/test_durable_checkpoints.py::TestCheckpointVersionAcrossVersions`
@@ -42,6 +42,7 @@ Every checkpoint the durable checkpointer writes SHALL carry the state's version
 - **GIVEN** a thread whose checkpoints carry `state_version` `3`
 - **WHEN** code at version 2 runs it with new input
 - **THEN** `CheckpointVersionError` is raised naming `3` and `2`, the model is not called, the list and `task_writes` are unchanged, and the file's checkpoints are the same rows, each stamped `3`
+- **AND** the durable checkpointer's own listing of the thread's history yields those rows, each stamped `3`
 
 #### Scenario: An older checkpoint resumes
 | The pause written by | Approved on code at version 2 |
@@ -54,6 +55,13 @@ Every checkpoint the durable checkpointer writes SHALL carry the state's version
 |---|---|
 | `1` | copied, each checkpoint stamped `1` |
 | `3` | refused: `CheckpointVersionError`, nothing under `t2` |
+| `3`, then none -- the latest written before the stamp | refused: `CheckpointVersionError`, nothing under `t2` |
+
+#### Scenario: A paused thread, copied
+- **GIVEN** `t1` paused at `review_writes`, its checkpoints carrying `t1` as their thread id, as the server writes them
+- **WHEN** it is copied to `t2`
+- **THEN** `t2` holds the same checkpoints, parents and stamps, each carrying `t2`; its next node is `review_writes` and it holds one interrupt
+- **AND** the server's own record of a refused copy is not the checkpointer's to undo: it remains, idle and empty (measured)
 
 ### Requirement: ASSISTANT-CHECKPOINT-STRICT
 The durable checkpointer SHALL read a checkpoint with LangGraph's serializer in its strict mode, whatever the environment says: a msgpack value naming a constructor outside LangGraph's and LangChain's safe types SHALL NOT be called, and a value stored as pickle SHALL be refused. The file outlives the process that wrote it, so what it holds is read as untrusted.

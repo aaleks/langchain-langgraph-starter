@@ -67,7 +67,11 @@ checkpointer, and a promise of "checkpoints, plus re-register" (2026-10-16).
    file is on the owner's disk beside the task list, which holds the same
    titles unencrypted. Revisited with 5b's local token. Nothing is scrubbed
    before a checkpoint: what the run holds -- the transcript, the tools'
-   answers, the run's metadata -- is what the file holds.
+   answers, the run's metadata -- is what the file holds. The run's
+   metadata includes every `x-*` request header and the `user-agent`, which
+   the server copies into it (measured, verify pass 2): 5b's token must
+   travel in a header the server does not copy, or be excluded through
+   `http.configurable_headers`, with a test that its value is not in the file.
 9. **`CHECKPOINTS_DB` never names the task list's own file**: the task store
    is the only module that opens it (ADR 0006), and the saver would add its
    tables and switch it to WAL (measured, verify pass 1).
@@ -95,8 +99,15 @@ table, as amended by ADR 0009).
   cancel leaves the cancelled run's checkpoints, and history is not pruned.
   5c, with retention.
 - **[A thread copied while a write waits]** -> the key holds the thread
-  (ADR 0009): approved on both, the write is applied twice. Two approvals
-  by the owner; 5b decides who may copy.
+  (ADR 0009): approved on both, the write is applied twice. Accepted for
+  the owner: two approvals on two threads are two decisions. Who else may
+  copy is 5b's.
+- **[A copy refused by the stamp]** -> the server records the new thread
+  before it asks the checkpointer to copy, and does not undo it: an idle,
+  empty thread remains (verify pass 2). 5c, with deletion.
+- **[A Windows alias of the task list's path]** -> `tasks.sqlite3.`, with a
+  trailing dot, names the same file but is not refused until the file
+  exists. Accepted: it needs a typo in `.env`.
 - **[A kill between a write's commit and its checkpoint]** -> the thread
   comes back paused at `review_writes`, and the owner is asked again about
   a write already applied; any answer is the recorded outcome, applied

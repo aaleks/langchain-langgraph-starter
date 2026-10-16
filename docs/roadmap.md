@@ -116,8 +116,10 @@ durability, safety) arrives in the slice whose requirement asks for it.
    checkpointer, each checkpoint stamped with the state's version (ADR 0010)
    -- **5b** thread ownership through a local token, and **5c** retention and a
    thread's size. Left to 5b and 5c by durable-approvals' verify: encryption at
-   rest, revisited with 5b's token; who may copy a thread with a write
-   waiting (5b); the SQLite saver's missing `adelete_for_runs` and `aprune`,
+   rest, revisited with 5b's token, which must not travel in a header the
+   server copies into every checkpoint; who may copy a thread (5b); the
+   SQLite saver's missing `adelete_for_runs` and `aprune`, the empty thread a
+   refused copy leaves,
    a resume refused when a thread has no checkpoint, and a write already
    applied asked about again after a kill (5c).
    Left here by approve-task-writes' verify (its `verify.md`):
