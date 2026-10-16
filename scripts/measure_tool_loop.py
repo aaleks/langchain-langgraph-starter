@@ -32,10 +32,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from starter.config.settings import settings_from_process
 from starter.domain.models import choose_model
-from starter.domain.tasks import new_task
+from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS, new_task
 from starter.infrastructure.agents.factory import build_assistant
 from starter.infrastructure.agents.graphs.assistant.nodes import call_chars
-from starter.infrastructure.agents.tools import task_tools
+from starter.infrastructure.agents.tools import read_tools
 from starter.infrastructure.models import build_model, is_transient_failure
 from starter.infrastructure.stores.tasks import TaskStore
 
@@ -92,11 +92,14 @@ def main() -> int:
         store.open()
         for title, assignee, notes in SEED:
             store.add(new_task(title, assignee, notes[:1000]))
-        # Composed as the registry composes it -- the same tools, the same
-        # factory -- not imported from it: importing the registry builds its
-        # export, which opens the owner's own list.
+        # Composed as the registry composes it -- the same factory, the same
+        # reads -- not imported from it: importing the registry builds its
+        # export, which opens the owner's own list. Without the write tools: a
+        # write would pause for an approval no one here gives.
         graph = build_assistant(
-            build_model(settings), task_tools(store), transient=is_transient_failure
+            build_model(settings),
+            read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)),
+            transient=is_transient_failure,
         )
 
         runs = []

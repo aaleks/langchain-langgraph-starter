@@ -152,6 +152,23 @@ class TaskWriter:
         """Record that the owner rejected `write`; nothing else changes."""
         return self._decide(write, key, "reject")
 
+    def recorded(self, key: str) -> WriteOutcome | None:
+        """What the list recorded under `key`, or None: read, never written."""
+        with _reading(self.path, self.timeout) as db:
+            row = db.execute(
+                "SELECT outcome, task_id, reason FROM task_writes WHERE write_key = ?", (key,)
+            ).fetchone()
+        return None if row is None else WriteOutcome(*row)
+
+    def task(self, task_id: int) -> tuple[str, str] | None:
+        """A task's title and status as the list holds them -- what the owner is
+        shown before deciding on a write that names it -- or None."""
+        with _reading(self.path, self.timeout) as db:
+            row = db.execute(
+                f"SELECT {_cut('title', TITLE_MAX)}, status FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        return None if row is None else (readable(row[0], "title"), row[1])
+
     def _decide(self, write: TaskWrite, key: str, decision: Decision) -> WriteOutcome:
         check_write_key(key)
         with closing(_writing(self.path, self.timeout)) as db:

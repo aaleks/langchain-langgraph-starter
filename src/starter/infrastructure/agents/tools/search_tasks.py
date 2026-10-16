@@ -17,7 +17,7 @@ from starter.domain.tasks import (
     TITLE_MAX,
     TaskPage,
 )
-from starter.infrastructure.stores.tasks import TaskStore
+from starter.infrastructure.stores.tasks import TaskReader
 
 # Stripped, then 1 to TITLE_MAX characters: a blank query, or one long enough
 # for SQLite to refuse the pattern, fails the tool's own schema, and the tool
@@ -38,9 +38,13 @@ CAPABILITY = Capability(
 )
 
 
-def build(store: TaskStore) -> BaseTool:
-    # Only a reader -- it cannot write -- waiting the manifest's timeout.
-    reader = store.reader(CAPABILITY.timeout_seconds)
+def build(reader: TaskReader) -> BaseTool:
+    # Only a reader -- it cannot write, nor reach the store -- waiting the
+    # manifest's timeout, or the manifest would say what is not so.
+    if reader.timeout != CAPABILITY.timeout_seconds:
+        raise ValueError(
+            f"{CAPABILITY.name} waits {CAPABILITY.timeout_seconds} s; its reader {reader.timeout} s"
+        )
 
     @tool
     def search_tasks(query: Query) -> str:

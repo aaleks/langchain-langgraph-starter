@@ -62,6 +62,60 @@ def binds_beyond_loopback(records: list[dict]) -> list[dict]:
     ]
 
 
+ORIGINS = ["http://localhost:3000", "https://evil.example", "http://localhost:8080"]
+
+
+def preflight(url: str, origin: str) -> str | None:
+    """A browser's CORS preflight to `/threads` from `origin`: the origin the
+    server allows, or None. Straight to 127.0.0.1: no proxy."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        url + "/threads",
+        method="OPTIONS",
+        headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=10) as answer:
+            return answer.headers.get("Access-Control-Allow-Origin")
+    except urllib.error.HTTPError as refused:
+        return refused.headers.get("Access-Control-Allow-Origin")
+
+
+def blind_post(url: str, headers: dict[str, str]) -> int:
+    """A POST to `/threads` as a page sends one blind -- its answer's status."""
+    import urllib.error
+    import urllib.request
+
+    request = urllib.request.Request(
+        url + "/threads", method="POST", data=b'{"metadata": {}}', headers=headers
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=10) as answer:
+            return answer.status
+    except urllib.error.HTTPError as refused:
+        return refused.code
+
+
+def socket_handshake(url: str, origin: str | None) -> int:
+    """A WebSocket handshake to the server's event stream, as a page or the SDK
+    opens one -- 101 when accepted, else the status it was refused with."""
+    import uuid
+
+    from websockets.exceptions import InvalidStatus
+    from websockets.sync.client import connect
+
+    stream_url = url.replace("http://", "ws://") + f"/threads/{uuid.uuid4()}/stream/events"
+    try:
+        with connect(stream_url, origin=origin, proxy=None, open_timeout=10):
+            return 101
+    except InvalidStatus as refused:
+        return refused.response.status_code
+
+
 def message_types(values: dict) -> list[str]:
     return [message["type"] for message in values["messages"]]
 
@@ -95,6 +149,24 @@ def session(tmp_path_factory):
         thread = client.threads.create()["thread_id"]
         seen["events"], seen["last"] = stream(client, thread, stream_mode=["values", "updates"])
         seen["runs"] = [run["status"] for run in client.runs.list(thread)]
+        seen["preflights"] = {origin: preflight(server.url, origin) for origin in ORIGINS}
+        before = len(client.threads.search(limit=1000))
+        seen["blind"] = {
+            "page": blind_post(
+                server.url, {"Origin": "https://evil.example", "Content-Type": "text/plain"}
+            ),
+            "rebound": blind_post(
+                server.url, {"Host": "evil.example", "Content-Type": "application/json"}
+            ),
+        }
+        seen["sockets"] = {
+            "page": socket_handshake(server.url, "https://evil.example"),
+            "agent-chat-ui": socket_handshake(server.url, "http://localhost:3000"),
+            "sdk": socket_handshake(server.url, None),
+        }
+        seen["blind_threads"] = len(client.threads.search(limit=1000)) - before
+        # A POST with no body and no Content-Type, as the SDK sends it.
+        seen["copied"] = client.threads.copy(thread)["thread_id"] != thread
         seen["second"] = subprocess.run(
             [sys.executable, "-c", READ_THREAD, server.url, thread],
             capture_output=True,
@@ -264,3 +336,147 @@ class TestStaysLocal:
         ]
 
         assert beyond_this_machine(records) == [far_connect, far_lookup]
+
+
+def task_titles(path) -> list[str]:
+    import sqlite3
+
+    db = sqlite3.connect(path)
+    titles = [title for (title,) in db.execute("SELECT title FROM tasks ORDER BY id")]
+    db.close()
+    return titles
+
+
+def paused_then_resumed(client, decision: dict, task_list) -> dict:
+    """A run on a new thread until it pauses, then resumed with `decision`: what
+    the owner sees at each point."""
+    seen: dict = {}
+    thread = client.threads.create()["thread_id"]
+    client.runs.wait(
+        thread, "assistant", input={"messages": [{"role": "human", "content": "add the plumber"}]}
+    )
+    state = client.threads.get_state(thread)
+    seen["paused_thread"] = client.threads.get(thread)["status"]
+    seen["paused_runs"] = [run["status"] for run in client.runs.list(thread)]
+    seen["interrupts"] = [i["value"] for i in state.get("interrupts", [])]
+    seen["paused_tasks"] = task_titles(task_list)
+    client.runs.wait(thread, "assistant", command={"resume": {"decisions": [decision]}})
+    seen["thread"] = client.threads.get(thread)["status"]
+    seen["runs"] = [run["status"] for run in client.runs.list(thread)]
+    seen["last"] = client.threads.get_state(thread)["values"]["messages"][-1]
+    seen["tasks"] = task_titles(task_list)
+    return seen
+
+
+@pytest.fixture(scope="module")
+def approvals(tmp_path_factory):
+    """A server whose model -- a stand-in on 127.0.0.1 -- proposes `add_task`:
+    once approved, once rejected, each on its own thread."""
+    from langgraph_sdk import get_sync_client
+
+    from tests.openwebui_stub import openwebui_stub, tool_call
+
+    plumber = tool_call("add_task", {"title": "Call the plumber"})
+    workdir = tmp_path_factory.mktemp("approvals")
+    seen: dict = {}
+    with openwebui_stub(replies=[plumber, "done", plumber]) as stub:
+        settings = {
+            "OPENWEBUI_URL": stub.url,
+            "OPENWEBUI_API_KEY": "sk-local",
+            "OPENWEBUI_MODEL": "llama3.1:8b",
+        }
+        with local_server(workdir, settings=settings) as server:
+            client = get_sync_client(url=server.url)
+            task_list = workdir / "tasks.sqlite3"
+            seen["approved"] = paused_then_resumed(client, {"type": "approve"}, task_list)
+            seen["rejected"] = paused_then_resumed(client, {"type": "reject"}, task_list)
+    return seen
+
+
+class TestApprovalThroughTheServer:
+    """LOCAL-SERVER-APPROVAL: Through the local server's API (`bash scripts/serve.sh`), a
+    run whose model proposes a write SHALL pause with the approval request
+    (ASSISTANT-WRITE-APPROVAL) -- the thread's status `interrupted`, its state
+    showing the interrupt, the task list unchanged; the run itself ends `success`,
+    as the server reports a run stopped at an interrupt (measured); a run on the
+    same thread with `command={"resume": {"decisions": [{"type": "approve"}]}}`
+    SHALL apply the write and complete, and with `{"type": "reject"}` SHALL end with
+    nothing written."""
+
+    @pytest.mark.live
+    def test_approved_through_the_server(self, approvals):
+        approved = approvals["approved"]
+
+        assert approved["paused_thread"] == "interrupted"
+        # The server ends the run itself `success`: the pause is the thread's.
+        assert approved["paused_runs"] == ["success"]
+        assert [
+            [action["name"] for action in value["action_requests"]]
+            for value in approved["interrupts"]
+        ] == [["add_task"]]
+        assert approved["paused_tasks"] == []
+        assert approved["thread"] == "idle"
+        assert approved["runs"] == ["success", "success"]
+        assert approved["tasks"] == ["Call the plumber"]
+
+    @pytest.mark.live
+    def test_counter_example_rejected_through_the_server(self, approvals):
+        rejected = approvals["rejected"]
+
+        assert rejected["paused_thread"] == "interrupted"
+        assert rejected["thread"] == "idle"
+        assert rejected["runs"] == ["success", "success"]
+        assert rejected["last"]["type"] == "tool"
+        assert rejected["last"]["content"] == "The owner rejected this; nothing was changed."
+        # The list holds the first thread's approved task only.
+        assert rejected["tasks"] == ["Call the plumber"]
+
+
+class TestBrowserOrigins:
+    """LOCAL-SERVER-BROWSER-ORIGINS: `bash scripts/serve.sh` SHALL let a web page use the
+    server only from `http://localhost:3000`, Agent Chat UI's default origin -- the
+    owner's choice (2026-10-15): a preflight from any other origin SHALL get no CORS
+    permission, and a request that would change anything from any other origin SHALL
+    be refused before it reaches a route (LOCAL-SERVER-REQUEST-GUARD) -- a
+    `text/plain` POST a browser sends without a preflight included -- so no other
+    page in the owner's browser can read a paused run or approve a write. A client
+    that is not a browser -- the SDK -- is unaffected."""
+
+    @pytest.mark.live
+    def test_a_browsers_preflight(self, session):
+        assert session["preflights"] == {
+            "http://localhost:3000": "http://localhost:3000",
+            "https://evil.example": None,
+            "http://localhost:8080": None,
+        }
+
+    @pytest.mark.live
+    def test_a_pages_blind_write_is_refused(self, session):
+        assert session["blind"] == {"page": 403, "rebound": 403}
+        assert session["blind_threads"] == 0
+        # The SDK's own requests went through: the session made its threads.
+        assert session["runs"] == ["success"]
+        assert session["copied"] is True
+
+    @pytest.mark.live
+    def test_a_pages_websocket_is_refused(self, session):
+        assert session["sockets"] == {"page": 403, "agent-chat-ui": 101, "sdk": 101}
+
+    def test_counter_example_set_by_the_script_not_by_chance(self):
+        import re
+
+        from tests.architecture.contract import REPO, shell_exports
+
+        script = (REPO / "scripts" / "serve.sh").read_text(encoding="utf-8")
+        from starter.domain.access import BROWSER_ORIGINS
+
+        # One origin, held in one place: CORS and the request guard agree.
+        assert re.findall(r"^CORS_ALLOW_ORIGINS=(\S+) \\$", script, re.M) == [
+            ",".join(sorted(BROWSER_ORIGINS))
+        ]
+        assert BROWSER_ORIGINS == {"http://localhost:3000"}
+        assert "CORS_ALLOW_ORIGINS" not in shell_exports(script)
+        assert re.findall(r"^unset CORS_CONFIG$", script, re.M) == ["unset CORS_CONFIG"]
+        assert re.findall(r"^if grep -Eq '\"cors\"\[\[:space:\]\]\*:' ", script, re.M)
+        config = json.loads((REPO / "langgraph.json").read_text(encoding="utf-8"))
+        assert config["http"] == {"app": "./src/starter/infrastructure/server/guard.py:app"}

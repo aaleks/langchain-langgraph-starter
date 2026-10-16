@@ -1,0 +1,163 @@
+# Sequence
+
+- **Order:**
+  1. The domain policies.
+  2. The write tools and their manifests.
+  3. The state and the topology.
+  4. The proposal.
+  5. The approval.
+  6. The decisions.
+  7. The key.
+  8. The prompt.
+  9. Registration.
+  10. The server, end to end.
+- **Wiring point:** `src/starter/infrastructure/agents/factory.py` and
+  `registry.py`.
+- **Story test:**
+  `tests/acceptance/agents/test_local_server.py::TestApprovalThroughTheServer`
+  -- `live`. It stays red until the registry passes the writer and the graph
+  pauses.
+
+## 1. The story test
+
+- [x] 1.1 /accept -- `TestApprovalThroughTheServer`, red: the run completed, no
+  `add_task` to pause on
+
+## 2. TOOLS-TASK-WRITES, TOOLS-MANIFEST (modified)
+
+- [x] 2.1 /accept -- `TestTaskWriteTools`; the manifest rows
+- [x] 2.2 /tdd -- `add_task.py`, `close_task.py`, `reassign_task.py`;
+  `check_capability` takes writes; reads built over a reader
+
+## 3. ASSISTANT-STATE-CONTRACT, ASSISTANT-GRAPH-TOPOLOGY, ASSISTANT-ROUTING (modified)
+
+- [x] 3.1 /accept -- the version, the table, the policies' rows
+- [x] 3.2 /tdd -- state v2, the two nodes, `route_after_tools`, `route_after_writes`
+
+## 4. ASSISTANT-WRITE-PROPOSAL
+
+- [x] 4.1 /accept -- `TestWriteProposal`
+- [x] 4.2 /tdd -- `run_tools` checks write calls
+
+## 5. ASSISTANT-WRITE-APPROVAL
+
+- [x] 5.1 /accept -- `TestWriteApproval`
+- [x] 5.2 /tdd -- `review_writes`, `describe_write`
+
+## 6. ASSISTANT-WRITE-DECISIONS
+
+- [x] 6.1 /accept -- `TestWriteDecisions`
+- [x] 6.2 /tdd -- `apply_writes`, `read_decisions`, `outcome_message`
+
+## 7. ASSISTANT-WRITE-KEY
+
+- [x] 7.1 /accept -- `TestWriteKey`. Red after the code was written: the
+  replay applied the write twice -- the superstep differs on replay (5, then
+  6, measured). The key is the reply's id instead; spec, design and ADRs
+  amended
+- [x] 7.2 /tdd -- `write_key(thread, reply, call)`
+
+## 8. ASSISTANT-PROMPT (modified), ASSISTANT-UNTRUSTED-TASK-TEXT, ASSISTANT-NO-CALL-LEFT-UNANSWERED (rows)
+
+- [x] 8.1 Prompt v2 and its digest; the adversarial row; the new-input row
+
+## 9. ASSISTANT-REGISTERED (modified), the story test green
+
+- [x] 9.1 The registry passes the writer; five tools offered
+- [x] 9.2 The story test green through `scripts/serve.sh`. Measured on the
+  way: the server ends a run stopped at an interrupt `success`; the pause is
+  the thread's status, `interrupted`. The scenario said the run's: amended
+
+## 10. Close
+
+- [x] 10.1 Mutations of the new code, 19, each red once three survivors were
+  closed with rows: a reader's wait other than its manifest; one review config
+  per tool; writes spending the tool-call budget
+- [x] 10.2 Documents: CLAUDE.md, the roadmap, the measurement script
+
+## 11. Verify pass 1 -- the fixes
+
+- [x] 11.1 Each well-formed call of a reply under an id of its own
+  (`calls_to_rename`); the owner's `reject, approve` on two writes once under
+  one id now rejects the one and applies the other
+- [x] 11.2 One write a step, answered and routed from the outcome the store
+  recorded; a failure part-way then new input; a replay deciding otherwise;
+  rules changed while a write waited
+- [x] 11.3 The task's title and status in the description, quoted as JSON;
+  strict schema; the key a JSON array, checked with the proposal; no thread,
+  no proposal; a write without a builder refused
+- [x] 11.4 Browsers: `CORS_ALLOW_ORIGINS=http://localhost:3000`, the owner's
+  choice -- `TestBrowserOrigins`, live preflights from three origins
+- [x] 11.5 Test gaps closed: NO-CALL row 4, the write tools' defaults and
+  every direct call, the registered graph's write reaching `TASKS_DB`, the
+  replay re-running, the read beside a write succeeding
+- [x] 11.6 Mutations of the fixes, 18, each red -- one, at first an error
+  rather than a red, closed with the changed-rules scenario
+
+## 12. Verify pass 2 -- the fixes
+
+- [x] 12.1 The request guard, the owner's choice: `request_refusal` in the
+  domain (`TestRequestGuard`), `LocalRequestGuard` as `langgraph.json`'s
+  `http.app`; live, a page's blind `text/plain` POST and a rebound `Host`
+  refused with no thread created, the SDK let through
+- [x] 12.2 `serve.sh` unsets `CORS_CONFIG` and refuses a `"cors"` key
+- [x] 12.3 Every waiting write asked about on the resume too, one refused by
+  then shown `Not valid: <why>`; two writes, rules changed for one, resumed
+  both ways
+- [x] 12.4 `start_run` answers a write left unanswered with the outcome its
+  key recorded (`TaskWriter.recorded`)
+- [x] 12.5 No checkpointer, no proposal, whatever the thread id; the thread
+  id passed through `str()`; a status shown as a fixed word; every control,
+  format and separator character escaped in a description
+- [x] 12.6 Test gaps closed: the AND clauses of the proposal rows, the read
+  and write under one id still waiting, the replay in both directions, the
+  direct calls over a seeded list, a v1 state running on
+- [x] 12.7 MODEL-OPENWEBUI-LIVE amended: a real model may read the list
+  before it answers -- measured, two runs of three on 2026-10-15
+- [x] 12.8 Mutations of the fixes, 11, each red once two survivors were
+  closed with rows: the `Not valid` reason, a status written elsewhere
+
+## 13. Verify pass 3 -- the fixes
+
+- [x] 13.1 WebSockets: refused for the `Host` and any other page's `Origin`,
+  closed unaccepted; anything but HTTP, WebSockets and the lifespan reaches
+  nothing -- unit and integration rows red first; live, a page's socket
+  403, Agent Chat UI's and the SDK's accepted
+- [x] 13.2 A request with no body passes the media-type rule: the SDK's
+  `threads.copy`, live, red on the old guard (403)
+- [x] 13.3 The guard's own test, `TestGuardInFrontOfEveryRoute`, every row
+  of the policy's tables through the adapter
+- [x] 13.4 The proposal table, a refused write beside a read, the read
+  beside a write and the decisions, each on `invoke` and `ainvoke`; the
+  async mutant now red
+- [x] 13.5 `apply_writes` reads the key's record before the rules -- red
+  first
+- [x] 13.6 Rows: a malformed call and a write under one id; a thread id
+  that is not text; a `Not valid` action's arguments; an approval with more
+  than its type; the `cors` refusal by its own line; the one origin held
+  equal in the script and the domain; the live test's malformed calls and
+  docstring; `state.py`'s stale lines
+- [x] 13.7 Mutations of the fixes, 12, each red once a redundant condition
+  was removed and the unknown-kind test given a local `Host`
+
+## 14. Verify pass 4 -- the MINORs
+
+- [x] 14.1 `apply_writes` decides through the writer again, which refuses a
+  key recording another write; the record is read directly only when the
+  rules now refuse the call -- the fork test red first
+- [x] 14.2 `/deploy` and `/internal/` refused by the guard -- rows red first
+- [x] 14.3 Rows: a `PATCH` body, a WebSocket scope with no method, the budget
+  on `ainvoke`, an approval with more than its type, the `Not valid` values
+- [x] 14.4 Records: the roadmap's slices 5 and 6 carry every deferral;
+  finding 21's reach reworded; the upstream note
+- [x] 14.5 Mutations of the fixes, 8, each red
+
+## 15. Verify pass 5 -- the MINORs
+
+- [x] 15.1 The guard judges the route's path, a mount prefix stripped as
+  the router strips it -- the row red first
+- [x] 15.2 A `PUT` row; the statement "to or under `/deploy`"; two
+  sentences on `apply_writes`' order brought to the code
+- [x] 15.3 Pass 6: a root path is stripped only at a segment's end, as
+  Starlette's router strips it -- the row red first
+

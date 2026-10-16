@@ -13,8 +13,9 @@ URL printed the key in the traceback before this.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import replace
 
 import pytest
@@ -35,9 +36,13 @@ def reported_by_message_only() -> Iterator[None]:
 
 class TestAnsweredByOpenWebUI:
     """MODEL-OPENWEBUI-LIVE: With Open WebUI configured in `.env`, a run of the
-    registered assistant SHALL be answered by that Open WebUI model: one model
-    turn, a transcript of `human, ai`, and an answer that is not empty and is
-    not the offline model's."""
+    registered assistant SHALL be answered by that Open WebUI model: a transcript
+    that begins with the human message and ends with a model answer calling no
+    tool, every tool call on the way answered, nothing written to the task list,
+    and an answer that is not empty and is not the offline model's. A real model may
+    read the task list before it answers -- measured 2026-10-15, two runs of three
+    called `list_tasks` on `Reply with one word.` -- so the route between is the
+    model's, never asserted."""
 
     @pytest.mark.live
     def test_a_real_answer_through_open_webui(self, tmp_path):
@@ -55,14 +60,27 @@ class TestAnsweredByOpenWebUI:
 
             # The owner's model, never the owner's task list: a run creates one
             # where TASKS_DB points, so it points at a temporary one.
-            graph = registered_assistant(
-                replace(settings, tasks_db=str(tmp_path / "tasks.sqlite3"))
-            )
+            tasks_db = tmp_path / "tasks.sqlite3"
+            graph = registered_assistant(replace(settings, tasks_db=str(tasks_db)))
             messages = graph.invoke({"messages": [HumanMessage("Reply with one word.")]})[
                 "messages"
             ]
 
-            assert [m.type for m in messages] == ["human", "ai"]
+            # The route between is the model's: it may read the list first.
+            assert messages[0].type == "human" and messages[-1].type == "ai"
             assert messages[-1].tool_calls == []
+            # A malformed call is answered too: a small model's is a route of its own.
+            called = {
+                c["id"]
+                for m in messages
+                if m.type == "ai"
+                for c in [*m.tool_calls, *m.invalid_tool_calls]
+            }
+            assert called == {m.tool_call_id for m in messages if m.type == "tool"}
+            with closing(sqlite3.connect(tasks_db)) as db:
+                written = db.execute(
+                    "SELECT (SELECT count(*) FROM tasks) + (SELECT count(*) FROM task_writes)"
+                ).fetchone()
+            assert written == (0,)
             assert isinstance(messages[-1].content, str) and messages[-1].content.strip()
             assert messages[-1].content != OFFLINE_ANSWER

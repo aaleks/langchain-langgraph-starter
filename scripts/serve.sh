@@ -41,6 +41,14 @@ if grep -Eq '"env"[[:space:]]*:' <<< "$flat"; then
   refuse "$config has an \"env\" key, which the server loads over the local-only environment. Remove it: config/ loads .env for the graphs."
 fi
 
+# Browsers are limited below (CORS_ALLOW_ORIGINS) and by the request guard in
+# langgraph.json's http.app. A "cors" block there would replace the first, so it
+# is refused like "env"; CORS_CONFIG from this shell would too, so it is unset.
+if grep -Eq '"cors"[[:space:]]*:' <<< "$flat"; then
+  refuse "$config has a \"cors\" key, which replaces the one origin a browser may use. Remove it (approve-task-writes, ADR 0009)."
+fi
+unset CORS_CONFIG
+
 # .env must not put LangSmith back either -- a loader that overrides would undo
 # the environment below. Names are reported; values are never printed.
 credentials='LANGSMITH_API_KEY|LANGCHAIN_API_KEY|LANGSMITH_CONTROL_PLANE_API_KEY|LANGGRAPH_CLOUD_LICENSE_KEY'
@@ -96,4 +104,9 @@ export LANGSMITH_API_KEY='' LANGCHAIN_API_KEY='' LANGSMITH_CONTROL_PLANE_API_KEY
 export LANGSMITH_ENDPOINT=http://127.0.0.1:9 LANGCHAIN_ENDPOINT=http://127.0.0.1:9
 export LANGGRAPH_CLI_NO_ANALYTICS=1 LANGGRAPH_NO_VERSION_CHECK=true
 
-exec uv run langgraph dev --config "$config" --host 127.0.0.1 --port "$port" --no-browser ${args[@]+"${args[@]}"}
+# Browsers: only Agent Chat UI's default origin may call the server -- the
+# owner's choice (approve-task-writes, verify finding 2). LangGraph's default,
+# every origin, would let any web page approve a write. Not part of the
+# local-only environment above: it guards the owner's writes, not LangSmith.
+CORS_ALLOW_ORIGINS=http://localhost:3000 \
+  exec uv run langgraph dev --config "$config" --host 127.0.0.1 --port "$port" --no-browser ${args[@]+"${args[@]}"}

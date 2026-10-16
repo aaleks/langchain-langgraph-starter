@@ -150,7 +150,8 @@ def _checked_id(task_id: int) -> int:
     return task_id
 
 
-# The longest key a write is recorded under: thread, step and call, joined.
+# The longest key a write is recorded under: the thread, the reply and the
+# call (ASSISTANT-WRITE-KEY).
 WRITE_KEY_MAX = 300
 
 WriteAction = Literal["create", "close", "reassign"]
