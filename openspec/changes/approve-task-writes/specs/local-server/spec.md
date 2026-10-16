@@ -59,7 +59,7 @@ The local server SHALL refuse, before any route sees it, a request the domain po
 - **WHEN** each row of the two tables above is sent through it
 - **THEN** each refused HTTP row is answered 403 and each refused WebSocket handshake closed unaccepted, the route seeing none of them; each row let through reaches the route
 - **AND** the server's lifespan passes through, and a connection of another kind reaches nothing
-- **AND** under the mount prefix `/api`, a `POST` to `/api/deploy` is refused as the `/deploy` it reaches
+- **AND** under the mount prefix `/api`, a `POST` to `/api/deploy` is refused as the `/deploy` it reaches; under the root path `/d`, which ends inside a segment, `/deploy` is judged whole, and refused
 
 ### Requirement: LOCAL-SERVER-BROWSER-ORIGINS
 `bash scripts/serve.sh` SHALL let a web page use the server only from `http://localhost:3000`, Agent Chat UI's default origin -- the owner's choice (2026-10-15): a preflight from any other origin SHALL get no CORS permission, and a request that would change anything from any other origin SHALL be refused before it reaches a route (LOCAL-SERVER-REQUEST-GUARD) -- a `text/plain` POST a browser sends without a preflight included -- so no other page in the owner's browser can read a paused run or approve a write. A client that is not a browser -- the SDK -- is unaffected.

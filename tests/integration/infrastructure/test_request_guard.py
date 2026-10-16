@@ -140,6 +140,15 @@ class TestGuardInFrontOfEveryRoute:
 
         assert seen == [] and sent[0]["status"] == 403
 
+    def test_a_root_path_that_ends_inside_a_segment_is_not_stripped(self):
+        # The router strips a prefix only at a segment's end: `/d` leaves `/deploy`.
+        scope = scope_for(False, "POST", "/deploy", "127.0.0.1:2024", None, None, False)
+        scope["root_path"] = "/d"
+
+        seen, sent = through_the_guard(scope)
+
+        assert seen == [] and sent[0]["status"] == 403
+
     def test_the_lifespan_passes_and_nothing_else_does(self):
         assert through_the_guard({"type": "lifespan"})[0] == ["lifespan"]
         local = [(b"host", b"127.0.0.1:2024")]

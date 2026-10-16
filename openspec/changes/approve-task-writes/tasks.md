@@ -158,3 +158,6 @@
   the router strips it -- the row red first
 - [x] 15.2 A `PUT` row; the statement "to or under `/deploy`"; two
   sentences on `apply_writes`' order brought to the code
+- [x] 15.3 Pass 6: a root path is stripped only at a segment's end, as
+  Starlette's router strips it -- the row red first
+

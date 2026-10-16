@@ -59,7 +59,11 @@ def _route_path(scope) -> str:
     """The path the router matches -- without a mount prefix, as Starlette strips
     it -- so a prefixed `/api/deploy` is judged as the `/deploy` it reaches."""
     path, root = scope.get("path", ""), scope.get("root_path", "")
-    return path[len(root) :] if root and path.startswith(root) else path
+    # Only at a segment's end, as Starlette's `get_route_path`: `/d` is no prefix
+    # of `/deploy` (approve-task-writes, verify finding 62).
+    if root and path.startswith(root) and (path == root or path[len(root)] == "/"):
+        return path[len(root) :]
+    return path
 
 
 app = Starlette(middleware=[Middleware(LocalRequestGuard)])

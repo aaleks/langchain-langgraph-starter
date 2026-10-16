@@ -1,7 +1,10 @@
 # Verify
 
-- **Verdict:** SHIP -- after five passes; the last two found no BLOCKER and
+- **Verdict:** SHIP -- after six passes; the last three found no BLOCKER and
   no MAJOR, and every earlier one is fixed or, for finding 21, accepted.
+- **Pass 6:** SHIP -- one MINOR (62), fixed. Reviewed at `f59a2d0`, pass 5's
+  fixes, by the defects lens; the real server app in-process, its
+  `/deploy` and `/internal/` handlers stubbed.
 - **Pass 5:** SHIP -- no BLOCKER, no MAJOR; its MINORs fixed or accepted
   (58-61). Reviewed at `adb660a`, the pass-4 fixes, by the proof and
   defects lenses; its fixes committed after it, each row red first.
@@ -235,6 +238,15 @@ mutations of the pass-4 fixes each red.
 | 58 | Fixed (tasks.md 15.1), red first |
 | 59 | Accepted |
 | 60, 61 | Fixed (15.2) |
+
+## Findings -- pass 6
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 62 | MINOR | defects | `_route_path` stripped a root path ending inside a segment, which Starlette does not: under a uvicorn root path `/in`, a request target `ternal/truncate` became the router's `/internal/truncate` while the guard judged `ternal/truncate`. Not reachable through `serve.sh`, which passes no root path, nor under a mount prefix, whose `Mount` matches only at a segment's end | `guard.py:_route_path` | Stripped only at a segment's end, as `get_route_path`; a row, red first |
+
+Pass 6's fix -- one condition and its row -- was not put to another lens:
+it is the condition the lens named, read from Starlette's own function.
 
 ## Not checked
 
