@@ -19,7 +19,13 @@ from starter.domain.models import choose_model
 
 REPO = Path(__file__).resolve().parents[3]
 # Every setting the specification names, spelled out: NAMES is what is tested.
-SPECIFIED = ("OPENWEBUI_URL", "OPENWEBUI_API_KEY", "OPENWEBUI_MODEL", "TASKS_DB")
+SPECIFIED = (
+    "OPENWEBUI_URL",
+    "OPENWEBUI_API_KEY",
+    "OPENWEBUI_MODEL",
+    "TASKS_DB",
+    "CHECKPOINTS_DB",
+)
 EVERY_SETTING = dict.fromkeys(SPECIFIED, "")
 
 
@@ -170,6 +176,77 @@ class TestTasksDb:
         )
 
         assert tasks_db_path(settings) == REPO / "lists" / "home.sqlite3"
+
+
+class TestCheckpointsDb:
+    """SETTINGS-CHECKPOINTS-DB: The threads' checkpoint file SHALL be the setting
+    `CHECKPOINTS_DB` -- a relative path taken from the repository's root, an absolute
+    one as it is -- and `.data/checkpoints.sqlite3` under the repository's root when the
+    setting is empty; never the task list's own file: a `CHECKPOINTS_DB` naming the file
+    `TASKS_DB` names SHALL be refused, naming both settings."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("", REPO / ".data" / "checkpoints.sqlite3"),
+            ("state/threads.sqlite3", REPO / "state" / "threads.sqlite3"),
+        ],
+        ids=["empty-is-the-default", "relative-from-the-repository"],
+    )
+    def test_where_the_checkpoints_are(self, tmp_path, value, expected):
+        from starter.config.settings import checkpoints_db_path
+
+        settings = read_settings({**EVERY_SETTING, "CHECKPOINTS_DB": value}, tmp_path / ".env")
+
+        assert checkpoints_db_path(settings) == expected
+
+    def test_an_absolute_path_is_taken_as_it_is(self, tmp_path):
+        from starter.config.settings import checkpoints_db_path
+
+        absolute = tmp_path / "checkpoints.sqlite3"
+        settings = read_settings(
+            {**EVERY_SETTING, "CHECKPOINTS_DB": str(absolute)}, tmp_path / ".env"
+        )
+
+        assert checkpoints_db_path(settings) == absolute
+
+    def test_counter_example_the_working_directory_does_not_decide(self, tmp_path, monkeypatch):
+        from starter.config.settings import checkpoints_db_path
+
+        monkeypatch.chdir(tmp_path)
+        settings = read_settings(
+            {**EVERY_SETTING, "CHECKPOINTS_DB": "state/threads.sqlite3"}, tmp_path / ".env"
+        )
+
+        assert checkpoints_db_path(settings) == REPO / "state" / "threads.sqlite3"
+
+    def test_counter_example_the_task_lists_own_file_is_refused(self, tmp_path):
+        from starter.config.settings import checkpoints_db_path
+
+        same = str(tmp_path / "tasks.sqlite3")
+        settings = read_settings(
+            {**EVERY_SETTING, "TASKS_DB": same, "CHECKPOINTS_DB": same}, tmp_path / ".env"
+        )
+
+        with pytest.raises(ValueError, match="CHECKPOINTS_DB") as refused:
+            checkpoints_db_path(settings)
+        assert "TASKS_DB" in str(refused.value)
+
+    def test_counter_example_the_default_is_the_task_lists_file(self, tmp_path):
+        from starter.config.settings import checkpoints_db_path
+
+        settings = read_settings(
+            {**EVERY_SETTING, "TASKS_DB": ".data/checkpoints.sqlite3", "CHECKPOINTS_DB": ""},
+            tmp_path / ".env",
+        )
+
+        with pytest.raises(ValueError) as refused:
+            checkpoints_db_path(settings)
+        # Said as it is: the default file is the task list's, not a value CHECKPOINTS_DB holds.
+        assert str(refused.value) == (
+            f"the checkpoint file, {REPO / '.data' / 'checkpoints.sqlite3'}, is the task "
+            "list's own (TASKS_DB): set CHECKPOINTS_DB to a file of its own"
+        )
 
 
 class TestKeyNeverShown:

@@ -17,8 +17,9 @@
 #     sends every run there even with no key at all;
 #   - refused when langgraph.json or .env would put any of that back.
 #
-# The in-memory server is for development. Its threads live in .langgraph_api/
-# (gitignored), and it proves nothing about durability.
+# The development server keeps its thread records in .langgraph_api/ (gitignored)
+# and every checkpoint in the file CHECKPOINTS_DB names, through langgraph.json's
+# checkpointer (docs/decisions/0010). Seeing it run proves nothing; the tests do.
 #
 # Seeded by the SDD method's langgraph pack; project-owned from then on.
 

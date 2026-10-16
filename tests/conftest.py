@@ -41,6 +41,9 @@ LOCAL_ONLY = {
     "LANGGRAPH_NO_VERSION_CHECK": "true",
 }
 os.environ.update(LOCAL_ONLY)
+# The durable checkpointer is strict in code; a shell exporting LangGraph's own
+# switch would make that unprovable (ASSISTANT-CHECKPOINT-STRICT).
+os.environ.pop("LANGGRAPH_STRICT_MSGPACK", None)
 
 # The owner's .env may configure a real model. The environment wins over .env
 # (SETTINGS-ENVIRONMENT-WINS), so these empty values keep every default test --
@@ -50,7 +53,10 @@ os.environ.update(MODEL_UNSET)
 
 # Nor the owner's task list: the suite's is a file in a directory of its own,
 # empty until a test writes to it. A test that needs a list sets its own path.
-os.environ["TASKS_DB"] = str(Path(tempfile.mkdtemp(prefix="starter-suite-")) / "tasks.sqlite3")
+_SUITE_DATA = Path(tempfile.mkdtemp(prefix="starter-suite-"))
+os.environ["TASKS_DB"] = str(_SUITE_DATA / "tasks.sqlite3")
+# Nor the owner's checkpoints (durable-approvals).
+os.environ["CHECKPOINTS_DB"] = str(_SUITE_DATA / "checkpoints.sqlite3")
 
 # The model client reads more of the environment than it is given: a proxy, an
 # organisation, extra headers. None of the owner's reaches a default test, and

@@ -39,7 +39,7 @@ src/starter/
     agents/
       registry.py         the only names langgraph.json may use
       factory.py          composition: settings in, dependencies wired, graph out
-      checkpointers.py    in-memory for tests and the local server; durable for anything real
+      checkpointers.py    the local server's: a SQLite file, each checkpoint stamped with the state's version (ADR 0010)
       middleware.py       budget, telemetry and policy-enforcement adapters, for a create_agent loop
       tools/              one per module, each with its capability manifest
       graphs/<name>/      state.py, graph.py, routes.py, nodes/, subgraphs/ -- thin adapters

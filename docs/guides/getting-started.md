@@ -117,6 +117,11 @@ client.runs.wait(
 The list now holds the new task, and its `task_writes` table records your
 decision.
 
+A write waiting for approval survives the server's restart: its checkpoints
+are in `.data/checkpoints.sqlite3` (`CHECKPOINTS_DB`). If the server was
+killed rather than stopped, re-register the thread first:
+`client.threads.create(thread_id=thread_id, if_exists="do_nothing")`.
+
 ## 7. What happens on a write
 
 1. The model proposes `add_task`. Its arguments are checked by the tool's

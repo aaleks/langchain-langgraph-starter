@@ -22,7 +22,7 @@ A setting SHALL be read from the process environment when the environment holds 
 | not set, `PROBE=leaked` | `OPENWEBUI_MODEL=${PROBE}` | `${PROBE}` |
 
 #### Scenario: Spaces around a value
-| Each of `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`, `TASKS_DB` in the environment | Read |
+| Each of `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, `OPENWEBUI_MODEL`, `TASKS_DB`, `CHECKPOINTS_DB` in the environment | Read |
 |---|---|
 | `   ` | empty |
 | `  sk-local` followed by a tab | `sk-local` |
@@ -80,3 +80,28 @@ The task list's file SHALL be the setting `TASKS_DB` -- a relative path taken fr
 #### Scenario: Counter-example -- the working directory does not decide
 - **GIVEN** `TASKS_DB=lists/home.sqlite3`, read from a working directory other than the repository's root
 - **THEN** the file is `<repository>/lists/home.sqlite3`
+
+### Requirement: SETTINGS-CHECKPOINTS-DB
+The threads' checkpoint file SHALL be the setting `CHECKPOINTS_DB` -- a relative path taken from the repository's root, an absolute one as it is -- and `.data/checkpoints.sqlite3` under the repository's root when the setting is empty; never the task list's own file: a `CHECKPOINTS_DB` naming the file `TASKS_DB` names SHALL be refused, naming both settings.
+
+- **Kind:** deterministic
+- **Proved by:** `tests/integration/config/test_settings.py::TestCheckpointsDb`
+
+#### Scenario: Where the checkpoints are
+| `CHECKPOINTS_DB` | The checkpoint file |
+|---|---|
+| empty | `<repository>/.data/checkpoints.sqlite3` |
+| `state/threads.sqlite3` | `<repository>/state/threads.sqlite3` |
+| an absolute path, `<tmp>/checkpoints.sqlite3` | `<tmp>/checkpoints.sqlite3` |
+
+#### Scenario: Counter-example -- the working directory does not decide
+- **GIVEN** `CHECKPOINTS_DB=state/threads.sqlite3`, read from a working directory other than the repository's root
+- **THEN** the file is `<repository>/state/threads.sqlite3`
+
+#### Scenario: Counter-example -- the task list's own file
+- **GIVEN** `TASKS_DB` and `CHECKPOINTS_DB` both `<tmp>/tasks.sqlite3`
+- **THEN** the checkpoint file is refused, naming `CHECKPOINTS_DB` and `TASKS_DB`
+
+#### Scenario: Counter-example -- the default, the task list's own file
+- **GIVEN** `CHECKPOINTS_DB` empty and `TASKS_DB` `.data/checkpoints.sqlite3`
+- **THEN** it is refused: `the checkpoint file, <repository>/.data/checkpoints.sqlite3, is the task list's own (TASKS_DB): set CHECKPOINTS_DB to a file of its own`

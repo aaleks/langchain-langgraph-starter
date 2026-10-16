@@ -64,6 +64,13 @@ def registered_assistant(settings=None):
   otherwise.
 - `factory.build_assistant` checks every tool's capability manifest, then
   compiles -- the only place a graph is compiled -- with the step ceiling set.
+- `infrastructure/agents/checkpointers.py` is the server's checkpointer,
+  named in `langgraph.json`'s `checkpointer`: every checkpoint in the SQLite
+  file `CHECKPOINTS_DB` names, stamped with the state's version. A checkpoint
+  newer than the code is refused before any node runs
+  (`domain/agents/state_versions.py`). After the server is killed, re-register
+  a paused thread with `client.threads.create(thread_id=..., if_exists="do_nothing")`,
+  then resume it.
 
 ## 4. The graph: `infrastructure/agents/graphs/assistant/`
 

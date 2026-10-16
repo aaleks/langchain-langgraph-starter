@@ -40,6 +40,11 @@ mutation.html
 *.sqlite
 *.sqlite3
 *.db
+# SQLite's write-ahead log beside a file: the same data, not yet folded in
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
 
 # Editors and OS
 .idea/

@@ -112,6 +112,17 @@ durability, safety) arrives in the slice whose requirement asks for it.
    checkpoint resuming after a state change, its version stamped on it;
    retention, and a thread's size -- today a thread past the context budget
    fails every run (deferred here by the owner, assistant-as-a-graph).
+   Split by the owner (2026-10-16) into **5a** durable approvals -- landed
+   (`durable-approvals`, #16, three verify passes): a SQLite checkpointer,
+   each checkpoint stamped with the state's version, reads strict (ADR 0010)
+   -- **5b** thread ownership through a local token, and **5c** retention and a
+   thread's size. Left to 5b and 5c by durable-approvals' verify: encryption at
+   rest, revisited with 5b's token, which must not travel in a header the
+   server copies into every checkpoint; who may copy a thread (5b); the
+   SQLite saver's missing `adelete_for_runs` and `aprune`, the empty thread a
+   refused copy leaves,
+   a resume refused when a thread has no checkpoint, and a write already
+   applied asked about again after a kill (5c).
    Left here by approve-task-writes' verify (its `verify.md`):
    - ownership's boundary: today any client that is not a browser and can
      reach the port is the owner (finding 21);

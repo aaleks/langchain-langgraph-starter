@@ -13,7 +13,10 @@ tasks add` (`docs/decisions/0006-the-task-store.md`) -- and propose adding,
 closing and reassigning tasks. Each write pauses the run for the owner's
 approval, in LangChain's approval format, and is applied once and audited
 (`docs/decisions/0008-task-writes-once-and-audited.md`,
-`docs/decisions/0009-writes-wait-for-the-owners-approval.md`). Every tool
+`docs/decisions/0009-writes-wait-for-the-owners-approval.md`). The local
+server keeps every checkpoint in a SQLite file, each stamped with the state's
+version, so a write waiting for approval survives a restart
+(`docs/decisions/0010-checkpoints-in-a-sqlite-file.md`). Every tool
 carries a capability manifest. It is an **approval-gated task assistant** over
 a local task list, its model served by the owner's local Open WebUI -- the
 slices in `docs/roadmap.md`, each through the loop like everything else.
