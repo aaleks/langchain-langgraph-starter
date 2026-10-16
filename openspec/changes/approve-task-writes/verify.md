@@ -1,7 +1,10 @@
 # Verify
 
-- **Verdict:** SHIP -- after four passes; the last found no BLOCKER and no
-  MAJOR, and every earlier one is fixed or, for finding 21, accepted.
+- **Verdict:** SHIP -- after five passes; the last two found no BLOCKER and
+  no MAJOR, and every earlier one is fixed or, for finding 21, accepted.
+- **Pass 5:** SHIP -- no BLOCKER, no MAJOR; its MINORs fixed or accepted
+  (58-61). Reviewed at `adb660a`, the pass-4 fixes, by the proof and
+  defects lenses; its fixes committed after it, each row red first.
 - **Pass 1:** DO NOT SHIP -- two BLOCKER, three MAJOR. The most
   important fix: a write the owner rejected was applied when two calls of a
   reply shared an id (1).
@@ -208,8 +211,30 @@ stated, every docstring matches its statement (proof).
 | 51 | Fixed (tasks.md 14.1), the fork test red first |
 | 52 | Fixed (14.2), rows red first |
 | 53, 56 | Fixed (14.4) |
-| 54, 55 | Fixed (14.3) |
+| 54, 55 | Fixed (14.3) -- 55's `PUT` row only in pass 5 (60) |
 | 57 | Accepted |
+
+## Findings -- pass 5
+
+Reviewed at `adb660a`: the pass-4 fixes (`git diff 6512b07..adb660a`), by the
+proof and defects lenses; the server's app in-process with its routes stubbed,
+no deployment run, no `.env` read. `python -m pytest`: 490 passed; their 8
+mutations of the pass-4 fixes each red.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 58 | MINOR | defects | Under a mount prefix (`MOUNT_PREFIX`, or `mount_prefix` in `langgraph.json`), the guard saw `/api/deploy` while the router matched `/deploy`: the refusal was bypassed. Latent: nothing sets a prefix | `guard.py` | The route's path: the prefix stripped as Starlette strips it |
+| 59 | MINOR | defects | A fork that edits a decided call to arguments the rules refuse is answered with the key's recorded outcome | `nodes.py:apply_writes` | Accepted: design.md Risks says that branch matches no record to the call; only a client that can edit state reaches it (21, 37) |
+| 60 | MINOR | proof | `PUT` is in the statement with no row; row 55 said it was added | tests | A `PUT` row |
+| 61 | MINOR | proof | Two sentences kept pass 3's order of `apply_writes`; the statement said `/deploy` where the code refuses `/deploy/...` too; two docstrings left the route rule out | spec, design.md, docstrings | Reworded |
+
+### Pass 5 -- what became of each
+
+| # | Outcome |
+|---|---|
+| 58 | Fixed (tasks.md 15.1), red first |
+| 59 | Accepted |
+| 60, 61 | Fixed (15.2) |
 
 ## Not checked
 

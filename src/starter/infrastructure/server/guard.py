@@ -18,7 +18,8 @@ from starter.domain.access import request_refusal
 class LocalRequestGuard:
     """Refuses a request the domain's `request_refusal` refuses -- a write or a
     WebSocket from a page other than Agent Chat UI's, a body a browser could send
-    without asking, or a Host that is not this machine: an HTTP request with 403,
+    without asking, a Host that is not this machine, or the development server's
+    own `/deploy` and `/internal/` routes: an HTTP request with 403,
     a WebSocket handshake closed before it is accepted. Nothing but HTTP,
     WebSockets and the server's lifespan reaches the server: what this guard does
     not know, it does not let through."""
@@ -39,7 +40,7 @@ class LocalRequestGuard:
         refusal = request_refusal(
             socket=socket,
             method=scope.get("method", "GET"),
-            path=scope.get("path", ""),
+            path=_route_path(scope),
             host=headers.get("host"),
             origin=headers.get("origin"),
             content_type=headers.get("content-type"),
@@ -52,6 +53,13 @@ class LocalRequestGuard:
             await WebSocketClose(code=1008, reason=refusal)(scope, receive, send)
         else:
             await JSONResponse({"detail": refusal}, status_code=403)(scope, receive, send)
+
+
+def _route_path(scope) -> str:
+    """The path the router matches -- without a mount prefix, as Starlette strips
+    it -- so a prefixed `/api/deploy` is judged as the `/deploy` it reaches."""
+    path, root = scope.get("path", ""), scope.get("root_path", "")
+    return path[len(root) :] if root and path.startswith(root) else path
 
 
 app = Starlette(middleware=[Middleware(LocalRequestGuard)])

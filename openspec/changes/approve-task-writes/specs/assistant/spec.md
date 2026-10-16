@@ -109,7 +109,7 @@ Each decision SHALL decide its write, one write a step, its answer stored with i
 #### Scenario: A write applied, its answer lost, the rules changed, then continued
 - **GIVEN** the same, and the rules then refusing the title
 - **WHEN** the thread is continued
-- **THEN** the call is answered `{"outcome": "applied", "task_id": 2}` -- what the list recorded under its key, before any rule is read -- and `task_writes` holds one row
+- **THEN** the call is answered `{"outcome": "applied", "task_id": 2}` -- what the list recorded under its key, read once the rules refuse the call -- and `task_writes` holds one row
 
 #### Scenario: Counter-example -- a fork that edits a decided call
 - **GIVEN** `add_task(title="Call the plumber")` approved and applied, and the thread forked from the checkpoint before `apply_writes` with the call's arguments edited to `{"title": "Buy milk"}` under the same reply and call ids

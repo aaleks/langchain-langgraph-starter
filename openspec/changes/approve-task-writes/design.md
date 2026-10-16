@@ -270,7 +270,8 @@ decision. This change joins them through the owner's approval.
 - **[A run ends after the store commits, before its answer is stored]** --
   killed, or cancelled after the commit -> the next run's `start_run`
   answers the call with the outcome recorded under its key, never "not
-  run"; a continue's `apply_writes` reads the record before the rules.
+  run"; a continue's `apply_writes` answers from the record when the rules
+  now refuse the call, and through the writer otherwise.
 - **[A run cancelled while its write waits for the list's lock]** -> the
   write's thread is not stopped by the cancel, and may commit after the
   next run's `start_run` answered it "not run" (pass 3, measured). Then the

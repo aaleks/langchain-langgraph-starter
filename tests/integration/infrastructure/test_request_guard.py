@@ -75,8 +75,9 @@ class TestGuardInFrontOfEveryRoute:
     it, a request the domain policy `request_refusal` refuses -- an HTTP request with
     403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this
     machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; one to
-    `/deploy` or under `/internal/`, the development server's own routes, which
-    deploy through LangSmith or wipe every thread; a WebSocket whose `Origin` is
+    or under `/deploy`, or under `/internal/` -- the route's path, a mount prefix
+    aside -- the development server's own routes, which deploy through LangSmith or
+    wipe every thread; a WebSocket whose `Origin` is
     present and not `http://localhost:3000`, since CORS never applies to one and the
     server's event stream starts and resumes runs over it; and an HTTP request other
     than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not
@@ -125,6 +126,15 @@ class TestGuardInFrontOfEveryRoute:
             (b"content-type", b"text/plain"),
             (b"transfer-encoding", b"chunked"),
         ]
+
+        seen, sent = through_the_guard(scope)
+
+        assert seen == [] and sent[0]["status"] == 403
+
+    def test_under_a_mount_prefix_the_route_is_what_counts(self):
+        # Mounted under a prefix, the scope's path holds it; the router strips it.
+        scope = scope_for(False, "POST", "/api/deploy", "127.0.0.1:2024", None, None, False)
+        scope["root_path"] = "/api"
 
         seen, sent = through_the_guard(scope)
 

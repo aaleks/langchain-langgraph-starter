@@ -151,3 +151,10 @@
 - [x] 14.4 Records: the roadmap's slices 5 and 6 carry every deferral;
   finding 21's reach reworded; the upstream note
 - [x] 14.5 Mutations of the fixes, 8, each red
+
+## 15. Verify pass 5 -- the MINORs
+
+- [x] 15.1 The guard judges the route's path, a mount prefix stripped as
+  the router strips it -- the row red first
+- [x] 15.2 A `PUT` row; the statement "to or under `/deploy`"; two
+  sentences on `apply_writes`' order brought to the code

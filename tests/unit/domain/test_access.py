@@ -41,6 +41,7 @@ REFUSED = [
         "application/json",
     ),
     (False, "PATCH", "/threads/t1", "127.0.0.1:2024", None, "text/plain", True, "application/json"),
+    (False, "PUT", "/store/items", "127.0.0.1:2024", None, "text/plain", True, "application/json"),
     (False, "DELETE", "/threads/t1", "127.0.0.1:2024", "null", None, False, "origin"),
     (False, "GET", "/threads/t1", "evil.example:2024", None, None, False, "Host"),
     (False, "POST", "/threads", None, None, "application/json", True, "Host"),
@@ -66,6 +67,7 @@ REFUSED_IDS = [
     "page-empty",
     "body-text",
     "patch-body-text",
+    "put-body-text",
     "null-origin",
     "rebound-host",
     "no-host",
@@ -122,8 +124,9 @@ class TestRequestGuard:
     it, a request the domain policy `request_refusal` refuses -- an HTTP request with
     403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this
     machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; one to
-    `/deploy` or under `/internal/`, the development server's own routes, which
-    deploy through LangSmith or wipe every thread; a WebSocket whose `Origin` is
+    or under `/deploy`, or under `/internal/` -- the route's path, a mount prefix
+    aside -- the development server's own routes, which deploy through LangSmith or
+    wipe every thread; a WebSocket whose `Origin` is
     present and not `http://localhost:3000`, since CORS never applies to one and the
     server's event stream starts and resumes runs over it; and an HTTP request other
     than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not

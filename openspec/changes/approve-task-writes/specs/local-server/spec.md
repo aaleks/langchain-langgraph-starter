@@ -17,7 +17,7 @@ Through the local server's API (`bash scripts/serve.sh`), a run whose model prop
 - **THEN** the thread's status is `idle`, its last message the rejection's tool message, and the list holds no task of that thread's
 
 ### Requirement: LOCAL-SERVER-REQUEST-GUARD
-The local server SHALL refuse, before any route sees it, a request the domain policy `request_refusal` refuses -- an HTTP request with 403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; one to `/deploy` or under `/internal/`, the development server's own routes, which deploy through LangSmith or wipe every thread; a WebSocket whose `Origin` is present and not `http://localhost:3000`, since CORS never applies to one and the server's event stream starts and resumes runs over it; and an HTTP request other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or `PATCH`, that is not `application/json`. Nothing but HTTP, WebSockets and the server's own lifespan SHALL reach the server. CORS limits what a page may read; this refuses what a page may send.
+The local server SHALL refuse, before any route sees it, a request the domain policy `request_refusal` refuses -- an HTTP request with 403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; one to or under `/deploy`, or under `/internal/` -- the route's path, a mount prefix aside -- the development server's own routes, which deploy through LangSmith or wipe every thread; a WebSocket whose `Origin` is present and not `http://localhost:3000`, since CORS never applies to one and the server's event stream starts and resumes runs over it; and an HTTP request other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or `PATCH`, that is not `application/json`. Nothing but HTTP, WebSockets and the server's own lifespan SHALL reach the server. CORS limits what a page may read; this refuses what a page may send.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_access.py::TestRequestGuard`, `tests/integration/infrastructure/test_request_guard.py::TestGuardInFrontOfEveryRoute`
@@ -30,6 +30,7 @@ The local server SHALL refuse, before any route sees it, a request the domain po
 | HTTP | `POST` | `/threads` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
 | HTTP | `POST` | `/threads` | `127.0.0.1:2024` | none | `text/plain;charset=UTF-8` | yes: the body |
 | HTTP | `PATCH` | `/threads/t1` | `127.0.0.1:2024` | none | `text/plain` | yes: the body |
+| HTTP | `PUT` | `/store/items` | `127.0.0.1:2024` | none | `text/plain` | yes: the body |
 | HTTP | `DELETE` | `/threads/t1` | `127.0.0.1:2024` | `null` | none | yes: the origin |
 | HTTP | `GET` | `/threads/t1` | `evil.example:2024` | none | none | yes: the host |
 | HTTP | `POST` | `/threads` | none | none | `application/json` | yes: the host |
@@ -58,6 +59,7 @@ The local server SHALL refuse, before any route sees it, a request the domain po
 - **WHEN** each row of the two tables above is sent through it
 - **THEN** each refused HTTP row is answered 403 and each refused WebSocket handshake closed unaccepted, the route seeing none of them; each row let through reaches the route
 - **AND** the server's lifespan passes through, and a connection of another kind reaches nothing
+- **AND** under the mount prefix `/api`, a `POST` to `/api/deploy` is refused as the `/deploy` it reaches
 
 ### Requirement: LOCAL-SERVER-BROWSER-ORIGINS
 `bash scripts/serve.sh` SHALL let a web page use the server only from `http://localhost:3000`, Agent Chat UI's default origin -- the owner's choice (2026-10-15): a preflight from any other origin SHALL get no CORS permission, and a request that would change anything from any other origin SHALL be refused before it reaches a route (LOCAL-SERVER-REQUEST-GUARD) -- a `text/plain` POST a browser sends without a preflight included -- so no other page in the owner's browser can read a paused run or approve a write. A client that is not a browser -- the SDK -- is unaffected.

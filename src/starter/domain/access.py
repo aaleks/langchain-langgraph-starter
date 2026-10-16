@@ -41,7 +41,8 @@ def request_refusal(
     event stream starts and resumes runs over it, so it is never "safe", though
     its handshake is a GET (approve-task-writes, verify finding 31). `has_body`:
     whether a body was sent -- the SDK's cancel sends none, and a page's empty
-    POST still carries its `Origin`."""
+    POST still carries its `Origin`. `path`: the route's -- the development
+    server's own `/deploy` and `/internal/` routes are never served."""
     if host is None or _hostname(host) not in LOCAL_HOSTS:
         return "the Host is not this machine"
     if path == "/deploy" or path.startswith(NOT_SERVED):
