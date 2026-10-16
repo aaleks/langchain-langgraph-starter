@@ -23,6 +23,10 @@
   person types on most machines; one line says what to use where it is
   refused.
 
+- Not `.claude/settings.json`'s allow-list, which names `uv run pytest*`: an
+  agent does not edit permission settings. Where the new commands prompt, the
+  owner may add `uv run python -m pytest*` (verify pass 1).
+
 ## Ratchet
 
 | When | From | To | Because |

@@ -15,5 +15,8 @@ this machine and on CI.
 ## 2. Proof
 
 - [x] 2.1 `bash scripts/check.sh` ends `all checks passed` on this machine
-- [x] 2.2 `bash scripts/check.sh live` passes here
-- [ ] 2.3 CI's check passes on the pull request
+- [x] 2.2 `bash scripts/check.sh live` runs here: 13 of 14 -- the real-model
+  test refused by the owner's Open WebUI, `401 Your API key has been
+  invalidated`: the owner's credentials, not this change
+
+CI's check on the pull request is `/land`'s evidence.
