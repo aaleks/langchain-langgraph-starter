@@ -19,15 +19,17 @@ exempt = ["tests/architecture/*"]
 symbols = "python"             # `file::Name` resolves against class and def names
 
 # Read by the skills and agents so none of them hard-codes a test runner.
+# pytest runs as a module, never through its launcher, which some machines'
+# Application Control refuses (run-pytest-as-a-module).
 # The checker never executes these.
 [commands]
 check = "bash scripts/check.sh"
-suite = "uv run pytest -q"
-test = "uv run pytest {target} -q"
-architecture = "uv run pytest tests/architecture -q"
+suite = "uv run python -m pytest -q"
+test = "uv run python -m pytest {target} -q"
+architecture = "uv run python -m pytest tests/architecture -q"
 lint = "uv run ruff check ."
 format = "uv run ruff format --check ."
-live = "uv run pytest -m live -q"
+live = "uv run python -m pytest -m live -q"
 strength = "uv run --with cosmic-ray cosmic-ray init mutation.toml mutation.sqlite && uv run --with cosmic-ray cosmic-ray exec mutation.toml mutation.sqlite && uv run --with cosmic-ray cr-report mutation.sqlite"
 
 # Read by .claude/hooks/guard-edits.sh, which refuses an agent's write here.

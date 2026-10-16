@@ -14,6 +14,11 @@ cd "$(dirname "$0")/.."
 
 step() { printf '\n== %s ==\n' "$1"; }
 
+# pytest runs as a module, not through its `pytest.exe` console-script launcher:
+# the same tests, and a machine whose Application Control refuses the launcher
+# (os error 4551) runs them too (run-pytest-as-a-module).
+pytest() { uv run python -m pytest "$@"; }
+
 step "format"
 uv run ruff format --check .
 
@@ -21,7 +26,7 @@ step "lint"
 uv run ruff check .
 
 step "architecture: layers, allowlists, conventions"
-uv run pytest tests/architecture -q
+pytest tests/architecture -q
 
 step "specs: OpenSpec structure"
 bash .claude/sdd/sdd.sh openspec validate --all --strict
@@ -40,11 +45,11 @@ step "the method: manifest matches what it ships"
 bash .claude/sdd/sdd.sh manifest --check
 
 step "suite"
-uv run pytest -q
+pytest -q
 
 if [ "${1:-}" = "live" ]; then
   step "live: real services and models"
-  uv run pytest -m live -q
+  pytest -m live -q
 fi
 
 printf '\nall checks passed\n'

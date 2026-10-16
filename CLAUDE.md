@@ -54,6 +54,9 @@ bash .claude/sdd/sdd.sh openspec list     # changes in flight (--specs for capab
 
 `uv run pytest` excludes `live` tests, so it passes on a machine with nothing
 started. Keep it that way: the default suite never depends on a service.
+Where a machine's Application Control refuses the `pytest.exe` launcher (os
+error 4551), `uv run python -m pytest` runs the same tests -- `check.sh` and
+`sdd.toml` always do.
 
 ## Architecture
 
