@@ -17,29 +17,42 @@ Through the local server's API (`bash scripts/serve.sh`), a run whose model prop
 - **THEN** the thread's status is `idle`, its last message the rejection's tool message, and the list holds no task of that thread's
 
 ### Requirement: LOCAL-SERVER-REQUEST-GUARD
-The local server SHALL refuse with 403, before any route sees it, a request the domain policy `request_refusal` refuses: one whose `Host` is not this machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever its method; and one other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not `http://localhost:3000`, or whose body, for `POST`, `PUT` or `PATCH`, is not `application/json`. CORS limits what a page may read; this refuses what a page may send.
+The local server SHALL refuse, before any route sees it, a request the domain policy `request_refusal` refuses -- an HTTP request with 403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; a WebSocket whose `Origin` is present and not `http://localhost:3000`, since CORS never applies to one and the server's event stream starts and resumes runs over it; and an HTTP request other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or `PATCH`, that is not `application/json`. Nothing but HTTP, WebSockets and the server's own lifespan SHALL reach the server. CORS limits what a page may read; this refuses what a page may send.
 
 - **Kind:** deterministic
-- **Proved by:** `tests/unit/domain/test_access.py::TestRequestGuard`
+- **Proved by:** `tests/unit/domain/test_access.py::TestRequestGuard`, `tests/integration/infrastructure/test_request_guard.py::TestGuardInFrontOfEveryRoute`
 
 #### Scenario: Requests refused
-| Method | Host | Origin | Content-Type | Refused |
-|---|---|---|---|---|
-| `POST` | `127.0.0.1:2024` | `https://evil.example` | `text/plain` | yes: the origin |
-| `POST` | `127.0.0.1:2024` | `https://evil.example` | `application/json` | yes: the origin |
-| `POST` | `127.0.0.1:2024` | none | `text/plain;charset=UTF-8` | yes: the body |
-| `DELETE` | `127.0.0.1:2024` | `null` | none | yes: the origin |
-| `GET` | `evil.example:2024` | none | none | yes: the host |
-| `POST` | none | none | `application/json` | yes: the host |
+| Kind | Method | Host | Origin | Body | Refused |
+|---|---|---|---|---|---|
+| HTTP | `POST` | `127.0.0.1:2024` | `https://evil.example` | `text/plain` | yes: the origin |
+| HTTP | `POST` | `127.0.0.1:2024` | `https://evil.example` | `application/json` | yes: the origin |
+| HTTP | `POST` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
+| HTTP | `POST` | `127.0.0.1:2024` | none | `text/plain;charset=UTF-8` | yes: the body |
+| HTTP | `DELETE` | `127.0.0.1:2024` | `null` | none | yes: the origin |
+| HTTP | `GET` | `evil.example:2024` | none | none | yes: the host |
+| HTTP | `POST` | none | none | `application/json` | yes: the host |
+| WebSocket | `GET` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
+| WebSocket | `GET` | `127.0.0.1:2024` | `null` | none | yes: the origin |
+| WebSocket | `GET` | `evil.example:2024` | none | none | yes: the host |
 
 #### Scenario: Counter-example -- requests let through
-| Method | Host | Origin | Content-Type |
-|---|---|---|---|
-| `POST` | `127.0.0.1:2024` | none -- the SDK | `application/json` |
-| `POST` | `localhost:2024` | `http://localhost:3000` | `application/json; charset=utf-8` |
-| `GET` | `[::1]:2024` | `https://evil.example` -- CORS keeps the answer from it | none |
-| `OPTIONS` | `127.0.0.1:2024` | `https://evil.example` -- CORS refuses the preflight | none |
-| `DELETE` | `localhost` | none | none |
+| Kind | Method | Host | Origin | Body |
+|---|---|---|---|---|
+| HTTP | `POST` | `127.0.0.1:2024` | none -- the SDK | `application/json` |
+| HTTP | `POST` | `127.0.0.1:2024` | none -- the SDK's cancel | none |
+| HTTP | `POST` | `localhost:2024` | `http://localhost:3000` | `application/json; charset=utf-8` |
+| HTTP | `GET` | `[::1]:2024` | `https://evil.example` -- CORS keeps the answer from it | none |
+| HTTP | `OPTIONS` | `127.0.0.1:2024` | `https://evil.example` -- CORS refuses the preflight | none |
+| HTTP | `DELETE` | `localhost` | none | none |
+| WebSocket | `GET` | `127.0.0.1:2024` | none -- the SDK | none |
+| WebSocket | `GET` | `localhost:2024` | `http://localhost:3000` | none |
+
+#### Scenario: Refused before any route
+- **GIVEN** the guard in front of a route that records each request it sees
+- **WHEN** each row of the two tables above is sent through it
+- **THEN** each refused HTTP row is answered 403 and each refused WebSocket handshake closed unaccepted, the route seeing none of them; each row let through reaches the route
+- **AND** the server's lifespan passes through, and a connection of another kind reaches nothing
 
 ### Requirement: LOCAL-SERVER-BROWSER-ORIGINS
 `bash scripts/serve.sh` SHALL let a web page use the server only from `http://localhost:3000`, Agent Chat UI's default origin -- the owner's choice (2026-10-15): a preflight from any other origin SHALL get no CORS permission, and a request that would change anything from any other origin SHALL be refused before it reaches a route (LOCAL-SERVER-REQUEST-GUARD) -- a `text/plain` POST a browser sends without a preflight included -- so no other page in the owner's browser can read a paused run or approve a write. A client that is not a browser -- the SDK -- is unaffected.
@@ -60,6 +73,14 @@ The local server SHALL refuse with 403, before any route sees it, a request the 
 | a POST from `https://evil.example`, its body `text/plain` | 403 | none created |
 | a POST with the `Host` `evil.example` -- a rebound name | 403 | none created |
 | a POST from the SDK, `application/json`, no `Origin` | 200 | one created |
+| a `threads.copy` from the SDK: a POST with no body and no `Content-Type` | 200 | one created |
+
+#### Scenario: A page's WebSocket
+| A WebSocket handshake to `/threads/<id>/stream/events` | Answer |
+|---|---|
+| from `https://evil.example` | 403 |
+| from `http://localhost:3000` | 101, accepted |
+| from the SDK, no `Origin` | 101, accepted |
 
 #### Scenario: Counter-example -- set by the script, not by chance
 - **THEN** `scripts/serve.sh` starts the server with `CORS_ALLOW_ORIGINS` exactly `http://localhost:3000`, and outside the local-only environment's `export` lines

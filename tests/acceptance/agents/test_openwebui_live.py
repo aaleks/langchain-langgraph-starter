@@ -39,7 +39,10 @@ class TestAnsweredByOpenWebUI:
     registered assistant SHALL be answered by that Open WebUI model: a transcript
     that begins with the human message and ends with a model answer calling no
     tool, every tool call on the way answered, nothing written to the task list,
-    and an answer that is not empty and is not the offline model's."""
+    and an answer that is not empty and is not the offline model's. A real model may
+    read the task list before it answers -- measured 2026-10-15, two runs of three
+    called `list_tasks` on `Reply with one word.` -- so the route between is the
+    model's, never asserted."""
 
     @pytest.mark.live
     def test_a_real_answer_through_open_webui(self, tmp_path):
@@ -66,7 +69,13 @@ class TestAnsweredByOpenWebUI:
             # The route between is the model's: it may read the list first.
             assert messages[0].type == "human" and messages[-1].type == "ai"
             assert messages[-1].tool_calls == []
-            called = {c["id"] for m in messages if m.type == "ai" for c in m.tool_calls}
+            # A malformed call is answered too: a small model's is a route of its own.
+            called = {
+                c["id"]
+                for m in messages
+                if m.type == "ai"
+                for c in [*m.tool_calls, *m.invalid_tool_calls]
+            }
             assert called == {m.tool_call_id for m in messages if m.type == "tool"}
             with closing(sqlite3.connect(tasks_db)) as db:
                 written = db.execute(

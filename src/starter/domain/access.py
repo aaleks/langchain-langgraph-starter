@@ -22,16 +22,32 @@ JSON = "application/json"
 
 
 def request_refusal(
-    *, method: str, host: str | None, origin: str | None, content_type: str | None
+    *,
+    socket: bool,
+    method: str,
+    host: str | None,
+    origin: str | None,
+    content_type: str | None,
+    has_body: bool,
 ) -> str | None:
-    """Why a request to the local server is refused, or None to let it through."""
+    """Why a request to the local server is refused, or None to let it through.
+
+    `socket`: a WebSocket handshake. CORS never applies to one, and the server's
+    event stream starts and resumes runs over it, so it is never "safe", though
+    its handshake is a GET (approve-task-writes, verify finding 31). `has_body`:
+    whether a body was sent -- the SDK's cancel sends none, and a page's empty
+    POST still carries its `Origin`."""
     if host is None or _hostname(host) not in LOCAL_HOSTS:
         return "the Host is not this machine"
-    if method.upper() in SAFE_METHODS:
+    if not socket and method.upper() in SAFE_METHODS:
         return None
     if origin is not None and origin not in BROWSER_ORIGINS:
         return f"the origin {origin!r} may not change anything here"
-    if method.upper() in {"POST", "PUT", "PATCH"} and _media_type(content_type) != JSON:
+    if (
+        has_body
+        and method.upper() in {"POST", "PUT", "PATCH"}
+        and _media_type(content_type) != JSON
+    ):
         return f"a request body must be {JSON}"
     return None
 

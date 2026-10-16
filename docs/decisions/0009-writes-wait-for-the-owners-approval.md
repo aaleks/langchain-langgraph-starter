@@ -55,8 +55,13 @@ What is settled here is the interface a client depends on:
   2026-10-15, since CORS never stops a page *sending* a `text/plain`
   POST. It refuses a `Host` that is not this machine, a write from
   another page's `Origin`, and a write body that is not
-  `application/json`. Its policy is the domain's `request_refusal`;
-  `langgraph.json` names the middleware as `http.app`.
+  `application/json`. A WebSocket -- the server's event stream starts and
+  resumes runs over one, and CORS never applies to it -- is refused for its
+  `Host` and for any other page's `Origin`. Anything but HTTP, WebSockets
+  and the server's lifespan reaches nothing. Its policy is the domain's
+  `request_refusal`; `langgraph.json` names the middleware as `http.app`
+  -- the one entry there beside the graphs that names code, an exception
+  to "langgraph.json names only registry exports" that this decision makes.
 - **A write's answer lost is read back from the store.** A run that ends
   after the store commits and before the step's checkpoint loses the
   answer, never the write; the next run answers the call with the

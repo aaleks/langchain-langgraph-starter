@@ -2,8 +2,8 @@
 
 A contract, versioned (ASSISTANT-STATE-CONTRACT): a field changed without a new
 version fails the suite, because a checkpoint written at one version must be
-migrated to the next -- slice 5, with the first durable one. It holds messages
-and counts only: never a client, a prompt or a callable.
+migrated to the next -- slice 5, with the first durable one. It holds messages,
+counts and the writes' decisions only: never a client, a prompt or a callable.
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
-# 2: `write_decisions`, the owner's decisions on a reply's writes (approve-task-writes).
+# 2: `write_decisions`, each write of the reply under review: the owner's decision,
+# then what the store recorded for it (approve-task-writes).
 ASSISTANT_STATE_VERSION = 2
 
 

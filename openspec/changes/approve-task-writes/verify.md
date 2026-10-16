@@ -6,6 +6,9 @@
 - **Verdict:** pass 2: DO NOT SHIP -- one BLOCKER, three MAJOR. The most
   important fix: a page's blind `text/plain` POST could propose and approve
   a write, since CORS limits what a page reads, never what it sends (18).
+- **Verdict:** pass 3: DO NOT SHIP -- one BLOCKER, three MAJOR. The most
+  important fix: the guard let every WebSocket through, and the server's
+  event stream starts and approves runs over one (31).
 - **Reviewed at:** pass 1: `04dc4a2`, the whole change (`git diff
   0123b5d..04dc4a2`), committed before the lenses read it.
 - **Evidence (pass 1):**
@@ -101,10 +104,70 @@ credentials, the owner's accepted choice (capabilities).
 | 27 | Fixed: `state.py`, ASSISTANT-STATE-CONTRACT |
 | 28, 29, 30 | Fixed (12.6) |
 
+## Findings -- pass 3
+
+Reviewed at `a5a5624`: the pass-2 fixes (`git diff 195ab87..a5a5624`) against
+the whole change, by seven lenses, fresh context each -- proof, defects,
+capabilities and durability again, and placement, graph architecture and
+graph evaluation for the first time. Scratch files, fakes, temporary lists and
+the server's app in-process only; no server started, no `.env` read.
+`uv run pytest`: 432 passed; `tests/architecture`: 54 passed.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 31 | BLOCKER | placement, capabilities, defects | The guard passed every scope but HTTP through unchecked. `langgraph-api` 0.16 serves `/threads/{id}/stream/events` as a WebSocket by default (`FF_V2_EVENT_STREAMING`), which starts a run (`if_not_exists: create`) and resumes an interrupt; CORS never applies to a WebSocket. Measured in-process: a page at `https://evil.example` opened it, read the approval request, approved it, and the task was written | `guard.py`; `access.py` (a handshake is a GET, so "safe") | A WebSocket is never safe: refused for its `Host` and any other page's `Origin`, closed unaccepted; fail closed for any other kind |
+| 32 | MAJOR | proof, defects | The media-type rule refused a POST with no body: the SDK's `runs.cancel` and `threads.copy` got 403, though the spec said the SDK is unaffected | `access.py` | The rule applies to a body sent; a page's empty POST still carries its `Origin` |
+| 33 | MAJOR | proof, placement | The guard adapter ran in no default test: its header reading, its 403, its scope branch were proved only live -- which is how 31 went unseen | tests | `TestGuardInFrontOfEveryRoute`: every policy row through the adapter |
+| 34 | MAJOR | graph evaluation | The async half of `run_tools`, the path the server runs, met no write in any test: dropping its refusal answers left all 432 green | `nodes.py:run_tools` | The proposal, decision and read-beside-write tests on `invoke` and `ainvoke` |
+| 35 | MINOR | durability | `apply_writes` read the rules before the key's record: a continue after a lost answer and a rule change answered an applied write "not proposed" | `nodes.py:apply_writes` | The record first |
+| 36 | MINOR | durability | A run cancelled while its write waits for the list's lock: the write's thread commits after the next run answered it "not run" | `nodes.py:start_run` | Narrowed in the spec ("cancelled after the list committed it"); the window recorded in design.md Risks, for slice 5 |
+| 37 | MINOR | durability | `start_run` answers with the key's record without matching it to the call; a fork that edits the reply's arguments under the same ids gets another write's outcome | `nodes.py:start_run` | Accepted: only the owner's client edits state (21's reach); recorded in Risks |
+| 38 | MINOR | graph evaluation | A malformed call and a write under one id: the rename that keeps the write waiting was untested | tests | A row and a test |
+| 39 | MINOR | proof | `str()` on the thread id: no test | tests | `UUID(int=7)`, a row and a test |
+| 40 | MINOR | proof, graph evaluation | A `Not valid` action shows the model's arguments, not "checked arguments" | spec | Stated -- "its arguments as proposed" -- and asserted |
+| 41 | MINOR | proof, defects | The check that `serve.sh` refuses a `"cors"` key could not fail: a comment holds the word | `test_local_server.py` | The refusal's own line |
+| 42 | MINOR | proof, graph evaluation | The live test's docstring missed the amended sentence; a malformed call's answer would fail it; the measurement names no model | `test_openwebui_live.py` | Docstring and malformed calls fixed; the measurement: prompt v2, N = 3, the owner's configured model -- its id is in `.env`, which no agent reads |
+| 43 | MINOR | placement | The one browser origin was held in the script and the domain, each pinned alone | tests | Held equal by one test |
+| 44 | MINOR | durability | Two stale lines in `state.py` | `state.py` | Reworded |
+| 45 | MINOR | placement, graph architecture | Small decisions sit in nodes: which tools need approval, a proposal's eligibility, the approval vocabulary, a second "unanswered" rule in `waiting_writes` | `graph.py`, `nodes.py` | Accepted as recorded: a refactor with no behaviour change, a bounded change of its own |
+| 46 | MINOR | placement, graph architecture | `start_run` and `review_writes` hold the writer, though they only read | `nodes.py` | Slice 5, recorded in Risks |
+| 47 | MINOR | placement, graph architecture | `langgraph.json` names `http.app`, beside the rule "only registry exports"; no architecture check reads non-graph keys; `starlette` is not a declared dependency | `langgraph.json`, rules | ADR 0009 records the exception; a test pins the `http` block whole; `starlette` is the dev-only server's (design.md). The rule's wording: upstream, in `docs/learnings.md` |
+| 48 | MINOR | capabilities | Server surfaces no requirement asks for are on: MCP, A2A, the store, crons | `langgraph.json` | Slice 6, operations: each measured against what Agent Chat UI and the SDK use, then turned off |
+| 49 | MINOR | graph evaluation, graph architecture | Unnamed: a resume with nothing paused; the store failing in `start_run` or `review_writes`; the unit-tier test plan not followed; `CONFIG_KEY_CHECKPOINTER` | design.md | Named in design.md |
+| 50 | MINOR | graph evaluation | No live run takes the owner's model through an approval; no row pins that extra keys in a write's arguments are ignored (probed: they are) | tests | Not done here: a live approval with a real model is slice 5's story test |
+
+Not findings, for the record: the guard runs before CORS and every route on
+the installed server (two lenses read `server.py`, one printed the order);
+pass-2 findings 19, 20, 27 and 28 are closed (durability); each write is
+still applied at most once under pause, resume, replay, fork, race and cancel
+(durability). The capabilities lens's in-process probe left a thread titled
+"Planted by evil.example" in the gitignored `.langgraph_api/`; no tracked
+file changed.
+
+### Pass 3 -- what became of each
+
+| # | Outcome |
+|---|---|
+| 31 | Fixed (tasks.md 13.1); the in-process tests red first, the live socket rows through `serve.sh` |
+| 32 | Fixed (13.2); live, red on the old guard |
+| 33 | Fixed (13.3) |
+| 34 | Fixed (13.4); the lens's mutant now red |
+| 35 | Fixed (13.5), red first |
+| 36 | Narrowed and recorded; slice 5 |
+| 37 | Accepted, recorded |
+| 38, 39, 40, 41, 42, 43, 44 | Fixed (13.6) |
+| 45 | Accepted as recorded |
+| 46 | Slice 5 |
+| 47 | Recorded: ADR 0009, design.md; upstream |
+| 48 | Slice 6 |
+| 49 | Named in design.md |
+| 50 | Slice 5 |
+
 ## Not checked
 
-- **Placement, graph architecture and routes** (`architecture-guardian`,
-  `graph-architecture-guardian`, `graph-eval-auditor`): held for pass 2, since
-  pass 1's fixes reshape `apply_writes` and the topology.
-- **The real Open WebUI test:** the owner's Open WebUI was not running on
-  2026-10-15.
+- **Placement, graph architecture and routes** were held in passes 1 and 2,
+  while the fixes reshaped `apply_writes` and the topology; they ran in pass 3.
+- **The real Open WebUI test** could not run in pass 1 -- the owner's Open
+  WebUI was down on 2026-10-15 -- and ran from pass 2 on, once it was up.
+- **A browser.** No browser was driven: the guard's rows are sent as a
+  browser sends them, by the in-process and the live tests.

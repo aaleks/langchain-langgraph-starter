@@ -147,12 +147,35 @@ decision. This change joins them through the owner's approval.
     - The policy is the domain's `request_refusal` (`domain/access.py`):
       a `Host` that is not this machine is refused (DNS rebinding); a
       request other than `GET`, `HEAD` or `OPTIONS` is refused when its
-      `Origin` is another page's, or its body, for `POST`, `PUT` or
-      `PATCH`, is not `application/json` -- which a browser cannot send
-      to another origin without a preflight CORS refuses.
+      `Origin` is another page's, or the body it sends, for `POST`, `PUT`
+      or `PATCH`, is not `application/json` -- which a browser cannot send
+      to another origin without a preflight CORS refuses. A request with no
+      body passes the media-type rule: the SDK's `runs.cancel` and
+      `threads.copy` send none, and a page's empty POST still carries its
+      `Origin` (pass 3).
+    - **A WebSocket is never "safe"** (pass 3's BLOCKER). The server's v2
+      event stream, on by default in `langgraph-api` 0.16, serves
+      `/threads/{id}/stream/events` as a WebSocket that starts and resumes
+      runs; CORS never applies to one, and its handshake is a GET. A
+      handshake is refused for the `Host` and for any `Origin` but
+      `http://localhost:3000` -- closed before it is accepted, so the server
+      answers 403. Measured in-process before the fix: a page's socket read
+      the approval request and approved it.
+    - **Fail closed.** The adapter lets through the server's lifespan, and
+      HTTP and WebSockets it has checked; any other kind of connection
+      reaches nothing.
     - The adapter is `LocalRequestGuard`, ASGI middleware in
       `infrastructure/server/guard.py`, named in `langgraph.json` as
-      `http.app`; the server runs it before CORS and every route.
+      `http.app`; the server runs it before CORS and every route
+      (`langgraph_api/server.py`, with no `middleware_order` set). Its own
+      test drives it with hand-built scopes, every row of the policy's
+      tables; the live tests send the same through `serve.sh`.
+    - `starlette` is the server's, which arrives with `langgraph-cli[inmem]`
+      in the dev group: the guard is a server module, and the server is
+      dev-only (ADR 0004).
+    - `http.app` is the one key of `langgraph.json` beside `graphs` and
+      `python_version` that names code; a test pins the `http` block whole,
+      so a `middleware_order`, `cors` or `disable_*` key fails it.
     - Alternatives: LangGraph's custom `auth` with a local token -- every
       client, Agent Chat UI included, would need the token; refusing state
       writes alone -- leaves the propose-then-approve path open.
@@ -181,6 +204,12 @@ decision. This change joins them through the owner's approval.
   - the store's error at apply: raised. The writes before it are answered
     and stored, and the thread stays at `apply_writes`: a continue re-runs
     the failed one under its key; new input answers it as not run;
+  - the store's error in `start_run`, reading a left write's record: raised,
+    the thread left at `start_run` with the input stored -- answering "not
+    run" unread could deny a write that was made;
+  - the store's error in `review_writes`, reading a task for its
+    description: raised before the interrupt, the thread at `review_writes`;
+    a continue asks again;
   - a key too long, or no thread: the proposal refused.
 - **Interrupts:** `review_writes` only; resumed on the same thread with
   `Command(resume=...)`.
@@ -195,11 +224,15 @@ decision. This change joins them through the owner's approval.
 - **Runtime:** `scripts/serve.sh`. The story test drives it through the
   SDK: run, read the interrupt, resume.
 - **Test plan:**
-  - unit: `describe_write`, `read_decisions`, `write_key`,
-    `route_after_tools`, `route_after_writes`, `outcome_message` -- each
-    under the requirement it decides;
+  - unit: `route_after_tools`, `route_after_writes`, `request_refusal`;
+    `describe_write`, `read_decisions`, `write_key` and `outcome_message`
+    are proved through the graph, at integration, since each requirement
+    is the graph's behaviour -- the request's shape, the resume's meaning,
+    the key in the store (pass 3: the plan said unit);
   - integration: the routes with fakes and an in-memory checkpointer
-    (`test_approval.py`), the topology and state;
+    (`test_approval.py`), each on `invoke` and on `ainvoke` -- the server
+    runs the async path (pass 3); the topology and state; the request
+    guard;
   - acceptance (live): the server.
 - **Graph id:** `assistant`.
 
@@ -216,7 +249,8 @@ decision. This change joins them through the owner's approval.
 | tool denial | ASSISTANT-TOOL-ERROR; TOOLS-MANIFEST |
 | malformed model output | ASSISTANT-TOOL-ERROR |
 | retrieval failure, timeout | the store's error propagates, at a read or at a write |
-| forbidden access | N-A until slice 5 |
+| forbidden access | N-A until slice 5; a page's request: LOCAL-SERVER-REQUEST-GUARD |
+| a resume with nothing paused | N-A: no write can follow -- on a new thread it runs from `START` on an empty transcript; on a completed one it decides nothing (measured, pass 3) |
 
 ## Risks
 
@@ -229,8 +263,27 @@ decision. This change joins them through the owner's approval.
 - **[A resume the owner got wrong]** -> it rejects. The safe outcome is no
   effect.
 - **[A run ends after the store commits, before its answer is stored]** --
-  cancelled or killed -> the next run's `start_run` answers the call with
-  the outcome recorded under its key, never "not run".
+  killed, or cancelled after the commit -> the next run's `start_run`
+  answers the call with the outcome recorded under its key, never "not
+  run"; a continue's `apply_writes` reads the record before the rules.
+- **[A run cancelled while its write waits for the list's lock]** -> the
+  write's thread is not stopped by the cancel, and may commit after the
+  next run's `start_run` answered it "not run" (pass 3, measured). Then the
+  transcript denies a write the list holds. It needs a cancel inside the
+  store's 5-second wait and new input before the commit; recording "not
+  run" under the key would close it, and needs a new outcome in
+  `task_writes` -- slice 5, with durable threads.
+- **[A fork that edits a reply's arguments under the same ids]** -> the key
+  records another write: `apply_writes` refuses it, and new input answers
+  the call with what the key holds. Only the owner's own client edits state
+  (accepted, finding 21's reach).
+- **[Read and decide nodes hold the writer]** -> `start_run` and
+  `review_writes` read through `TaskWriter.recorded` and `.task`, both
+  read-only connections. A narrower view is slice 5's, with ownership.
+- **[`CONFIG_KEY_CHECKPOINTER`]** -> "is there a checkpointer" is read from
+  a LangGraph constant kept for backward compatibility; there is no public
+  way. `langgraph<1.3` bounds it, and the no-checkpointer test fails if it
+  stops being set: re-check it at every LangGraph upgrade.
 - **[A client that can edit a paused thread's state]** -> it can set
   `write_decisions` or swap a waiting call, and so apply a write the owner
   did not see. The guard keeps every web page but Agent Chat UI's out; a

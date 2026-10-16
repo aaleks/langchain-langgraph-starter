@@ -242,6 +242,34 @@ class TestStateContract:
             # The close was rejected: task 1 still open; the add approved: task 2.
             assert [(t["id"], t["title"]) for t in rows] == [(1, "Renew passport"), (2, "Buy milk")]
 
+    def test_a_malformed_call_and_a_write_under_one_id(self, fake_llm, tmp_path):
+        from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS
+        from starter.infrastructure.agents.tools import read_tools, write_tools
+        from starter.infrastructure.stores.tasks import TaskStore
+        from tests.fakes import malformed
+
+        store = TaskStore(tmp_path / "tasks.sqlite3")
+        store.open()
+        reply = propose(("add_task", {"title": "Buy milk"}))
+        reply.tool_calls[0]["id"] = "call_0"
+        broken = malformed("close_task", '{"task_id": 1')
+        broken.invalid_tool_calls[0]["id"] = "call_0"
+        reply.invalid_tool_calls = broken.invalid_tool_calls
+        tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
+        graph = build_assistant(
+            fake_llm([reply, answer()]), tools, transient=no_retries, writer=store.writer()
+        ).copy(update={"checkpointer": InMemorySaver()})
+        paused = {"configurable": {"thread_id": "ids"}}
+
+        out = graph.invoke({"messages": [HumanMessage("do both")]}, paused)
+
+        stored = graph.get_state(paused).values["messages"][1]
+        assert stored.invalid_tool_calls[0]["id"] == "call_0"
+        assert stored.tool_calls[0]["id"] not in {"call_0", None}
+        # The write still waits for the owner: the malformed call's answer is not its.
+        assert graph.get_state(paused).next == ("review_writes",)
+        assert [a["name"] for a in out["__interrupt__"][0].value["action_requests"]] == ["add_task"]
+
     @pytest.mark.parametrize("stopped_before", ["call_model", "run_tools"])
     def test_a_state_of_version_1_runs_on(self, fake_llm, tmp_path, stopped_before):
         from starter.domain.tasks import TASK_STORE_TIMEOUT_SECONDS

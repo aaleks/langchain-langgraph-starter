@@ -116,3 +116,26 @@
   before it answers -- measured, two runs of three on 2026-10-15
 - [x] 12.8 Mutations of the fixes, 11, each red once two survivors were
   closed with rows: the `Not valid` reason, a status written elsewhere
+
+## 13. Verify pass 3 -- the fixes
+
+- [x] 13.1 WebSockets: refused for the `Host` and any other page's `Origin`,
+  closed unaccepted; anything but HTTP, WebSockets and the lifespan reaches
+  nothing -- unit and integration rows red first; live, a page's socket
+  403, Agent Chat UI's and the SDK's accepted
+- [x] 13.2 A request with no body passes the media-type rule: the SDK's
+  `threads.copy`, live, red on the old guard (403)
+- [x] 13.3 The guard's own test, `TestGuardInFrontOfEveryRoute`, every row
+  of the policy's tables through the adapter
+- [x] 13.4 The proposal table, a refused write beside a read, the read
+  beside a write and the decisions, each on `invoke` and `ainvoke`; the
+  async mutant now red
+- [x] 13.5 `apply_writes` reads the key's record before the rules -- red
+  first
+- [x] 13.6 Rows: a malformed call and a write under one id; a thread id
+  that is not text; a `Not valid` action's arguments; an approval with more
+  than its type; the `cors` refusal by its own line; the one origin held
+  equal in the script and the domain; the live test's malformed calls and
+  docstring; `state.py`'s stale lines
+- [x] 13.7 Mutations of the fixes, 12, each red once a redundant condition
+  was removed and the unknown-kind test given a local `Host`

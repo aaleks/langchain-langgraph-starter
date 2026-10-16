@@ -29,7 +29,7 @@ A call the model proposes to a write tool -- `add_task`, `close_task` or `reassi
 - **THEN** `list_tasks` runs and is answered, and the run pauses for `add_task` alone, unanswered
 
 ### Requirement: ASSISTANT-WRITE-APPROVAL
-A reply's write calls that pass their checks SHALL pause the run before anything is written, at `review_writes`, with `interrupt()` carrying LangChain's approval request: `action_requests`, one per waiting call in the reply's order -- every one, so each decision meets the action it was given for; one the rules refuse by the time it is shown is described `Not valid: <why>` -- the tool's name, its checked arguments and a description: a task named by its id is described by its title and status as the list holds them, never the model's word, and text from the list or the model is quoted as JSON, every control, format, line- and paragraph-separator character escaped, so a quote, a line break or a direction override cannot read as another action -- and `review_configs`, one per tool named, in the order first named, allowing exactly `approve` and `reject`. The run SHALL be resumed on the same thread with `Command(resume={"decisions": [...]})`, one decision per action, in order (ASSISTANT-WRITE-DECISIONS).
+A reply's write calls that pass their checks SHALL pause the run before anything is written, at `review_writes`, with `interrupt()` carrying LangChain's approval request: `action_requests`, one per waiting call in the reply's order -- every one, so each decision meets the action it was given for; one the rules refuse by the time it is shown is described `Not valid: <why>`, its arguments as proposed -- the tool's name, its checked arguments and a description: a task named by its id is described by its title and status as the list holds them, never the model's word, and text from the list or the model is quoted as JSON, every control, format, line- and paragraph-separator character escaped, so a quote, a line break or a direction override cannot read as another action -- and `review_configs`, one per tool named, in the order first named, allowing exactly `approve` and `reject`. The run SHALL be resumed on the same thread with `Command(resume={"decisions": [...]})`, one decision per action, in order (ASSISTANT-WRITE-DECISIONS).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteApproval`
@@ -69,7 +69,7 @@ A reply's write calls that pass their checks SHALL pause the run before anything
 #### Scenario: A write the rules refuse by the time it is shown
 - **GIVEN** `add_task(title="Call the plumber")` and `close_task(task_id=1)` proposed, the run stopped before `review_writes`, and the rules then refusing the title as `is no longer allowed`
 - **WHEN** the run continues
-- **THEN** the request's descriptions are `Not valid: the title is no longer allowed`, then `Close task 1, "Renew passport"` -- both shown, in the reply's order
+- **THEN** the request's descriptions are `Not valid: the title is no longer allowed`, its arguments as the model proposed them, then `Close task 1, "Renew passport"` -- both shown, in the reply's order
 
 #### Scenario: Counter-example -- reads alone never pause
 - **GIVEN** a model proposing `list_tasks`, then answering
@@ -101,9 +101,14 @@ Each decision SHALL decide its write, one write a step, its answer stored with i
 - **THEN** `add_task` stays answered `{"outcome": "applied", "task_id": 2}`, and only `close_task` is answered as not run
 
 #### Scenario: A write applied, its answer lost, then new input
-- **GIVEN** `add_task(title="Call the plumber")` approved and applied, the run ending before its answer was stored -- cancelled, or killed
+- **GIVEN** `add_task(title="Call the plumber")` approved and applied, the run ending before its answer was stored -- killed, or cancelled after the list committed it
 - **WHEN** the owner sends `what happened?`
 - **THEN** the call is answered `{"outcome": "applied", "task_id": 2}`, read from what the list recorded under its key -- never as not run
+
+#### Scenario: A write applied, its answer lost, the rules changed, then continued
+- **GIVEN** the same, and the rules then refusing the title
+- **WHEN** the thread is continued
+- **THEN** the call is answered `{"outcome": "applied", "task_id": 2}` -- what the list recorded under its key, before any rule is read -- and `task_writes` holds one row
 
 #### Scenario: A replay deciding otherwise is told what was done
 - **GIVEN** `add_task(title="Call the plumber")` approved and applied
@@ -121,7 +126,7 @@ Each decision SHALL decide its write, one write a step, its answer stored with i
 - **THEN** the call is answered `{"outcome": "refused", "task_id": 7, "reason": "no task 7"}`, status `error`, and the run goes on to the model: the owner approved, and the model hears why nothing changed
 
 ### Requirement: ASSISTANT-WRITE-KEY
-An approved or rejected write SHALL be decided under the key `["<thread id>", "<reply id>", "<call id>"]`, a JSON array -- the thread's id, the id of the reply that proposed the call, the call's id; a `:` or a quote in one part never makes it another's -- so a replay of `apply_writes` from its checkpoint changes the task list once. Not the superstep: a replay runs `apply_writes` at another step (measured: 5, then 6). A key longer than `WRITE_KEY_MAX` is refused with the proposal, before the owner is asked (ASSISTANT-WRITE-PROPOSAL).
+An approved or rejected write SHALL be decided under the key `["<thread id>", "<reply id>", "<call id>"]`, a JSON array -- the thread's id as text, the id of the reply that proposed the call, the call's id; a `:` or a quote in one part never makes it another's -- so a replay of `apply_writes` from its checkpoint changes the task list once. Not the superstep: a replay runs `apply_writes` at another step (measured: 5, then 6). A key longer than `WRITE_KEY_MAX` is refused with the proposal, before the owner is asked (ASSISTANT-WRITE-PROPOSAL).
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/agents/test_approval.py::TestWriteKey`
@@ -130,6 +135,11 @@ An approved or rejected write SHALL be decided under the key `["<thread id>", "<
 - **GIVEN** an approved `add_task(title="Call the plumber")` on the thread `t1`, applied
 - **WHEN** the thread is run again from the checkpoint before `apply_writes`
 - **THEN** the list holds one `Call the plumber`, and `task_writes` one row, whose key is `["t1", "<the reply's id>", "<the call's id>"]`
+
+#### Scenario: A thread id that is not text
+- **GIVEN** the thread id `UUID(int=7)`, a Python caller's
+- **WHEN** `add_task(title="Call the plumber")` is proposed and approved
+- **THEN** it is applied under the key `["00000000-0000-0000-0000-000000000007", "<the reply's id>", "<the call's id>"]`
 
 #### Scenario: Counter-example -- parts that would run together
 - **THEN** the thread `a:b` with the reply `c` and the thread `a` with the reply `b:c`, the same call, make two keys
@@ -188,6 +198,7 @@ The assistant's state SHALL be the contract `AssistantState` at `ASSISTANT_STATE
 | `close_task(1)` and `add_task("Buy milk")`, both under `call_0` | `call_0`, then a new id |
 | `add_task("Buy milk")` with no id | a new id |
 | `list_tasks` and `add_task("Buy milk")`, both under `call_0` | `call_0`, then a new id |
+| a malformed `close_task` and `add_task("Buy milk")`, both under `call_0` | the malformed call `call_0`, the write a new id, and still waiting |
 
 - **AND** with both writes of the first row waiting, decisions `reject, approve` reject the close and apply the add
 

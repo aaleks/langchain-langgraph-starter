@@ -100,6 +100,22 @@ def blind_post(url: str, headers: dict[str, str]) -> int:
         return refused.code
 
 
+def socket_handshake(url: str, origin: str | None) -> int:
+    """A WebSocket handshake to the server's event stream, as a page or the SDK
+    opens one -- 101 when accepted, else the status it was refused with."""
+    import uuid
+
+    from websockets.exceptions import InvalidStatus
+    from websockets.sync.client import connect
+
+    stream_url = url.replace("http://", "ws://") + f"/threads/{uuid.uuid4()}/stream/events"
+    try:
+        with connect(stream_url, origin=origin, proxy=None, open_timeout=10):
+            return 101
+    except InvalidStatus as refused:
+        return refused.response.status_code
+
+
 def message_types(values: dict) -> list[str]:
     return [message["type"] for message in values["messages"]]
 
@@ -143,7 +159,14 @@ def session(tmp_path_factory):
                 server.url, {"Host": "evil.example", "Content-Type": "application/json"}
             ),
         }
+        seen["sockets"] = {
+            "page": socket_handshake(server.url, "https://evil.example"),
+            "agent-chat-ui": socket_handshake(server.url, "http://localhost:3000"),
+            "sdk": socket_handshake(server.url, None),
+        }
         seen["blind_threads"] = len(client.threads.search(limit=1000)) - before
+        # A POST with no body and no Content-Type, as the SDK sends it.
+        seen["copied"] = client.threads.copy(thread)["thread_id"] != thread
         seen["second"] = subprocess.run(
             [sys.executable, "-c", READ_THREAD, server.url, thread],
             capture_output=True,
@@ -433,6 +456,11 @@ class TestBrowserOrigins:
         assert session["blind_threads"] == 0
         # The SDK's own requests went through: the session made its threads.
         assert session["runs"] == ["success"]
+        assert session["copied"] is True
+
+    @pytest.mark.live
+    def test_a_pages_websocket_is_refused(self, session):
+        assert session["sockets"] == {"page": 403, "agent-chat-ui": 101, "sdk": 101}
 
     def test_counter_example_set_by_the_script_not_by_chance(self):
         import re
@@ -440,11 +468,15 @@ class TestBrowserOrigins:
         from tests.architecture.contract import REPO, shell_exports
 
         script = (REPO / "scripts" / "serve.sh").read_text(encoding="utf-8")
+        from starter.domain.access import BROWSER_ORIGINS
+
+        # One origin, held in one place: CORS and the request guard agree.
         assert re.findall(r"^CORS_ALLOW_ORIGINS=(\S+) \\$", script, re.M) == [
-            "http://localhost:3000"
+            ",".join(sorted(BROWSER_ORIGINS))
         ]
+        assert BROWSER_ORIGINS == {"http://localhost:3000"}
         assert "CORS_ALLOW_ORIGINS" not in shell_exports(script)
         assert re.findall(r"^unset CORS_CONFIG$", script, re.M) == ["unset CORS_CONFIG"]
-        assert '"cors"' in script and "refuse" in script
+        assert re.findall(r"^if grep -Eq '\"cors\"\[\[:space:\]\]\*:' ", script, re.M)
         config = json.loads((REPO / "langgraph.json").read_text(encoding="utf-8"))
         assert config["http"] == {"app": "./src/starter/infrastructure/server/guard.py:app"}
