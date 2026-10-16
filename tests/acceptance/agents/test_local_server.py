@@ -480,3 +480,106 @@ class TestBrowserOrigins:
         assert re.findall(r"^if grep -Eq '\"cors\"\[\[:space:\]\]\*:' ", script, re.M)
         config = json.loads((REPO / "langgraph.json").read_text(encoding="utf-8"))
         assert config["http"] == {"app": "./src/starter/infrastructure/server/guard.py:app"}
+
+
+def paused_across_a_restart(workdir, kill: bool) -> dict:
+    """A run paused for approval, the server stopped -- gracefully, or killed --
+    and started again on the same files, then the thread resumed with an
+    approval: what the owner sees at each point."""
+    from langgraph_sdk import get_sync_client
+    from langgraph_sdk.errors import NotFoundError
+
+    from tests.openwebui_stub import openwebui_stub, tool_call
+
+    plumber = tool_call("add_task", {"title": "Call the plumber"})
+    seen: dict = {}
+    task_list = workdir / "tasks.sqlite3"
+    with openwebui_stub(replies=[plumber, "done"]) as stub:
+        settings = {
+            "OPENWEBUI_URL": stub.url,
+            "OPENWEBUI_API_KEY": "sk-local",
+            "OPENWEBUI_MODEL": "llama3.1:8b",
+        }
+        with local_server(workdir, settings=settings) as server:
+            client = get_sync_client(url=server.url)
+            thread = client.threads.create()["thread_id"]
+            human = {"messages": [{"role": "human", "content": "add the plumber"}]}
+            client.runs.wait(thread, "assistant", input=human)
+            seen["paused"] = client.threads.get(thread)["status"]
+            if kill:
+                server.kill()
+        with local_server(workdir, settings=settings) as server:
+            client = get_sync_client(url=server.url)
+            if kill:
+                try:
+                    client.threads.get(thread)
+                    seen["before_re_registered"] = "found"
+                except NotFoundError:
+                    seen["before_re_registered"] = "not found"
+                seen["tasks_before"] = task_titles(task_list)
+                client.threads.create(thread_id=thread, if_exists="do_nothing")
+            else:
+                seen["restarted"] = client.threads.get(thread)["status"]
+                seen["next"] = client.threads.get_state(thread)["next"]
+            approve = {"resume": {"decisions": [{"type": "approve"}]}}
+            client.runs.wait(thread, "assistant", command=approve)
+            seen["thread"] = client.threads.get(thread)["status"]
+    seen["tasks"] = task_titles(task_list)
+    return seen
+
+
+@pytest.fixture(scope="module")
+def restarts(tmp_path_factory):
+    return {
+        "graceful": paused_across_a_restart(tmp_path_factory.mktemp("graceful"), kill=False),
+        "killed": paused_across_a_restart(tmp_path_factory.mktemp("killed"), kill=True),
+    }
+
+
+class TestDurableApprovals:
+    """LOCAL-SERVER-DURABLE-APPROVAL: `langgraph.json` SHALL name the project's durable
+    checkpointer, `{"backend": "custom", "path":
+    "./src/starter/infrastructure/agents/checkpointers.py:durable_checkpointer"}`, so
+    the local server keeps every checkpoint in the SQLite file `CHECKPOINTS_DB` names
+    (SETTINGS-CHECKPOINTS-DB) the moment it is written. A run paused for the owner's
+    approval SHALL survive the server's stop and start: after a graceful stop, the
+    thread is `interrupted` at `review_writes` and an approval on it applies the
+    write once; after the server is killed, the server may not know the thread --
+    its own record of threads is flushed every 10 seconds (measured, `langgraph-api`
+    0.16) -- and once a client re-registers it under its id,
+    `threads.create(thread_id=..., if_exists="do_nothing")`, an approval applies the
+    write once."""
+
+    @pytest.mark.live
+    def test_stopped_gracefully_started_again(self, restarts):
+        graceful = restarts["graceful"]
+
+        assert graceful["paused"] == "interrupted"
+        assert graceful["restarted"] == "interrupted"
+        assert graceful["next"] == ["review_writes"]
+        assert graceful["thread"] == "idle"
+        assert graceful["tasks"] == ["Call the plumber"]
+
+    @pytest.mark.live
+    def test_killed_the_thread_re_registered(self, restarts):
+        killed = restarts["killed"]
+
+        assert killed["paused"] == "interrupted"
+        assert killed["thread"] == "idle"
+        assert killed["tasks"] == ["Call the plumber"]
+
+    @pytest.mark.live
+    def test_counter_example_killed_not_re_registered(self, restarts):
+        killed = restarts["killed"]
+
+        assert killed["before_re_registered"] == "not found"
+        assert killed["tasks_before"] == []
+
+    def test_the_checkpointer_named_not_by_chance(self):
+        from tests.architecture.contract import REPO
+
+        config = json.loads((REPO / "langgraph.json").read_text(encoding="utf-8"))
+        assert config["checkpointer"] == {
+            "backend": "custom",
+            "path": "./src/starter/infrastructure/agents/checkpointers.py:durable_checkpointer",
+        }

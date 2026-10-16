@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +77,8 @@ class LocalServer:
     output: Path
     # Set when stopped: True if the signal stopped it, False if it had to be killed.
     stopped_gracefully: bool | None = None
+    # Ends the server's whole process tree at once, as a crash would.
+    kill: Callable[[], None] | None = None
 
     def records(self) -> list[dict]:
         """What the probe recorded, in every process the server started."""
@@ -134,11 +136,15 @@ def local_server(
     """`settings`: the owner's settings for this server, over the empty ones it
     inherits from the suite -- an Open WebUI, say. Those names only: anything
     else, a proxy among them, would undo the hostile environment. Its task list
-    is its own, in `workdir`, unless `settings` names one."""
+    and its checkpoints are its own, in `workdir`, unless `settings` names them.
+
+    A second server on the same `workdir` serves the same working copy -- its
+    `.langgraph_api/` included -- as a restart does (durable-approvals)."""
     unknown = set(settings or {}) - set(SETTINGS)
     if unknown:
         raise ValueError(f"not a setting: {sorted(unknown)}; settings are {list(SETTINGS)}")
-    copy = working_copy(workdir / "project")
+    project = workdir / "project"
+    copy = project if (project / "langgraph.json").is_file() else working_copy(project)
     port = free_port()
     server = LocalServer(
         url=f"http://127.0.0.1:{port}",
@@ -148,6 +154,7 @@ def local_server(
     env = {
         **hostile_environment(dict(os.environ)),
         "TASKS_DB": str(workdir / "tasks.sqlite3"),
+        "CHECKPOINTS_DB": str(workdir / "checkpoints.sqlite3"),
         **(settings or {}),
         "UV_PROJECT": str(REPO),
         "PROBE_LOG": str(server.probe_log),
@@ -166,6 +173,7 @@ def local_server(
                 else {"start_new_session": True}
             ),
         )
+        server.kill = lambda: _kill(process)
         try:
             _await_ok(server, process, start_timeout)
             yield server
@@ -200,6 +208,18 @@ def _await_ok(server: LocalServer, process: subprocess.Popen, timeout: float) ->
         f"the server did not answer /ok within {timeout}s:\n"
         + server.output.read_text(encoding="utf-8", errors="replace")[-3000:]
     )
+
+
+def _kill(process: subprocess.Popen, grace: float = 30) -> None:
+    """The whole tree, at once: no signal, no lifespan shutdown, no flush."""
+    if WINDOWS:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait(timeout=grace)
 
 
 def _stop(process: subprocess.Popen, grace: float = 30) -> bool:

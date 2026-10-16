@@ -6,5 +6,9 @@
   "python_version": "3.13",
   "http": {
     "app": "./src/starter/infrastructure/server/guard.py:app"
+  },
+  "checkpointer": {
+    "backend": "custom",
+    "path": "./src/starter/infrastructure/agents/checkpointers.py:durable_checkpointer"
   }
 }

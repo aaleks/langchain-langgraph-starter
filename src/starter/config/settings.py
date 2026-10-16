@@ -23,8 +23,10 @@ REPO = Path(__file__).resolve().parents[3]
 DOTENV = REPO / ".env"
 # The task list when TASKS_DB is empty: in the repository, ignored by git.
 DEFAULT_TASKS_DB = REPO / ".data" / "tasks.sqlite3"
+# The threads' checkpoints when CHECKPOINTS_DB is empty: beside the task list.
+DEFAULT_CHECKPOINTS_DB = REPO / ".data" / "checkpoints.sqlite3"
 
-NAMES = ("OPENWEBUI_URL", "OPENWEBUI_API_KEY", "OPENWEBUI_MODEL", "TASKS_DB")
+NAMES = ("OPENWEBUI_URL", "OPENWEBUI_API_KEY", "OPENWEBUI_MODEL", "TASKS_DB", "CHECKPOINTS_DB")
 
 
 @dataclass(frozen=True)
@@ -35,13 +37,17 @@ class Settings:
     # No default: a settings object built in code names its task list, or it
     # would open the repository's own -- a test among them (task-store-read-only).
     tasks_db: str
+    # A default, unlike the task list's: only the local server's checkpointer
+    # opens this file, from the process's own settings (durable-approvals).
+    checkpoints_db: str = ""
 
     def __repr__(self) -> str:
         # Never the key: a settings object ends up in tracebacks and logs.
         key = "set" if self.openwebui_api_key else "empty"
         return (
             f"Settings(openwebui_url={self.openwebui_url!r}, openwebui_api_key=<{key}>, "
-            f"openwebui_model={self.openwebui_model!r}, tasks_db={self.tasks_db!r})"
+            f"openwebui_model={self.openwebui_model!r}, tasks_db={self.tasks_db!r}, "
+            f"checkpoints_db={self.checkpoints_db!r})"
         )
 
     __str__ = __repr__
@@ -60,9 +66,13 @@ def read_settings(environ: Mapping[str, str], dotenv: Path) -> Settings:
             return environ[name]
         return from_file.get(name) or ""
 
-    url, key, model, tasks_db = (value(name).strip() for name in NAMES)
+    url, key, model, tasks_db, checkpoints_db = (value(name).strip() for name in NAMES)
     return Settings(
-        openwebui_url=url, openwebui_api_key=key, openwebui_model=model, tasks_db=tasks_db
+        openwebui_url=url,
+        openwebui_api_key=key,
+        openwebui_model=model,
+        tasks_db=tasks_db,
+        checkpoints_db=checkpoints_db,
     )
 
 
@@ -73,6 +83,14 @@ def tasks_db_path(settings: Settings) -> Path:
     if not settings.tasks_db:
         return DEFAULT_TASKS_DB
     return REPO / settings.tasks_db  # an absolute path replaces REPO
+
+
+def checkpoints_db_path(settings: Settings) -> Path:
+    """The threads' checkpoint file: `CHECKPOINTS_DB`, taken as `TASKS_DB` is, or
+    the repository's `.data/checkpoints.sqlite3` when it is empty."""
+    if not settings.checkpoints_db:
+        return DEFAULT_CHECKPOINTS_DB
+    return REPO / settings.checkpoints_db  # an absolute path replaces REPO
 
 
 def _read_dotenv(dotenv: Path) -> dict[str, str | None]:
