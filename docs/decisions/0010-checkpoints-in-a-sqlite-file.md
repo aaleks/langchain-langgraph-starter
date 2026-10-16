@@ -33,6 +33,15 @@ The owner chose (2026-10-16):
 - **The thread records stay the dev runtime's.** After a kill, a thread the
   server lost is re-registered with `threads.create(thread_id=...,
   if_exists="do_nothing")`, then resumed from the file.
+- **Strict serialization**, set in code: no pickle, and a msgpack value
+  naming a constructor outside LangGraph's and LangChain's safe types is
+  never called.
+- **A copy keeps each checkpoint's stamp**; a thread holding one this code
+  refuses is not copied.
+- **No encryption at rest yet** -- the owner's choice, 2026-10-16: the file
+  is on the owner's disk beside the task list, which holds the same titles
+  unencrypted. Revisited with slice 5b's local token.
+- **`CHECKPOINTS_DB` never names the task list's file.**
 
 ## Consequences
 
@@ -44,7 +53,10 @@ The owner chose (2026-10-16):
 **Costly:**
 - One more dependency, and `langgraph-checkpoint` moves to 4.3.
 - After a kill, a thread must be re-registered before Agent Chat UI shows it.
-- The file grows until slice 5c decides retention.
+- The file grows until slice 5c decides retention; deleting a run and
+  pruning history are unsupported until then.
+- Anyone who can read the owner's disk can read past conversations.
+- Threads paused before this decision are not carried into the file.
 
 **Reversal:** remove the `checkpointer` key; the dev runtime's checkpointer
 returns. Checkpoints written to the file are not carried back.

@@ -508,6 +508,7 @@ def paused_across_a_restart(workdir, kill: bool) -> dict:
             seen["paused"] = client.threads.get(thread)["status"]
             if kill:
                 server.kill()
+        seen["stopped_gracefully"] = server.stopped_gracefully
         with local_server(workdir, settings=settings) as server:
             client = get_sync_client(url=server.url)
             if kill:
@@ -525,7 +526,21 @@ def paused_across_a_restart(workdir, kill: bool) -> dict:
             client.runs.wait(thread, "assistant", command=approve)
             seen["thread"] = client.threads.get(thread)["status"]
     seen["tasks"] = task_titles(task_list)
+    seen["checkpointed"] = checkpointed_threads(workdir / "checkpoints.sqlite3")
+    seen["thread_id"] = thread
     return seen
+
+
+def checkpointed_threads(path) -> set[str]:
+    """The threads with a checkpoint in the file `CHECKPOINTS_DB` named."""
+    import sqlite3
+
+    if not path.is_file():
+        return set()
+    db = sqlite3.connect(path)
+    found = {thread for (thread,) in db.execute("SELECT DISTINCT thread_id FROM checkpoints")}
+    db.close()
+    return found
 
 
 @pytest.fixture(scope="module")
@@ -541,38 +556,46 @@ class TestDurableApprovals:
     checkpointer, `{"backend": "custom", "path":
     "./src/starter/infrastructure/agents/checkpointers.py:durable_checkpointer"}`, so
     the local server keeps every checkpoint in the SQLite file `CHECKPOINTS_DB` names
-    (SETTINGS-CHECKPOINTS-DB) the moment it is written. A run paused for the owner's
-    approval SHALL survive the server's stop and start: after a graceful stop, the
-    thread is `interrupted` at `review_writes` and an approval on it applies the
-    write once; after the server is killed, the server may not know the thread --
-    its own record of threads is flushed every 10 seconds (measured, `langgraph-api`
-    0.16) -- and once a client re-registers it under its id,
-    `threads.create(thread_id=..., if_exists="do_nothing")`, an approval applies the
-    write once."""
+    (SETTINGS-CHECKPOINTS-DB) the moment it is written, its folder created; the
+    registered graph carries no checkpointer of its own, the server supplies it. A run
+    paused for the owner's approval SHALL survive the server's stop and start: after a
+    graceful stop, the thread is `interrupted` at `review_writes` and an approval on it
+    applies the write once; after the server is killed, the server may not know the
+    thread -- its own record of threads is flushed on a 10-second clock (measured,
+    `langgraph-api` 0.16), so a flush may or may not have caught it -- and once a client
+    re-registers it under its id, `threads.create(thread_id=...,
+    if_exists="do_nothing")`, an approval applies the write once."""
 
     @pytest.mark.live
     def test_stopped_gracefully_started_again(self, restarts):
         graceful = restarts["graceful"]
 
         assert graceful["paused"] == "interrupted"
+        assert graceful["stopped_gracefully"] is True
         assert graceful["restarted"] == "interrupted"
         assert graceful["next"] == ["review_writes"]
         assert graceful["thread"] == "idle"
         assert graceful["tasks"] == ["Call the plumber"]
+        # In the file CHECKPOINTS_DB names -- not the owner's.
+        assert graceful["thread_id"] in graceful["checkpointed"]
 
     @pytest.mark.live
     def test_killed_the_thread_re_registered(self, restarts):
         killed = restarts["killed"]
 
         assert killed["paused"] == "interrupted"
+        assert killed["stopped_gracefully"] is False
         assert killed["thread"] == "idle"
         assert killed["tasks"] == ["Call the plumber"]
+        assert killed["thread_id"] in killed["checkpointed"]
 
     @pytest.mark.live
     def test_counter_example_killed_not_re_registered(self, restarts):
         killed = restarts["killed"]
 
-        assert killed["before_re_registered"] == "not found"
+        # Found or not: the server's own records are flushed on a 10-second clock,
+        # so a flush may have caught the thread before the kill (measured).
+        assert killed["before_re_registered"] in {"found", "not found"}
         assert killed["tasks_before"] == []
 
     def test_the_checkpointer_named_not_by_chance(self):

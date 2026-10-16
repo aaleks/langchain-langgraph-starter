@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: SETTINGS-CHECKPOINTS-DB
-The threads' checkpoint file SHALL be the setting `CHECKPOINTS_DB` -- a relative path taken from the repository's root, an absolute one as it is -- and `.data/checkpoints.sqlite3` under the repository's root when the setting is empty.
+The threads' checkpoint file SHALL be the setting `CHECKPOINTS_DB` -- a relative path taken from the repository's root, an absolute one as it is -- and `.data/checkpoints.sqlite3` under the repository's root when the setting is empty; never the task list's own file: a `CHECKPOINTS_DB` naming the file `TASKS_DB` names SHALL be refused, naming both settings.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/integration/config/test_settings.py::TestCheckpointsDb`
@@ -16,6 +16,10 @@ The threads' checkpoint file SHALL be the setting `CHECKPOINTS_DB` -- a relative
 #### Scenario: Counter-example -- the working directory does not decide
 - **GIVEN** `CHECKPOINTS_DB=state/threads.sqlite3`, read from a working directory other than the repository's root
 - **THEN** the file is `<repository>/state/threads.sqlite3`
+
+#### Scenario: Counter-example -- the task list's own file
+- **GIVEN** `TASKS_DB` and `CHECKPOINTS_DB` both `<tmp>/tasks.sqlite3`
+- **THEN** the checkpoint file is refused, naming `CHECKPOINTS_DB` and `TASKS_DB`
 
 ## MODIFIED Requirements
 

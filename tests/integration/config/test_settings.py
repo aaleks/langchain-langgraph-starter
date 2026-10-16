@@ -181,8 +181,9 @@ class TestTasksDb:
 class TestCheckpointsDb:
     """SETTINGS-CHECKPOINTS-DB: The threads' checkpoint file SHALL be the setting
     `CHECKPOINTS_DB` -- a relative path taken from the repository's root, an absolute
-    one as it is -- and `.data/checkpoints.sqlite3` under the repository's root when
-    the setting is empty."""
+    one as it is -- and `.data/checkpoints.sqlite3` under the repository's root when the
+    setting is empty; never the task list's own file: a `CHECKPOINTS_DB` naming the file
+    `TASKS_DB` names SHALL be refused, naming both settings."""
 
     @pytest.mark.parametrize(
         ("value", "expected"),
@@ -218,6 +219,18 @@ class TestCheckpointsDb:
         )
 
         assert checkpoints_db_path(settings) == REPO / "state" / "threads.sqlite3"
+
+    def test_counter_example_the_task_lists_own_file_is_refused(self, tmp_path):
+        from starter.config.settings import checkpoints_db_path
+
+        same = str(tmp_path / "tasks.sqlite3")
+        settings = read_settings(
+            {**EVERY_SETTING, "TASKS_DB": same, "CHECKPOINTS_DB": same}, tmp_path / ".env"
+        )
+
+        with pytest.raises(ValueError, match="CHECKPOINTS_DB") as refused:
+            checkpoints_db_path(settings)
+        assert "TASKS_DB" in str(refused.value)
 
 
 class TestKeyNeverShown:

@@ -42,3 +42,19 @@ server's composition. The story test is LOCAL-SERVER-DURABLE-APPROVAL's live
   itself proved live, by the restarts
 - [x] 6.2 Documents: CLAUDE.md, ADR 0010, the getting-started and
   walkthrough guides, `.env.example`; the roadmap at archive
+
+## 7. Verify pass 1 -- the fixes
+
+- [x] 7.1 Strict deserialization set in code -- `TestStrictDeserialization`,
+  the planted constructor red first
+- [x] 7.2 `acopy_thread` keeps each stamp and refuses a newer thread -- red
+  first
+- [x] 7.3 The server's hook loaded by its file's path, handed settings; the
+  folder created; the registered graph without a checkpointer -- red first
+- [x] 7.4 An older and an unstamped pause resume; a refused run leaves the
+  file's rows as they were
+- [x] 7.5 `CHECKPOINTS_DB` naming the task list refused -- red first
+- [x] 7.6 Live: the stop asserted graceful, or not; the checkpoints in the
+  file `CHECKPOINTS_DB` names; the kill counter-example no longer a race
+- [x] 7.7 The suite's `CHECKPOINTS_DB` isolated; SQLite's `-wal`/`-shm`
+  ignored; the encryption decision, the limits and the migration recorded

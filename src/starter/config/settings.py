@@ -87,10 +87,19 @@ def tasks_db_path(settings: Settings) -> Path:
 
 def checkpoints_db_path(settings: Settings) -> Path:
     """The threads' checkpoint file: `CHECKPOINTS_DB`, taken as `TASKS_DB` is, or
-    the repository's `.data/checkpoints.sqlite3` when it is empty."""
-    if not settings.checkpoints_db:
-        return DEFAULT_CHECKPOINTS_DB
-    return REPO / settings.checkpoints_db  # an absolute path replaces REPO
+    the repository's `.data/checkpoints.sqlite3` when it is empty. Never the task
+    list's own file, which only the task store opens (docs/decisions/0006)."""
+    path = (
+        REPO / settings.checkpoints_db  # an absolute path replaces REPO
+        if settings.checkpoints_db
+        else DEFAULT_CHECKPOINTS_DB
+    )
+    if path.resolve() == tasks_db_path(settings).resolve():
+        raise ValueError(
+            f"CHECKPOINTS_DB names the task list's own file, {path}: give the "
+            "checkpoints a file of their own, apart from TASKS_DB"
+        )
+    return path
 
 
 def _read_dotenv(dotenv: Path) -> dict[str, str | None]:

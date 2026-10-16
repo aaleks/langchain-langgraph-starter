@@ -8,14 +8,17 @@ from starter.domain.agents.state_versions import checkpoint_version_refusal
 
 
 class TestCheckpointVersion:
-    """ASSISTANT-CHECKPOINT-VERSION: Every checkpoint the durable checkpointer writes
-    SHALL carry the state's version in its metadata, `state_version`,
-    `ASSISTANT_STATE_VERSION`. A thread whose latest checkpoint carries a version
-    newer than the code's SHALL be refused before any node runs --
-    `CheckpointVersionError`, naming both versions, nothing written and the model not
-    called; one that carries no version -- written before the stamp -- or an older
-    one SHALL be loaded as it is, the state contract deciding the rest
-    (ASSISTANT-STATE-CONTRACT). What a version found means is the domain's
+    """ASSISTANT-CHECKPOINT-VERSION: Every checkpoint the durable checkpointer writes SHALL
+    carry the state's version in its metadata, `state_version`,
+    `ASSISTANT_STATE_VERSION`: the version of the code that wrote it. A thread whose
+    latest checkpoint carries a version newer than the code's SHALL be refused before
+    any node runs -- `CheckpointVersionError`, naming both versions, nothing written to
+    the task list or the checkpoint file and the model not called -- and its state
+    cannot be read through the checkpointer either; its history is listed as stored. One
+    that carries no version -- written before the stamp -- or an older one SHALL be
+    loaded as it is, the state contract deciding the rest (ASSISTANT-STATE-CONTRACT). A
+    thread's copy SHALL keep each checkpoint's stamp, and a thread holding a checkpoint
+    the code refuses SHALL not be copied. What a version found means is the domain's
     `checkpoint_version_refusal`."""
 
     @pytest.mark.parametrize(
