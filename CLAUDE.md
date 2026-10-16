@@ -121,6 +121,7 @@ openspec/               specs/ (living truth), changes/ (in flight), the sdd-pro
 .claude/                the SDD method: skills, agents, rules, hooks, sdd/ (tooling and docs)
 sdd.toml                the method's adapter: where specs and tests live, the commands
 docs/decisions/         ADRs -- one per decision that is expensive to reverse
+docs/guides/            getting started, adding a tool or a graph, a walk through the code
 docs/roadmap.md         the first changes, in order
 docs/ci/                how CI is enabled and changed; a person moves a workflow into .github/
 docs/learnings.md       what went wrong, and what it left behind

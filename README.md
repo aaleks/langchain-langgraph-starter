@@ -14,7 +14,7 @@ What you get on day one:
 - **A walking skeleton** -- five layers with their contracts already enforced,
   each check proved able to fail. Product code arrives through the loop like
   everything else: so far the `assistant` graph, its Open WebUI model, and a
-  task list it reads.
+  task list it reads and -- with the owner's approval -- writes.
 - **A LangGraph plan** -- the adoption ladder, where graphs live, and the slices
   to build them in: [`docs/roadmap.md`](docs/roadmap.md).
 - **LangGraph on your machine only** -- never through LangSmith: no hosted
@@ -49,6 +49,15 @@ Then, in Claude Code, describe the first change:
 requirements you approve; `/accept` and `/tdd` prove them one at a time;
 `/verify` reviews; `/land` archives and integrates. The walkthrough is
 [`.claude/sdd/GUIDE.md`](.claude/sdd/GUIDE.md).
+
+## Guides
+
+- [Getting started](docs/guides/getting-started.md) -- from a clone to a write
+  you approve, on your own machine.
+- [Adding a tool, or another agent](docs/guides/adding-a-tool-or-graph.md) --
+  where each piece goes, through the method.
+- [A walk through the code](docs/guides/code-walkthrough.md) -- a request from
+  the server's front door to the task list, and watching a run without Studio.
 
 ## The loop
 
@@ -103,7 +112,7 @@ tests/                unit, integration, acceptance; architecture checks the che
 openspec/             specs (living), changes (in flight), the sdd-proof schema
 .claude/              skills, agents, rules, hooks, and sdd/ -- the method itself
 sdd.toml              where this project keeps its specs and tests, and its commands
-docs/                 decisions (ADRs), architecture, roadmap, ci, learnings
+docs/                 decisions (ADRs), architecture, guides, roadmap, ci, learnings
 scripts/check.sh      every check, one list
 scripts/serve.sh      the local LangGraph server -- 127.0.0.1, nothing to LangSmith
 ```
