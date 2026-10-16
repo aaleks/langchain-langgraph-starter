@@ -19,12 +19,17 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # A body a browser cannot send to another origin without asking first.
 JSON = "application/json"
+# The development server's own routes, which nothing here uses: `/deploy` runs
+# a LangSmith deployment (docs/decisions/0004 forbids one), `/internal/truncate`
+# wipes every thread, paused approvals included.
+NOT_SERVED = ("/deploy/", "/internal/")
 
 
 def request_refusal(
     *,
     socket: bool,
     method: str,
+    path: str,
     host: str | None,
     origin: str | None,
     content_type: str | None,
@@ -39,6 +44,8 @@ def request_refusal(
     POST still carries its `Origin`."""
     if host is None or _hostname(host) not in LOCAL_HOSTS:
         return "the Host is not this machine"
+    if path == "/deploy" or path.startswith(NOT_SERVED):
+        return f"the route {path} is not served here"
     if not socket and method.upper() in SAFE_METHODS:
         return None
     if origin is not None and origin not in BROWSER_ORIGINS:

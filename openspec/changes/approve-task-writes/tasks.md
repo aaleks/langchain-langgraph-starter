@@ -139,3 +139,15 @@
   docstring; `state.py`'s stale lines
 - [x] 13.7 Mutations of the fixes, 12, each red once a redundant condition
   was removed and the unknown-kind test given a local `Host`
+
+## 14. Verify pass 4 -- the MINORs
+
+- [x] 14.1 `apply_writes` decides through the writer again, which refuses a
+  key recording another write; the record is read directly only when the
+  rules now refuse the call -- the fork test red first
+- [x] 14.2 `/deploy` and `/internal/` refused by the guard -- rows red first
+- [x] 14.3 Rows: a `PATCH` body, a WebSocket scope with no method, the budget
+  on `ainvoke`, an approval with more than its type, the `Not valid` values
+- [x] 14.4 Records: the roadmap's slices 5 and 6 carry every deferral;
+  finding 21's reach reworded; the upstream note
+- [x] 14.5 Mutations of the fixes, 8, each red

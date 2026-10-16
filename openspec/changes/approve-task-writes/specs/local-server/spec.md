@@ -17,36 +17,41 @@ Through the local server's API (`bash scripts/serve.sh`), a run whose model prop
 - **THEN** the thread's status is `idle`, its last message the rejection's tool message, and the list holds no task of that thread's
 
 ### Requirement: LOCAL-SERVER-REQUEST-GUARD
-The local server SHALL refuse, before any route sees it, a request the domain policy `request_refusal` refuses -- an HTTP request with 403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; a WebSocket whose `Origin` is present and not `http://localhost:3000`, since CORS never applies to one and the server's event stream starts and resumes runs over it; and an HTTP request other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or `PATCH`, that is not `application/json`. Nothing but HTTP, WebSockets and the server's own lifespan SHALL reach the server. CORS limits what a page may read; this refuses what a page may send.
+The local server SHALL refuse, before any route sees it, a request the domain policy `request_refusal` refuses -- an HTTP request with 403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; one to `/deploy` or under `/internal/`, the development server's own routes, which deploy through LangSmith or wipe every thread; a WebSocket whose `Origin` is present and not `http://localhost:3000`, since CORS never applies to one and the server's event stream starts and resumes runs over it; and an HTTP request other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or `PATCH`, that is not `application/json`. Nothing but HTTP, WebSockets and the server's own lifespan SHALL reach the server. CORS limits what a page may read; this refuses what a page may send.
 
 - **Kind:** deterministic
 - **Proved by:** `tests/unit/domain/test_access.py::TestRequestGuard`, `tests/integration/infrastructure/test_request_guard.py::TestGuardInFrontOfEveryRoute`
 
 #### Scenario: Requests refused
-| Kind | Method | Host | Origin | Body | Refused |
-|---|---|---|---|---|---|
-| HTTP | `POST` | `127.0.0.1:2024` | `https://evil.example` | `text/plain` | yes: the origin |
-| HTTP | `POST` | `127.0.0.1:2024` | `https://evil.example` | `application/json` | yes: the origin |
-| HTTP | `POST` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
-| HTTP | `POST` | `127.0.0.1:2024` | none | `text/plain;charset=UTF-8` | yes: the body |
-| HTTP | `DELETE` | `127.0.0.1:2024` | `null` | none | yes: the origin |
-| HTTP | `GET` | `evil.example:2024` | none | none | yes: the host |
-| HTTP | `POST` | none | none | `application/json` | yes: the host |
-| WebSocket | `GET` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
-| WebSocket | `GET` | `127.0.0.1:2024` | `null` | none | yes: the origin |
-| WebSocket | `GET` | `evil.example:2024` | none | none | yes: the host |
+| Kind | Method | Path | Host | Origin | Body | Refused |
+|---|---|---|---|---|---|---|
+| HTTP | `POST` | `/threads` | `127.0.0.1:2024` | `https://evil.example` | `text/plain` | yes: the origin |
+| HTTP | `POST` | `/threads` | `127.0.0.1:2024` | `https://evil.example` | `application/json` | yes: the origin |
+| HTTP | `POST` | `/threads` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
+| HTTP | `POST` | `/threads` | `127.0.0.1:2024` | none | `text/plain;charset=UTF-8` | yes: the body |
+| HTTP | `PATCH` | `/threads/t1` | `127.0.0.1:2024` | none | `text/plain` | yes: the body |
+| HTTP | `DELETE` | `/threads/t1` | `127.0.0.1:2024` | `null` | none | yes: the origin |
+| HTTP | `GET` | `/threads/t1` | `evil.example:2024` | none | none | yes: the host |
+| HTTP | `POST` | `/threads` | none | none | `application/json` | yes: the host |
+| HTTP | `POST` | `/deploy` | `127.0.0.1:2024` | none | `application/json` | yes: not served |
+| HTTP | `GET` | `/deploy/d1/stream` | `127.0.0.1:2024` | none | none | yes: not served |
+| HTTP | `POST` | `/internal/truncate` | `127.0.0.1:2024` | none | none | yes: not served |
+| WebSocket | -- | `/threads/t1/stream/events` | `127.0.0.1:2024` | `https://evil.example` | none | yes: the origin |
+| WebSocket | -- | `/threads/t1/stream/events` | `127.0.0.1:2024` | `null` | none | yes: the origin |
+| WebSocket | -- | `/threads/t1/stream/events` | `evil.example:2024` | none | none | yes: the host |
 
 #### Scenario: Counter-example -- requests let through
-| Kind | Method | Host | Origin | Body |
-|---|---|---|---|---|
-| HTTP | `POST` | `127.0.0.1:2024` | none -- the SDK | `application/json` |
-| HTTP | `POST` | `127.0.0.1:2024` | none -- the SDK's cancel | none |
-| HTTP | `POST` | `localhost:2024` | `http://localhost:3000` | `application/json; charset=utf-8` |
-| HTTP | `GET` | `[::1]:2024` | `https://evil.example` -- CORS keeps the answer from it | none |
-| HTTP | `OPTIONS` | `127.0.0.1:2024` | `https://evil.example` -- CORS refuses the preflight | none |
-| HTTP | `DELETE` | `localhost` | none | none |
-| WebSocket | `GET` | `127.0.0.1:2024` | none -- the SDK | none |
-| WebSocket | `GET` | `localhost:2024` | `http://localhost:3000` | none |
+| Kind | Method | Path | Host | Origin | Body |
+|---|---|---|---|---|---|
+| HTTP | `POST` | `/threads` | `127.0.0.1:2024` | none -- the SDK | `application/json` |
+| HTTP | `POST` | `/threads/t1/runs/r1/cancel` | `127.0.0.1:2024` | none -- the SDK's cancel | none |
+| HTTP | `POST` | `/threads` | `localhost:2024` | `http://localhost:3000` | `application/json; charset=utf-8` |
+| HTTP | `GET` | `/threads/t1` | `[::1]:2024` | `https://evil.example` -- CORS keeps the answer from it | none |
+| HTTP | `OPTIONS` | `/threads` | `127.0.0.1:2024` | `https://evil.example` -- CORS refuses the preflight | none |
+| HTTP | `DELETE` | `/threads/t1` | `localhost` | none | none |
+| HTTP | `GET` | `/deployments` -- only like `/deploy` | `127.0.0.1:2024` | none | none |
+| WebSocket | -- | `/threads/t1/stream/events` | `127.0.0.1:2024` | none -- the SDK | none |
+| WebSocket | -- | `/threads/t1/stream/events` | `localhost:2024` | `http://localhost:3000` | none |
 
 #### Scenario: Refused before any route
 - **GIVEN** the guard in front of a route that records each request it sees

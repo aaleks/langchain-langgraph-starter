@@ -660,6 +660,27 @@ class TestWriteDecisions:
         assert answers(out["messages"])[proposal.tool_calls[0]["id"]] == self.APPLIED_2
         assert [(d, o) for _, d, o in records(store)] == [("approve", "applied")]
 
+    def test_a_fork_that_edits_a_decided_call_is_refused(self, fake_llm, store):
+        proposal = propose(("add_task", {"title": "Call the plumber"}))
+        graph = graph_for(fake_llm([proposal, answer(), answer()]), store)
+        graph.invoke({"messages": [HumanMessage("add it")]}, thread())
+        graph.invoke(Command(resume={"decisions": [{"type": "approve"}]}), thread())
+        before_apply = next(
+            s for s in graph.get_state_history(thread()) if s.next == ("apply_writes",)
+        )
+        reply = before_apply.values["messages"][-1]
+        edited = reply.model_copy(
+            update={"tool_calls": [{**reply.tool_calls[0], "args": {"title": "Buy milk"}}]}
+        )
+        forked = graph.update_state(before_apply.config, {"messages": [edited]})
+
+        # The key records another write: refused, never answered as this one.
+        with pytest.raises(ValueError, match="the key already records another write"):
+            graph.invoke(None, forked)
+
+        assert [row[1] for row in tasks(store)] == ["Renew passport", "Call the plumber"]
+        assert len(records(store)) == 1
+
     def test_counter_example_an_approved_write_the_list_refuses(self, fake_llm, store):
         proposal = propose(("close_task", {"task_id": 7}))
         model = fake_llm([proposal, answer()])

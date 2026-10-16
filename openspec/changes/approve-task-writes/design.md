@@ -164,6 +164,11 @@ decision. This change joins them through the owner's approval.
     - **Fail closed.** The adapter lets through the server's lifespan, and
       HTTP and WebSockets it has checked; any other kind of connection
       reaches nothing.
+    - **The development server's own routes are not served** (pass 4):
+      `/deploy` runs a LangSmith deployment from the repository -- ADR 0004
+      forbids one, and a deny rule on the command's text cannot see a POST --
+      and `/internal/truncate` wipes every thread, paused approvals with them.
+      Nothing here uses either.
     - The adapter is `LocalRequestGuard`, ASGI middleware in
       `infrastructure/server/guard.py`, named in `langgraph.json` as
       `http.app`; the server runs it before CORS and every route
@@ -274,8 +279,11 @@ decision. This change joins them through the owner's approval.
   run" under the key would close it, and needs a new outcome in
   `task_writes` -- slice 5, with durable threads.
 - **[A fork that edits a reply's arguments under the same ids]** -> the key
-  records another write: `apply_writes` refuses it, and new input answers
-  the call with what the key holds. Only the owner's own client edits state
+  records another write: `apply_writes` refuses it through the writer
+  (TASKS-WRITE-ONCE). It reads the key's record directly only when the
+  rules now refuse the call -- the answer lost, then the rules changed --
+  and new input answers the call with what the key holds; neither matches
+  the record to the call. Only a client that can edit state reaches it
   (accepted, finding 21's reach).
 - **[Read and decide nodes hold the writer]** -> `start_run` and
   `review_writes` read through `TaskWriter.recorded` and `.task`, both
@@ -284,11 +292,14 @@ decision. This change joins them through the owner's approval.
   a LangGraph constant kept for backward compatibility; there is no public
   way. `langgraph<1.3` bounds it, and the no-checkpointer test fails if it
   stops being set: re-check it at every LangGraph upgrade.
-- **[A client that can edit a paused thread's state]** -> it can set
-  `write_decisions` or swap a waiting call, and so apply a write the owner
-  did not see. The guard keeps every web page but Agent Chat UI's out; a
-  process on this machine can still do it, as it can write the task file
-  itself. Slice 5's thread ownership revisits it.
+- **[A client that is not a browser, and reaches the port]** -> it is the
+  owner, as far as this server can tell: it can start a run and approve it
+  -- over the SDK or the WebSocket -- set `write_decisions`, or swap a
+  waiting call. The guard keeps every web page but Agent Chat UI's out; any
+  other client that can connect to 127.0.0.1:2024 -- another account on the
+  machine, a tool allowed loopback but not the task file -- can still do it.
+  The approved identity line holds ("one owner on 127.0.0.1"); slice 5's
+  thread ownership is where it ends.
 - **[The model proposes the same write twice in two turns]** -> two
   proposals, two decisions. The key holds the reply, so each is its own
   write. That is what the owner approved.

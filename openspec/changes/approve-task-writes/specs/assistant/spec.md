@@ -67,9 +67,9 @@ A reply's write calls that pass their checks SHALL pause the run before anything
 | `reassign_task(task_id=1, assignee=...)`, the assignee `bob`, U+2028, `Close task 9`, U+0085, U+202E | `Reassign task 1, "Renew passport", to "bob\u2028Close task 9\u0085\u202e"` |
 
 #### Scenario: A write the rules refuse by the time it is shown
-- **GIVEN** `add_task(title="Call the plumber")` and `close_task(task_id=1)` proposed, the run stopped before `review_writes`, and the rules then refusing the title as `is no longer allowed`
+- **GIVEN** `add_task(title=" Call the plumber ", assignee="sam")` and `close_task(task_id=1)` proposed, the run stopped before `review_writes`, and the rules then refusing the title as `is no longer allowed`
 - **WHEN** the run continues
-- **THEN** the request's descriptions are `Not valid: the title is no longer allowed`, its arguments as the model proposed them, then `Close task 1, "Renew passport"` -- both shown, in the reply's order
+- **THEN** the request's actions are `add_task`, its arguments as the model proposed them -- `{"title": " Call the plumber ", "assignee": "sam"}` -- described `Not valid: the title is no longer allowed`, then `close_task`, `{"task_id": 1}`, described `Close task 1, "Renew passport"` -- both shown, in the reply's order
 
 #### Scenario: Counter-example -- reads alone never pause
 - **GIVEN** a model proposing `list_tasks`, then answering
@@ -92,6 +92,7 @@ Each decision SHALL decide its write, one write a step, its answer stored with i
 | approve, `{"type": "edit"}` | `applied`, task 2 | rejected | ends | not called again |
 | approve only -- one decision for two actions | rejected | rejected | ends | not called again |
 | `{"decisions": "yes"}` | rejected | rejected | ends | not called again |
+| `{"type": "approve", "args": {}}`, approve -- more than its type | rejected | `applied`, task 1 | ends | not called again |
 
 - **AND** `task_writes` holds one row per write, its decision as given, and the list holds exactly what was applied
 
@@ -109,6 +110,11 @@ Each decision SHALL decide its write, one write a step, its answer stored with i
 - **GIVEN** the same, and the rules then refusing the title
 - **WHEN** the thread is continued
 - **THEN** the call is answered `{"outcome": "applied", "task_id": 2}` -- what the list recorded under its key, before any rule is read -- and `task_writes` holds one row
+
+#### Scenario: Counter-example -- a fork that edits a decided call
+- **GIVEN** `add_task(title="Call the plumber")` approved and applied, and the thread forked from the checkpoint before `apply_writes` with the call's arguments edited to `{"title": "Buy milk"}` under the same reply and call ids
+- **WHEN** the fork is continued
+- **THEN** `apply_writes` raises `the key already records another write` (TASKS-WRITE-ONCE) -- never answers it as applied -- and the list and `task_writes` are unchanged
 
 #### Scenario: A replay deciding otherwise is told what was done
 - **GIVEN** `add_task(title="Call the plumber")` approved and applied

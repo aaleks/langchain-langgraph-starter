@@ -22,7 +22,7 @@ from tests.unit.domain.test_access import (
 BODY = b'{"assistant_id": "assistant"}'
 
 
-def scope_for(socket, method, host, origin, content_type, has_body) -> dict:
+def scope_for(socket, method, path, host, origin, content_type, has_body) -> dict:
     headers = []
     if host is not None:
         headers.append((b"host", host.encode()))
@@ -34,12 +34,10 @@ def scope_for(socket, method, host, origin, content_type, has_body) -> dict:
         headers.append((b"content-length", str(len(BODY)).encode()))
     elif method in ("POST", "PUT", "PATCH"):
         headers.append((b"content-length", b"0"))  # as the SDK's cancel sends it
-    return {
-        "type": "websocket" if socket else "http",
-        "method": method,
-        "path": "/threads",
-        "headers": headers,
-    }
+    if socket:
+        # As the server builds one: a WebSocket's scope has no method.
+        return {"type": "websocket", "path": path, "headers": headers}
+    return {"type": "http", "method": method, "path": path, "headers": headers}
 
 
 def through_the_guard(scope: dict) -> tuple[list[str], list[dict]]:
@@ -76,25 +74,27 @@ class TestGuardInFrontOfEveryRoute:
     """LOCAL-SERVER-REQUEST-GUARD: The local server SHALL refuse, before any route sees
     it, a request the domain policy `request_refusal` refuses -- an HTTP request with
     403, a WebSocket handshake by closing it unaccepted: one whose `Host` is not this
-    machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; a
-    WebSocket whose `Origin` is present and not `http://localhost:3000`, since CORS
-    never applies to one and the server's event stream starts and resumes runs over
-    it; and an HTTP request other than `GET`, `HEAD` or `OPTIONS` whose `Origin` is
-    present and not `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or
-    `PATCH`, that is not `application/json`. Nothing but HTTP, WebSockets and the
-    server's own lifespan SHALL reach the server. CORS limits what a page may read;
-    this refuses what a page may send."""
+    machine -- `127.0.0.1`, `localhost` or `[::1]`, any port -- whatever it is; one to
+    `/deploy` or under `/internal/`, the development server's own routes, which
+    deploy through LangSmith or wipe every thread; a WebSocket whose `Origin` is
+    present and not `http://localhost:3000`, since CORS never applies to one and the
+    server's event stream starts and resumes runs over it; and an HTTP request other
+    than `GET`, `HEAD` or `OPTIONS` whose `Origin` is present and not
+    `http://localhost:3000`, or that sends a body, for `POST`, `PUT` or `PATCH`, that
+    is not `application/json`. Nothing but HTTP, WebSockets and the server's own
+    lifespan SHALL reach the server. CORS limits what a page may read; this refuses
+    what a page may send."""
 
     @pytest.mark.parametrize(
-        ("socket", "method", "host", "origin", "content_type", "has_body", "because"),
+        ("socket", "method", "path", "host", "origin", "content_type", "has_body", "because"),
         REFUSED,
         ids=REFUSED_IDS,
     )
     def test_refused_before_any_route(
-        self, socket, method, host, origin, content_type, has_body, because
+        self, socket, method, path, host, origin, content_type, has_body, because
     ):
         seen, sent = through_the_guard(
-            scope_for(socket, method, host, origin, content_type, has_body)
+            scope_for(socket, method, path, host, origin, content_type, has_body)
         )
 
         assert seen == []
@@ -105,19 +105,21 @@ class TestGuardInFrontOfEveryRoute:
             assert because.encode() in b"".join(m.get("body", b"") for m in sent)
 
     @pytest.mark.parametrize(
-        ("socket", "method", "host", "origin", "content_type", "has_body"),
+        ("socket", "method", "path", "host", "origin", "content_type", "has_body"),
         LET_THROUGH,
         ids=LET_THROUGH_IDS,
     )
     def test_counter_example_let_through_to_the_route(
-        self, socket, method, host, origin, content_type, has_body
+        self, socket, method, path, host, origin, content_type, has_body
     ):
-        seen, _ = through_the_guard(scope_for(socket, method, host, origin, content_type, has_body))
+        seen, _ = through_the_guard(
+            scope_for(socket, method, path, host, origin, content_type, has_body)
+        )
 
         assert seen == ["websocket" if socket else "http"]
 
     def test_a_body_sent_in_chunks_is_still_a_body(self):
-        scope = scope_for(False, "POST", "127.0.0.1:2024", None, "text/plain", False)
+        scope = scope_for(False, "POST", "/threads", "127.0.0.1:2024", None, "text/plain", False)
         scope["headers"] = [
             (b"host", b"127.0.0.1:2024"),
             (b"content-type", b"text/plain"),

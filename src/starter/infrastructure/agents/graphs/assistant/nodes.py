@@ -342,17 +342,19 @@ def apply_writes(writes: Mapping[str, BaseTool], writer: TaskWriter | None):
         reply, _ = _last_reply(state["messages"])
         decisions = dict(state["write_decisions"])
         key = write_key(str(config["configurable"]["thread_id"]), reply.id, call["id"])
-        done = writer.recorded(key)
-        if done is not None:
-            # Decided already -- its answer lost with the run that decided it:
-            # what was done is the answer, whatever the rules say now.
-            decisions[call["id"]] = "reject" if done.outcome == "rejected" else "approve"
-            return {"messages": [_answer(call, done)], "write_decisions": decisions}
         write = checked_write(call, writes[call["name"]])
         if isinstance(write, str):
+            done = writer.recorded(key)
+            if done is not None:
+                # Decided already, its answer lost with the run that decided it,
+                # and the rules changed since: what was done is the answer.
+                decisions[call["id"]] = "reject" if done.outcome == "rejected" else "approve"
+                return {"messages": [_answer(call, done)], "write_decisions": decisions}
             # Refused by rules that changed while it waited: never decided.
             decisions[call["id"]] = "refused"
             return {"messages": [_not_proposed(call, write)], "write_decisions": decisions}
+        # The writer answers a key it recorded with that outcome -- and refuses
+        # one that records another write (TASKS-WRITE-ONCE).
         if decisions.get(call["id"]) == "approve":
             outcome = writer.apply(write, key)
         else:

@@ -333,13 +333,23 @@ class TestBudgetsPerRun:
         )
         return model, graph
 
-    def test_two_runs_on_one_thread_each_have_the_whole_budget(self, fake_llm, add_tool):
+    # The server runs a graph with `astream`: counted on both paths.
+    @pytest.mark.parametrize("path", ["invoke", "ainvoke"])
+    def test_two_runs_on_one_thread_each_have_the_whole_budget(self, fake_llm, add_tool, path):
+        import asyncio
+
         nine_then_answer = [propose(("add", {"a": 1, "b": 1})) for _ in range(9)] + [answer()]
         model, graph = self.on_thread(fake_llm, add_tool, nine_then_answer * 2)
         thread = {"configurable": {"thread_id": "t1"}}
 
-        graph.invoke({"messages": [HumanMessage("keep adding")]}, thread)
-        out = graph.invoke({"messages": [HumanMessage("again")]}, thread)
+        def run(text):
+            value = {"messages": [HumanMessage(text)]}
+            if path == "ainvoke":
+                return asyncio.run(graph.ainvoke(value, thread))
+            return graph.invoke(value, thread)
+
+        run("keep adding")
+        out = run("again")
 
         assert isinstance(out["messages"][-1], AIMessage)
         assert (model.calls, len(add_tool.calls)) == (20, 18)

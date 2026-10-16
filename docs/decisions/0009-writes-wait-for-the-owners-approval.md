@@ -59,7 +59,9 @@ What is settled here is the interface a client depends on:
   resumes runs over one, and CORS never applies to it -- is refused for its
   `Host` and for any other page's `Origin`. Anything but HTTP, WebSockets
   and the server's lifespan reaches nothing. Its policy is the domain's
-  `request_refusal`; `langgraph.json` names the middleware as `http.app`
+  `request_refusal`, which also refuses the development server's own
+  `/deploy` and `/internal/` routes; `langgraph.json` names the middleware
+  as `http.app`
   -- the one entry there beside the graphs that names code, an exception
   to "langgraph.json names only registry exports" that this decision makes.
 - **A write's answer lost is read back from the store.** A run that ends
@@ -82,9 +84,10 @@ What is settled here is the interface a client depends on:
   applied.
 - A pause lasts as long as the server's thread, until slice 5 makes it
   durable.
-- A process on this machine can still edit a paused thread's state, and
-  so approve a write itself -- as it could write the task file. Slice 5's
-  thread ownership revisits it.
+- Any client that is not a browser and can reach the port -- another
+  account on this machine, a tool allowed loopback -- is the owner as far
+  as the server can tell: it can start a run and approve a write, or edit a
+  paused thread's state. Slice 5's thread ownership ends it.
 
 **Reversal:** another payload is a change of `review_writes` and of every
 client. Letting the model continue after a rejection is one route

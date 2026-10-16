@@ -39,6 +39,7 @@ class LocalRequestGuard:
         refusal = request_refusal(
             socket=socket,
             method=scope.get("method", "GET"),
+            path=scope.get("path", ""),
             host=headers.get("host"),
             origin=headers.get("origin"),
             content_type=headers.get("content-type"),

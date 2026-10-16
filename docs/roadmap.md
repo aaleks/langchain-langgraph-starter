@@ -108,9 +108,25 @@ durability, safety) arrives in the slice whose requirement asks for it.
    checkpoint resuming after a state change, its version stamped on it;
    retention, and a thread's size -- today a thread past the context budget
    fails every run (deferred here by the owner, assistant-as-a-graph).
+   Left here by approve-task-writes' verify (its `verify.md`):
+   - ownership's boundary: today any client that is not a browser and can
+     reach the port is the owner (finding 21);
+   - a run cancelled while its write waits for the list's lock is answered
+     "not run" before the write commits -- record "not run" under the key, a
+     new `task_writes` outcome (36);
+   - `start_run` and `review_writes` read through the writer: give them a
+     read-only view (46);
+   - a live approval with the owner's model, and a row pinning that extra
+     keys in a write's arguments are ignored (50);
+   - a bounded refactor with no behaviour change: which tools need approval,
+     a proposal's eligibility and the approval vocabulary, as domain
+     functions (45).
 6. **Operations** (structural). Local tracing and log correlation --
    OpenTelemetry to a collector on this machine, never LangSmith -- and a
-   runbook.
+   runbook. Left here by approve-task-writes' verify: the server's surfaces
+   no requirement uses -- MCP, A2A, the store, crons -- measured against what
+   Agent Chat UI and the SDK call, then turned off in `langgraph.json`
+   (finding 48).
 
 Not planned: Deep Agents, multi-agent delegation, long-term memory, a general
 shell. Each would need a requirement this product does not have.

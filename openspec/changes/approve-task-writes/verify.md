@@ -1,14 +1,29 @@
 # Verify
 
-- **Verdict:** pass 1: DO NOT SHIP -- two BLOCKER, three MAJOR. The most
+- **Verdict:** SHIP -- after four passes; the last found no BLOCKER and no
+  MAJOR, and every earlier one is fixed or, for finding 21, accepted.
+- **Pass 1:** DO NOT SHIP -- two BLOCKER, three MAJOR. The most
   important fix: a write the owner rejected was applied when two calls of a
   reply shared an id (1).
-- **Verdict:** pass 2: DO NOT SHIP -- one BLOCKER, three MAJOR. The most
+- **Pass 2:** DO NOT SHIP -- one BLOCKER, three MAJOR. The most
   important fix: a page's blind `text/plain` POST could propose and approve
   a write, since CORS limits what a page reads, never what it sends (18).
-- **Verdict:** pass 3: DO NOT SHIP -- one BLOCKER, three MAJOR. The most
+- **Pass 3:** DO NOT SHIP -- one BLOCKER, three MAJOR. The most
   important fix: the guard let every WebSocket through, and the server's
   event stream starts and approves runs over one (31).
+- **Pass 4:** SHIP -- no BLOCKER, no MAJOR; its MINORs fixed
+  or recorded (51-57). Every MAJOR of passes 1-3 fixed; finding 21 accepted
+  under the approved design's identity line, its reach stated exactly.
+- **Reviewed at:** pass 4: `6512b07`, the pass-3 fixes (`git diff
+  a5a5624..6512b07`); its fixes committed after it.
+- **Evidence (pass 4 fixes, run 2026-10-16):** every step of
+  `scripts/check.sh` -- format, lint, architecture 54, OpenSpec 7 of 7,
+  `sdd check` 0 errors (19 of 19 test files claimed), the method's selftest,
+  the manifest, the suite 490 passed -- run step by step with `python -m
+  pytest`, since this machine's Application Control began refusing the
+  `pytest.exe` launcher that `uv run pytest` spawns; `pytest -m live`: 14 of
+  14, the owner's Open WebUI answering, a page's WebSocket refused through
+  `serve.sh`. Mutations: 8 of the pass-4 fixes, each red.
 - **Reviewed at:** pass 1: `04dc4a2`, the whole change (`git diff
   0123b5d..04dc4a2`), committed before the lenses read it.
 - **Evidence (pass 1):**
@@ -162,6 +177,39 @@ file changed.
 | 48 | Slice 6 |
 | 49 | Named in design.md |
 | 50 | Slice 5 |
+
+## Findings -- pass 4
+
+Reviewed at `6512b07`, the pass-3 fixes, by the proof, defects and
+capabilities lenses, fresh context each; the server's app in-process, its
+WebSocket handshakes on a real uvicorn around the guard; no server of the
+project's started, no `.env` read. `uv run pytest`: 478 passed.
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 51 | MINOR | proof, defects, capabilities | Fix 35 read the key's record before the writer, so a fork that edits a decided call under the same ids was answered "applied" -- the store's "the key already records another write" never reached; design.md said the opposite | `nodes.py:apply_writes` | The writer decides again, refusing it (TASKS-WRITE-ONCE); the record is read directly only when the rules now refuse the call |
+| 52 | MINOR | capabilities | The development server mounts `POST /deploy`, which runs a LangSmith deployment from the repository, and `POST /internal/truncate`, which wipes every thread -- reachable by Agent Chat UI's origin and any local client, unseen by a deny rule on a command's text | `langgraph_runtime_inmem/routes.py` | Refused by the guard: `/deploy`, `/deploy/...`, `/internal/...` |
+| 53 | MINOR | capabilities | Finding 21's acceptance named "a process that can write the task file"; the reach is any client that is not a browser and can reach the port | ADR 0009, design.md | Reworded; slice 5 in the roadmap |
+| 54 | MINOR | proof, defects | The guard's test gave a WebSocket scope a `method`; a real one has none, so `scope["method"]` would have answered every handshake 500 unseen | `test_request_guard.py` | Built as the server builds it |
+| 55 | MINOR | proof | No `PUT` or `PATCH` row; the tool-call budget unproved on `ainvoke`; an approval with more than its type had a test and no scenario row; the `Not valid` scenario's values were not its test's | tests, spec | Rows added; the budget on both paths |
+| 56 | MINOR | proof | The deferrals of 36, 46, 47, 48 and 50 lived only in this change's files, which archive puts away | `docs/roadmap.md`, `docs/learnings.md` | In the roadmap's slices 5 and 6; the upstream note |
+| 57 | MINOR | defects | `Content-Length: 00` counts as a body, refusing a non-JSON POST no client sends | `guard.py` | Accepted: it refuses, never lets through |
+
+Not findings, for the record: the WebSocket fix holds on the installed server
+-- a page's handshake 403, Agent Chat UI's and the SDK's 101, on a real
+uvicorn as in-process (capabilities, defects); no page can write or read a
+paused run but from `http://localhost:3000` (capabilities); 31-44 closed as
+stated, every docstring matches its statement (proof).
+
+### Pass 4 -- what became of each
+
+| # | Outcome |
+|---|---|
+| 51 | Fixed (tasks.md 14.1), the fork test red first |
+| 52 | Fixed (14.2), rows red first |
+| 53, 56 | Fixed (14.4) |
+| 54, 55 | Fixed (14.3) |
+| 57 | Accepted |
 
 ## Not checked
 
