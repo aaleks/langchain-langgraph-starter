@@ -21,4 +21,4 @@ this machine and on CI.
   the owner's Open WebUI answering `401 Your API key has been invalidated`;
   the other 13 pass. Not this change: the credentials in `.env` are the
   owner's, and the same test passed on 2026-10-16 before them
-- [ ] 2.3 CI's check passes on the pull request
+- [x] 2.3 CI's check passes on the pull request: #15, Linux, pass
