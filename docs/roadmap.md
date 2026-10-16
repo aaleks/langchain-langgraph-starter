@@ -112,8 +112,9 @@ durability, safety) arrives in the slice whose requirement asks for it.
    checkpoint resuming after a state change, its version stamped on it;
    retention, and a thread's size -- today a thread past the context budget
    fails every run (deferred here by the owner, assistant-as-a-graph).
-   Split by the owner (2026-10-16) into **5a** durable approvals -- a SQLite
-   checkpointer, each checkpoint stamped with the state's version (ADR 0010)
+   Split by the owner (2026-10-16) into **5a** durable approvals -- landed
+   (`durable-approvals`, #16, three verify passes): a SQLite checkpointer,
+   each checkpoint stamped with the state's version, reads strict (ADR 0010)
    -- **5b** thread ownership through a local token, and **5c** retention and a
    thread's size. Left to 5b and 5c by durable-approvals' verify: encryption at
    rest, revisited with 5b's token, which must not travel in a header the
