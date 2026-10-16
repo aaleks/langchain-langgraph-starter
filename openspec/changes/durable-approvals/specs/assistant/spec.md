@@ -55,13 +55,12 @@ Every checkpoint the durable checkpointer writes SHALL carry the state's version
 |---|---|
 | `1` | copied, each checkpoint stamped `1` |
 | `3` | refused: `CheckpointVersionError`, nothing under `t2` |
-| `3`, then none -- the latest written before the stamp | refused: `CheckpointVersionError`, nothing under `t2` |
+| none, then `3`, then none -- the newer ones in the middle | refused: `CheckpointVersionError`, nothing under `t2` |
 
 #### Scenario: A paused thread, copied
 - **GIVEN** `t1` paused at `review_writes`, its checkpoints carrying `t1` as their thread id, as the server writes them
 - **WHEN** it is copied to `t2`
 - **THEN** `t2` holds the same checkpoints, parents and stamps, each carrying `t2`; its next node is `review_writes` and it holds one interrupt
-- **AND** the server's own record of a refused copy is not the checkpointer's to undo: it remains, idle and empty (measured)
 
 ### Requirement: ASSISTANT-CHECKPOINT-STRICT
 The durable checkpointer SHALL read a checkpoint with LangGraph's serializer in its strict mode, whatever the environment says: a msgpack value naming a constructor outside LangGraph's and LangChain's safe types SHALL NOT be called, and a value stored as pickle SHALL be refused. The file outlives the process that wrote it, so what it holds is read as untrusted.

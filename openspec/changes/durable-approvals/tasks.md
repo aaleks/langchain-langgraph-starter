@@ -72,3 +72,9 @@ server's composition. The story test is LOCAL-SERVER-DURABLE-APPROVAL's live
 - [x] 8.5 `serve.sh`'s comment; the headers in each checkpoint, the refused
   copy's empty thread, the Windows alias, the copy applied twice -- recorded
 - [x] 8.6 The proof lens's 7 surviving mutants, each now red
+
+## 9. Verify pass 3 -- the MINORs
+
+- [x] 9.1 The mixed copy's newer checkpoints in the middle; the hook's type and
+  stamps asserted on both paths; the server-only row removed -- each surviving
+  mutant then red

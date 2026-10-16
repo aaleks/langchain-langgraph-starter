@@ -1,12 +1,18 @@
 # Verify
 
-- **Verdict:** DO NOT SHIP -- pass 2 found no BLOCKER and no MAJOR; its fixes,
-  one wording of code among them, go to pass 3.
+- **Verdict:** SHIP -- passes 2 and 3 found no BLOCKER and no MAJOR; every
+  MAJOR of pass 1 is fixed or, for encryption (7), decided by the owner.
+- **Pass 3:** no BLOCKER, no MAJOR; MINORs 35-37 fixed. Reviewed at `7a016ea`,
+  the pass-2 fixes (`git diff a365256..7a016ea`), by the proof lens: 10 mutants,
+  2 surviving -- rows 21 and 23 had been claimed red too early. Its fixes are
+  tests and one spec row, each surviving mutant then red; not put to another
+  lens.
 - **Pass 2:** no BLOCKER, no MAJOR; MINORs 21-34 fixed or recorded. Reviewed at
   `a365256`, the pass-1 fixes (`git diff 5a49478..a365256`), by the proof,
   defects and durability lenses: strict reads re-checked over 94 rows of real
   state with nothing blocked, a full pause, approve and copy cycle behind the
-  server's own wrapper; 18 mutants, 7 surviving -- each now red.
+  server's own wrapper; 18 mutants, 7 surviving -- 5 red after pass 2, the
+  other 2 after pass 3 (35, 36).
 - **Evidence (pass 2's fixes, run now):** `bash scripts/check.sh`; the live
   local-server tests through `serve.sh`, 3 of 3 for durability; the real-model
   test refused on the owner's expired key ("Your API key has expired"), not
@@ -84,6 +90,14 @@ Mutations of the fixes: 7, each red.
 | 32 | MINOR | durability | Deferral 15 placed in 5b, which cannot close it for the owner | roadmap | Accepted for the owner; who else may copy is 5b's |
 | 33 | MINOR | defects | A Windows alias of the task list (`tasks.sqlite3.`) passes the refusal until the file exists | `config/settings.py` | Accepted: it needs a typo |
 | 34 | MINOR | proof | verify.md recorded no evidence after the pass-1 fixes | verify.md | Recorded above |
+
+## Findings -- pass 3
+
+| # | Severity | Lens | Finding | Where | Fix |
+|---|---|---|---|---|---|
+| 35 | MINOR | proof | Row 21's fixture put the newer checkpoints first: a copy checking each only as it wrote it still passed | tests | None, then `3`, then none; the mutant red |
+| 36 | MINOR | proof | Row 23's no-argument test checked neither the saver's type nor its stamps: a plain saver passed | tests | Both asserted, in both hook tests; the mutant red |
+| 37 | MINOR | proof | A scenario row described the server's record of a refused copy, proved by no test | spec | Removed: design.md Risks and the roadmap's 5c hold it |
 
 ## Not checked
 

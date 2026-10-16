@@ -251,20 +251,14 @@ class TestCheckpointVersionAcrossVersions:
         self, tmp_path, store
     ):
         path = tmp_path / "checkpoints.sqlite3"
-        asyncio.run(
-            run_on(path, store, [answer()], {"messages": [HumanMessage("hi")]}, saver=Newer)
-        )
-        # The latest checkpoint carries none; an earlier one, 3.
-        asyncio.run(
-            run_on(
-                path,
-                store,
-                [answer()],
-                {"messages": [HumanMessage("again")]},
-                saver=AsyncSqliteSaver,
+        # None, then 3, then none: the newer checkpoints in the middle, so a copy
+        # that checked each only as it wrote it would leave a partial copy.
+        for saver, text in [(AsyncSqliteSaver, "hi"), (Newer, "again"), (AsyncSqliteSaver, "more")]:
+            asyncio.run(
+                run_on(path, store, [answer()], {"messages": [HumanMessage(text)]}, saver=saver)
             )
-        )
-        assert asyncio.run(stamps_of(path))[0] is None
+        stamps = asyncio.run(stamps_of(path))
+        assert stamps[0] is None and stamps[-1] is None and 3 in stamps
 
         with pytest.raises(CheckpointVersionError, match="3, newer than 2"):
             asyncio.run(copy(path, "t1", "t2"))
@@ -397,7 +391,7 @@ class TestTheServersCheckpointer:
 
         assert "__interrupt__" in out
         assert target.is_file()
-        assert asyncio.run(stamps_of(target))
+        assert set(asyncio.run(stamps_of(target))) == {2}
 
     def test_called_as_the_server_calls_it_with_no_argument(self, tmp_path, store, monkeypatch):
         import importlib.util
@@ -414,6 +408,7 @@ class TestTheServersCheckpointer:
 
         async def pause_on_it():
             async with getattr(module, name)() as checkpointer:
+                assert type(checkpointer).__name__ == "VersionedSqliteSaver"
                 tools = [*read_tools(store.reader(TASK_STORE_TIMEOUT_SECONDS)), *write_tools()]
                 model = ScriptedChatModel(messages=iter([propose(PLUMBER)]))
                 graph = build_assistant(
@@ -422,7 +417,7 @@ class TestTheServersCheckpointer:
                 return await graph.ainvoke({"messages": [HumanMessage("add it")]}, THREAD)
 
         assert "__interrupt__" in asyncio.run(pause_on_it())
-        assert asyncio.run(stamps_of(target))
+        assert set(asyncio.run(stamps_of(target))) == {2}
 
     def test_the_registered_graph_carries_no_checkpointer(self):
         from starter.infrastructure.agents import registry
